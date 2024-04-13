@@ -1,0 +1,8 @@
+.ipcache
+*.jou
+*.log
+build
+install
+*__pycache__/
+*pyc
+Aries
