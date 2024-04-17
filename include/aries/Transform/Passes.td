@@ -9,6 +9,11 @@ def AriesTiling : Pass<"aries-tiling"> {
     This pass conduct multiple levels of loop tiling to the nested for loops.
   }];
   let constructor = "mlir::aries::createAriesTilingPass()";
+  let options = [
+    ListOption<"TileSizes", "tile-sizes", "unsigned",
+               "A list of upto 6 loop tile sizes",
+               "llvm::cl::ZeroOrMore">
+  ];
 }
 
 #endif  // ARIES_TRANSFORM_PASSES_TD
