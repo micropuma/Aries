@@ -27,7 +27,7 @@ private:
     auto b = OpBuilder(mod);
     FuncOp topFunc;
     for (FuncOp func : mod.getOps<FuncOp>()) {
-      // Check if the attribute exists on this function.
+      // Check if the attribute exists in this function.
       if (func->getAttr(topFuncName))
         topFunc = func;
     }
@@ -45,7 +45,7 @@ private:
       auto innerBlockLoop = band[width];
       SmallVector<Value, 10> inputs(innerBlockLoop.getOperands());
 
-      //Detect the all the arguments used in the innermost block loop 
+      //Detect all the arguments used in the innermost block loop 
       ArguDetect(innerBlockLoop, inputs);
 
       CallFuncCreation(b, topFunc, innerBlockLoop, cnt_band, inputs);
@@ -55,13 +55,13 @@ private:
   }
 
   void ArguDetect(AffineForOp innerBlockLoop,SmallVectorImpl<Value> &inputs){
-    //Find all the liveness with in innerBlockLoop
+    //Find all the liveness within innerBlockLoop
     auto liveness = Liveness(innerBlockLoop);
 
     //Check each liveinVal in the block
     for (auto liveinVal: liveness.getLiveIn(innerBlockLoop.getBody()))
 
-      //If the liveinVal is defined with the AffineForOp innerBlockLoop 
+      //Check if the liveinVal is defined in the AffineForOp innerBlockLoop 
       if (!innerBlockLoop->isAncestor(liveinVal.getParentBlock()->getParentOp()))
         inputs.push_back(liveinVal);
 
@@ -86,7 +86,7 @@ private:
     builder.setInsertionPointToEnd(destBlock);
     innerBlockLoop->moveBefore(returnOp);
 
-    // Update the references in the newfunc before move
+    // Update the references in the newfunc after move
     for (unsigned i = 0, num_arg = destBlock->getNumArguments(); i < num_arg; ++i) {
         auto sourceArg = inputs[i];
         auto destArg = destBlock->getArgument(i);
