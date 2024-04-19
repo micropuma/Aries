@@ -16,4 +16,14 @@ def AriesTiling : Pass<"aries-tiling"> {
   ];
 }
 
+def AriesFuncExtract : Pass<"aries-func-extract"> {
+  let summary = "Extract out the functions for each tile";
+  let description = [{
+    This pass extracts the function of each tile. The argument of each function
+    can be explicted shown in the function call. The memref of each function can
+    also be clear with specific subviews.
+  }];
+  let constructor = "mlir::aries::createAriesFuncExtractPass()";
+}
+
 #endif  // ARIES_TRANSFORM_PASSES_TD
