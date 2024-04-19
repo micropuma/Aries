@@ -29,7 +29,7 @@ $ ninja && ninja check-mlir
 
 ### 3. Build Aries Project
 ```sh
-$ cd Aries
+$ cd Aries_Local
 $ mkdir build && cd build
 
 $ cmake ../ \
