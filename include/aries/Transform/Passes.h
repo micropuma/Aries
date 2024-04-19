@@ -9,6 +9,7 @@ namespace mlir {
 namespace aries {
 
 std::unique_ptr<Pass> createAriesTilingPass();
+std::unique_ptr<Pass> createAriesFuncExtractPass();
 
 void registerAriesPasses();
 
