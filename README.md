@@ -5,7 +5,7 @@
 ### 1. Download Aries & Submodules
 ```sh
 $ git clone --recursive https://github.com/JinmingZhuang/Aries_Local.git
-$ cd Aries
+$ cd Aries_Local
 ```
 
 ### 2. Build LLVM & MLIR Projects
