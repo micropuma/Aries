@@ -3,17 +3,17 @@
 
 
 ### 1. Download Aries & Submodules
-```
-git clone --recursive https://github.com/JinmingZhuang/Aries.git
-cd Aries
+```sh
+$ git clone --recursive https://github.com/JinmingZhuang/Aries_Local.git
+$ cd Aries
 ```
 
 ### 2. Build LLVM & MLIR Projects
-```
-cd externals/llvm-project
-mkdir build && cd build
+```sh
+$ cd externals/llvm-project
+$ mkdir build && cd build
 
-cmake ../llvm \
+$ cmake ../llvm \
     -GNinja \
     -DLLVM_BUILD_EXAMPLES=OFF \
     -DLLVM_ENABLE_PROJECTS=mlir \
@@ -24,15 +24,15 @@ cmake ../llvm \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++
 
-ninja && ninja check-mlir
+$ ninja && ninja check-mlir
 ```
 
 ### 3. Build Aries Project
-```
-cd Aries
-mkdir build && cd build
+```sh
+$ cd Aries
+$ mkdir build && cd build
 
-cmake ../ \
+$ cmake ../ \
     -GNinja \
     -DLLVM_DIR=$PWD/../externals/llvm-project/build/lib/cmake/llvm \
     -DMLIR_DIR=$PWD/../externals/llvm-project/build/lib/cmake/mlir \
