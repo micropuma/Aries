@@ -27,7 +27,7 @@ private:
     auto b = OpBuilder(mod);
     FuncOp topFunc;
     for (FuncOp func : mod.getOps<FuncOp>()) {
-      // Check if the attribute exists on this function.
+      // Check if the attribute exists in this function.
       if (func->getAttr(topFuncName))
         topFunc = func;
     }
@@ -37,37 +37,50 @@ private:
     
     unsigned cnt_band = 0;
     for (auto band : bands) {
-      
+
       // The band should be multiple of 2 after tiling
       unsigned width = band.size()/2;
 
-      // Find the innermost block loop 
-      auto innerBlockLoop = band[width];
-      SmallVector<Value, 10> inputs(innerBlockLoop.getOperands());
+      if (width < 1)
+        return;
 
-      //Detect the all the arguments used in the innermost block loop 
+      // Find the innermost block loop
+      auto innerBlockLoop = band[width-1];
+
+      // Find the outermost point loop
+      auto outerPointLoop = band[width];
+
+      // The Arguments in the specified block is not a live-in variable
+      SmallVector<Value, 6> inputs(innerBlockLoop.getBody()->getArguments());
+
+      //Detect all the arguments used in the innermost block loop 
       ArguDetect(innerBlockLoop, inputs);
 
-      CallFuncCreation(b, topFunc, innerBlockLoop, cnt_band, inputs);
+      CallFuncCreation(b, topFunc, outerPointLoop, cnt_band, inputs);
       
       
     }
   }
 
   void ArguDetect(AffineForOp innerBlockLoop,SmallVectorImpl<Value> &inputs){
-    //Find all the liveness with in innerBlockLoop
+    //Find all the liveness within innerBlockLoop
     auto liveness = Liveness(innerBlockLoop);
 
     //Check each liveinVal in the block
-    for (auto liveinVal: liveness.getLiveIn(innerBlockLoop.getBody()))
-
-      //If the liveinVal is defined with the AffineForOp innerBlockLoop 
-      if (!innerBlockLoop->isAncestor(liveinVal.getParentBlock()->getParentOp()))
+    for (auto liveinVal: liveness.getLiveIn(innerBlockLoop.getBody())){
+      if(auto affineforop = liveinVal.getParentBlock()->getParentOp()){
+        if(auto step = affineforop->getAttr("step"))
+          llvm::outs()<< "The step of this for loop is:" << step << "\n";
+      }
+      //Check if the liveinVal is defined in the AffineForOp innerBlockLoop 
+      if (!innerBlockLoop->isProperAncestor(liveinVal.getParentBlock()->getParentOp())){
         inputs.push_back(liveinVal);
+      }
+    }
 
   }
 
-  void CallFuncCreation(OpBuilder builder, FuncOp topFunc, AffineForOp innerBlockLoop, unsigned cnt_band, SmallVectorImpl<Value>& inputs){
+  void CallFuncCreation(OpBuilder builder, FuncOp topFunc, AffineForOp outerPointLoop, unsigned cnt_band, SmallVectorImpl<Value>& inputs){
     builder.setInsertionPoint(topFunc);
 
     // Define the KNL function with the detected inputs as arguments
@@ -79,14 +92,14 @@ private:
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
     
     // Create the function CallOp
-    builder.setInsertionPoint(innerBlockLoop);
-    builder.create<CallOp>(innerBlockLoop.getLoc(), newfunc, inputs);
+    builder.setInsertionPoint(outerPointLoop);
+    builder.create<CallOp>(outerPointLoop.getLoc(), newfunc, inputs);
 
-    // Move the entire block of innerBlockLoop before the returnOp
+    // Move the entire block of outerPointLoop before the returnOp
     builder.setInsertionPointToEnd(destBlock);
-    innerBlockLoop->moveBefore(returnOp);
+    outerPointLoop->moveBefore(returnOp);
 
-    // Update the references in the newfunc before move
+    // Update the references in the newfunc after move
     for (unsigned i = 0, num_arg = destBlock->getNumArguments(); i < num_arg; ++i) {
         auto sourceArg = inputs[i];
         auto destArg = destBlock->getArgument(i);
