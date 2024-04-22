@@ -8,6 +8,12 @@ exfunc: 1_gemm.exfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-func-extract
 
+unrollfunc: 2_gemm.unrollfunc.mlir
+2_gemm.unrollfunc.mlir: 1_gemm.exfunc.mlir
+	aries-opt -o $@ $< \
+			-aries-func-unroll \
+			-canonicalize -cse
+
 tadd:0_add.tiled.mlir
 0_add.tiled.mlir: add.mlir
 	aries-opt -o $@ $< \

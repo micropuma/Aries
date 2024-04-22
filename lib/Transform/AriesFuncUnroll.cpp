@@ -15,7 +15,6 @@ namespace {
 struct AriesFuncUnroll : public AriesFuncUnrollBase<AriesFuncUnroll> {
 public:
   void runOnOperation() override {
-    llvm::outs() << "Create the FuncUnroll Pass\n" ;
     auto mod = dyn_cast<ModuleOp>(getOperation());
     StringRef topFuncName = "top_func";    
   
@@ -40,6 +39,21 @@ private:
       topFunc->emitOpError("Top function not found\n");
       return topFunc_flag;
     }
+
+    std::vector<SmallVector<AffineForOp, 6>> bands;
+    getTileableBands(topFunc, &bands);
+    
+    for (auto band : bands) {
+      if (band.size()<=0)
+        return false;
+      for (int i=band.size()-1; i>=0; i--) {
+        if (failed(loopUnrollFull(band[i])))
+          return false;
+      }
+    }
+
+    return topFunc_flag;
+
 
   }
 
