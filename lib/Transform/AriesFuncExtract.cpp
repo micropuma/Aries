@@ -19,17 +19,26 @@ public:
     auto mod = dyn_cast<ModuleOp>(getOperation());
     StringRef topFuncName = "top_func";    
   
-    FuncExtract(mod,topFuncName);
+    if (!FuncExtract(mod,topFuncName))
+      signalPassFailure();
   }
 
 private:
-  void FuncExtract(ModuleOp mod,StringRef topFuncName) {
+  bool FuncExtract(ModuleOp mod,StringRef topFuncName) {
     auto b = OpBuilder(mod);
-    FuncOp topFunc;
+    auto topFunc = *(mod.getOps<FuncOp>().begin());
+    bool topFunc_flag = false;
     for (FuncOp func : mod.getOps<FuncOp>()) {
       // Check if the attribute exists in this function.
-      if (func->getAttr(topFuncName))
+      if (func->getAttr(topFuncName)){
         topFunc = func;
+        topFunc_flag = true;
+      }
+    }
+
+    if(!topFunc_flag){
+      topFunc->emitOpError("Top function not found\n");
+      return topFunc_flag;
     }
 
     std::vector<SmallVector<AffineForOp, 6>> bands;
@@ -41,8 +50,10 @@ private:
       // The band should be multiple of 2 after tiling
       unsigned width = band.size()/2;
 
-      if (width < 1)
-        return;
+      if (width < 1){
+        topFunc->emitOpError("The number of loops is less than 2\n");
+        return false;
+      }
 
       // Find the innermost block loop
       auto innerBlockLoop = band[width-1];
@@ -58,8 +69,9 @@ private:
 
       CallFuncCreation(b, topFunc, outerPointLoop, cnt_band, inputs);
       
-      
     }
+
+    return topFunc_flag;
   }
 
   void ArguDetect(AffineForOp innerBlockLoop,SmallVectorImpl<Value> &inputs){
@@ -68,10 +80,6 @@ private:
 
     //Check each liveinVal in the block
     for (auto liveinVal: liveness.getLiveIn(innerBlockLoop.getBody())){
-      if(auto affineforop = liveinVal.getParentBlock()->getParentOp()){
-        if(auto step = affineforop->getAttr("step"))
-          llvm::outs()<< "The step of this for loop is:" << step << "\n";
-      }
       //Check if the liveinVal is defined in the AffineForOp innerBlockLoop 
       if (!innerBlockLoop->isProperAncestor(liveinVal.getParentBlock()->getParentOp())){
         inputs.push_back(liveinVal);

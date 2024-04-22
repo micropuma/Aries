@@ -17,13 +17,21 @@ def AriesTiling : Pass<"aries-tiling"> {
 }
 
 def AriesFuncExtract : Pass<"aries-func-extract"> {
-  let summary = "Extract out the functions for each tile";
+  let summary = "Extract out the operations within the innermost block loop as a function";
   let description = [{
-    This pass extracts the function of each tile. The argument of each function
-    can be explicted shown in the function call. The memref of each function can
-    also be clear with specific subviews.
+    This pass extracts the operations within the block loop as a function call by using livess
+    analysis and replacing the arguments in the new function.
   }];
   let constructor = "mlir::aries::createAriesFuncExtractPass()";
 }
+
+def AriesFuncUnroll : Pass<"aries-func-unroll"> {
+  let summary = "Unroll all the block loops as seperated function calls";
+  let description = [{
+    This pass unrolls all the block loops to function calls with different arguments.
+  }];
+  let constructor = "mlir::aries::createAriesFuncUnrollPass()";
+}
+
 
 #endif  // ARIES_TRANSFORM_PASSES_TD
