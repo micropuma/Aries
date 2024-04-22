@@ -37,7 +37,7 @@ private:
     }
 
     if(!topFunc_flag){
-      topFunc->emitOpError("Top function not found");
+      topFunc->emitOpError("Top function not found\n");
       return topFunc_flag;
     }
 
@@ -51,7 +51,7 @@ private:
       unsigned width = band.size()/2;
 
       if (width < 1){
-        topFunc->emitOpError("The number of loops is less than 2");
+        topFunc->emitOpError("The number of loops is less than 2\n");
         return false;
       }
 
