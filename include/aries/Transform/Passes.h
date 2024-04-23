@@ -11,6 +11,7 @@ namespace aries {
 std::unique_ptr<Pass> createAriesTilingPass();
 std::unique_ptr<Pass> createAriesFuncExtractPass();
 std::unique_ptr<Pass> createAriesFuncUnrollPass();
+std::unique_ptr<Pass> createAriesMemSubviewPass();
 
 void registerAriesPasses();
 

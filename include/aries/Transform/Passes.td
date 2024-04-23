@@ -33,5 +33,14 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
+def AriesMemSubview : Pass<"aries-memref-subview"> {
+  let summary = "Extract Memref subview for each operands";
+  let description = [{
+    This pass extract the memref subview for every operands in each function call.
+    The function call is finally simplified with only memref arguments without 
+    other indeices.
+  }];
+  let constructor = "mlir::aries::createAriesMemSubviewPass()";
+}
 
 #endif  // ARIES_TRANSFORM_PASSES_TD

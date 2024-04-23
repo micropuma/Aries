@@ -1,3 +1,5 @@
+gemm: tile exfunc unrollfunc
+
 tile:0_gemm.tiled.mlir
 0_gemm.tiled.mlir: gemm.mlir
 	aries-opt -o $@ $< \
@@ -14,6 +16,11 @@ unrollfunc: 2_gemm.unrollfunc.mlir
 			-aries-func-unroll \
 			-canonicalize -cse
 
+mem: 3_gemm.memsubview.mlir
+3_gemm.memsubview.mlir: 2_gemm.unrollfunc.mlir
+	aries-opt -o $@ $< \
+			-aries-memref-subview
+
 tadd:0_add.tiled.mlir
 0_add.tiled.mlir: add.mlir
 	aries-opt -o $@ $< \
@@ -23,3 +30,6 @@ exadd: 1_add.exfunc.mlir
 1_add.exfunc.mlir: 0_add.tiled.mlir
 	aries-opt -o $@ $< \
 			-aries-func-extract
+
+clean_gemm:
+	rm -rf *_gemm*.mlir

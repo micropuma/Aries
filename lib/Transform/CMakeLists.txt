@@ -2,6 +2,7 @@ add_mlir_library(MLIRAriesPasses
     AriesTiling.cpp
     AriesFuncExtract.cpp
     AriesFuncUnroll.cpp
+    AriesMemSubview.cpp
     Passes.cpp
 
     ADDITIONAL_HEADER_DIRS
