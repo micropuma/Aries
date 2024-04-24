@@ -4,6 +4,7 @@ add_mlir_library(MLIRAriesPasses
     AriesFuncUnroll.cpp
     AriesMemSubview.cpp
     Passes.cpp
+    Utils.cpp
 
     ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/include/aries

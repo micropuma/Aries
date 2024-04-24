@@ -1,8 +1,11 @@
 #include "aries/Transform/Passes.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
+#include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "llvm/ADT/BitVector.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 
 using namespace mlir;
 using namespace aries;
@@ -27,11 +30,17 @@ private:
     auto builder = OpBuilder(mod);
     auto topFunc = *(mod.getOps<FuncOp>().begin());
     bool topFunc_flag = false;
+    SmallVector<FuncOp, 2> CalleeList;
+    
+    //Find topFunc and collect the Callee functions
     for (FuncOp func : mod.getOps<FuncOp>()) {
       // Check if the attribute exists in this function.
       if (func->getAttr(topFuncName)){
         topFunc = func;
         topFunc_flag = true;
+      }
+      else{
+        CalleeList.push_back(func);
       }
     }
 
@@ -40,38 +49,79 @@ private:
       return topFunc_flag;
     }
 
-    index_elim(topFunc,builder);
+    affineMapElim(topFunc, builder, CalleeList);
+    //MemrefSubview();
+    // indexElim(topFunc,builder,CalleeList);
 
     return topFunc_flag;
   }
 
-  void index_elim(FuncOp topFunc, OpBuilder builder){
+  void affineMapElim(FuncOp topFunc, OpBuilder builder, SmallVectorImpl<FuncOp> &CalleeList){
+    
+    topFunc.walk([&](CallOp callerFuncOp){
+
+      FuncOp calleeFuncOp; 
+      auto calleeName = callerFuncOp.getCallee().str();
+      for(auto funcOp : CalleeList) {
+        if (funcOp.getName() == calleeName) {
+          calleeFuncOp = funcOp;
+          break;
+        }
+      }
+
+      unsigned index =0;
+      calleeFuncOp.walk([&](AffineForOp forOp){
+        auto upperBound = forOp.getUpperBound();
+        auto upperBoundMap = upperBound.getMap();
+        auto upperBoundOperands = upperBound.getOperands();
+        
+        
+
+
+        llvm::outs() << "\n";
+        if(index == 0){
+          SmallVector<Value, 4> operands;
+          AffineMap map;
+          getTripCountMapAndOperands(forOp, &map, &operands);
+          llvm::outs() << map.getSingleConstantResult() << "\n";
+
+        }
+        
+        index++;
+      });
+
+    });
+  }
+
+  void MemrefSubview(){
+    
+  }
+
+  void indexElim(FuncOp topFunc, OpBuilder builder, SmallVectorImpl<FuncOp> &CalleeList){
     unsigned num_call = 0;
     //Walk through every CallOp in the topFunc and eliminate the index arguments
     topFunc.walk([&](CallOp callerFuncOp){
-      auto callee_name = callerFuncOp.getCallee().str();
-      auto newCalleeName = callee_name + "_" + std::to_string(num_call++);
-      auto module = callerFuncOp->getParentOfType<ModuleOp>();
+      auto calleeName = callerFuncOp.getCallee().str();
+      auto newcalleeName = calleeName + "_" + std::to_string(num_call++);
       
       //Find the calleeFuncOp by walking through the module
       FuncOp calleeFuncOp; 
-      module.walk([&](FuncOp funcOp) {
-          if (funcOp.getName() == callee_name) {
-              calleeFuncOp = funcOp;
-          }
-      });
-
-      //Clone the older callee function and set the newCalleeName
+      for(auto funcOp : CalleeList) {
+        if (funcOp.getName() == calleeName) {
+          calleeFuncOp = funcOp;
+          break;
+        }
+      }
+          
+      //Clone the older callee function and set the newcalleeName
       builder.setInsertionPoint(topFunc);
       auto newCalleeOp = calleeFuncOp.clone();
       builder.insert(newCalleeOp);
-      newCalleeOp.setName(newCalleeName);
+      newCalleeOp.setName(newcalleeName);
 
       //Change the SymbolRef of the Caller function
       callerFuncOp->setAttr("callee", SymbolRefAttr::get(newCalleeOp));
-      
-
-      llvm::outs() << "This is the " << newCalleeName << " CallOp \n";
+      llvm::outs() << "This is the " << newcalleeName << " CallOp \n";
     });
   }
 

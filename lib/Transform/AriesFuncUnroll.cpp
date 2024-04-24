@@ -1,4 +1,5 @@
 #include "aries/Transform/Passes.h"
+#include "aries/Transform/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -39,17 +40,15 @@ private:
       return topFunc_flag;
     }
 
-    std::vector<SmallVector<AffineForOp, 6>> bands;
-    getTileableBands(topFunc, &bands);
+    SmallVector<AffineForOp, 6> band;
+    getLoopBands(topFunc, band, true);
     
-    for (auto band : bands) {
-      if (band.size()<=0)
+    
+    for (auto loop: band) {
+      if (failed(loopUnrollFull(loop)))
         return false;
-      for (int i=band.size()-1; i>=0; i--) {
-        if (failed(loopUnrollFull(band[i])))
-          return false;
-      }
     }
+    
 
     return topFunc_flag;
   }
