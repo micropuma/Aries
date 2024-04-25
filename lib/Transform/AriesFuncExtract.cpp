@@ -1,4 +1,5 @@
 #include "aries/Transform/Passes.h"
+#include "aries/Transform/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -41,36 +42,31 @@ private:
       return topFunc_flag;
     }
 
-    std::vector<SmallVector<AffineForOp, 6>> bands;
-    getTileableBands(topFunc, &bands);
+    SmallVector<AffineForOp, 6> band;
+    getLoopBands(topFunc, band);
     
-    unsigned cnt_band = 0;
-    for (auto band : bands) {
+    // The band should be multiple of 2 after tiling
+    unsigned width = band.size()/2;
 
-      // The band should be multiple of 2 after tiling
-      unsigned width = band.size()/2;
-
-      if (width < 1){
-        topFunc->emitOpError("The number of loops is less than 2\n");
-        return false;
-      }
-
-      // Find the innermost block loop
-      auto innerBlockLoop = band[width-1];
-
-      // Find the outermost point loop
-      auto outerPointLoop = band[width];
-
-      // The Arguments in the specified block is not a live-in variable
-      SmallVector<Value, 6> inputs(innerBlockLoop.getBody()->getArguments());
-
-      //Detect all the arguments used in the innermost block loop 
-      ArguDetect(innerBlockLoop, inputs);
-
-      CallFuncCreation(b, topFunc, outerPointLoop, cnt_band, inputs);
-      
+    if (width < 1){
+      topFunc->emitOpError("The number of loops is less than 2\n");
+      return false;
     }
 
+    // Find the innermost block loop
+    auto innerBlockLoop = band[width-1];
+
+    // Find the outermost point loop
+    auto outerPointLoop = band[width];
+
+    // The Arguments in the specified block is not a live-in variable
+    SmallVector<Value, 6> inputs(innerBlockLoop.getBody()->getArguments());
+
+    //Detect all the arguments used in the innermost block loop 
+    ArguDetect(innerBlockLoop, inputs);
+
+    CallFuncCreation(b, topFunc, outerPointLoop, inputs);
+      
     return topFunc_flag;
   }
 
@@ -88,11 +84,12 @@ private:
 
   }
 
-  void CallFuncCreation(OpBuilder builder, FuncOp topFunc, AffineForOp outerPointLoop, unsigned cnt_band, SmallVectorImpl<Value>& inputs){
+  void CallFuncCreation(OpBuilder builder, FuncOp topFunc, AffineForOp outerPointLoop, SmallVectorImpl<Value>& inputs){
     builder.setInsertionPoint(topFunc);
-
+    
     // Define the KNL function with the detected inputs as arguments
-    auto funcName = "KNL" + std::to_string(cnt_band++);
+    auto symbol = topFunc.getSymName();
+    auto funcName = "kernel_" + symbol.str();
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
     auto newfunc = builder.create<FuncOp>(builder.getUnknownLoc(), funcName, funcType);
     auto destBlock = newfunc.addEntryBlock();
