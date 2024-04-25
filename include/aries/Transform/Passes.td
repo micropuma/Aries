@@ -25,12 +25,13 @@ def AriesFuncExtract : Pass<"aries-func-extract"> {
   let constructor = "mlir::aries::createAriesFuncExtractPass()";
 }
 
-def AriesFuncUnroll : Pass<"aries-func-unroll"> {
-  let summary = "Unroll all the block loops as seperated function calls";
+def AriesLoopSimplify : Pass<"aries-loop-simplify"> {
+  let summary = "Simplify the boundray of the nested loops in kernel to constant values";
   let description = [{
-    This pass unrolls all the block loops to function calls with different arguments.
+    This pass simplifies the nested loops in the extracted function from affineMap to constant
+    values by checking its recutangularity and using affine.apply.
   }];
-  let constructor = "mlir::aries::createAriesFuncUnrollPass()";
+  let constructor = "mlir::aries::createAriesLoopSimplifyPass()";
 }
 
 def AriesMemSubview : Pass<"aries-memref-subview"> {
@@ -41,6 +42,14 @@ def AriesMemSubview : Pass<"aries-memref-subview"> {
     other indeices.
   }];
   let constructor = "mlir::aries::createAriesMemSubviewPass()";
+}
+
+def AriesFuncUnroll : Pass<"aries-func-unroll"> {
+  let summary = "Unroll all the block loops as seperated function calls";
+  let description = [{
+    This pass unrolls all the block loops to function calls with different arguments.
+  }];
+  let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
 #endif  // ARIES_TRANSFORM_PASSES_TD

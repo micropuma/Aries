@@ -6,11 +6,18 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 
+using namespace mlir;
+using namespace affine;
+using namespace func;
+
 namespace mlir {
 namespace aries {
 
 // Get all the affine.for loops within the FuncOp and return them in the band
-void getLoopBands(func::FuncOp f, SmallVector<affine::AffineForOp, 6> &band, bool reverse = false);
+void getLoopBands(FuncOp f, SmallVector<AffineForOp, 6> &band, bool reverse = false);
+
+/// Built-in Function: Checks whether a loop nest is hyper-rectangular or not.
+LogicalResult checkIfHyperRectangular(MutableArrayRef<AffineForOp> input);
 
 }   // namespace aries
 }   // namespace mlir

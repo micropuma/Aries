@@ -1,8 +1,9 @@
 add_mlir_library(MLIRAriesPasses
     AriesTiling.cpp
     AriesFuncExtract.cpp
-    AriesFuncUnroll.cpp
+    AriesLoopSimplify.cpp
     AriesMemSubview.cpp
+    AriesFuncUnroll.cpp
     Passes.cpp
     Utils.cpp
 

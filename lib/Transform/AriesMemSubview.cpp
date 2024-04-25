@@ -1,4 +1,5 @@
 #include "aries/Transform/Passes.h"
+#include "aries/Transform/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
@@ -6,10 +7,12 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "llvm/ADT/BitVector.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "llvm/Support/Debug.h"
 
 using namespace mlir;
 using namespace aries;
 using namespace mlir::affine;
+using namespace mlir::arith;
 using namespace func;
 
 
@@ -43,59 +46,15 @@ private:
         CalleeList.push_back(func);
       }
     }
-
     if(!topFunc_flag){
       topFunc->emitOpError("Top function not found\n");
       return topFunc_flag;
     }
 
-    affineMapElim(topFunc, builder, CalleeList);
-    //MemrefSubview();
     // indexElim(topFunc,builder,CalleeList);
-
     return topFunc_flag;
   }
 
-  void affineMapElim(FuncOp topFunc, OpBuilder builder, SmallVectorImpl<FuncOp> &CalleeList){
-    
-    topFunc.walk([&](CallOp callerFuncOp){
-
-      FuncOp calleeFuncOp; 
-      auto calleeName = callerFuncOp.getCallee().str();
-      for(auto funcOp : CalleeList) {
-        if (funcOp.getName() == calleeName) {
-          calleeFuncOp = funcOp;
-          break;
-        }
-      }
-
-      unsigned index =0;
-      calleeFuncOp.walk([&](AffineForOp forOp){
-        auto upperBound = forOp.getUpperBound();
-        auto upperBoundMap = upperBound.getMap();
-        auto upperBoundOperands = upperBound.getOperands();
-        
-        
-
-
-        llvm::outs() << "\n";
-        if(index == 0){
-          SmallVector<Value, 4> operands;
-          AffineMap map;
-          getTripCountMapAndOperands(forOp, &map, &operands);
-          llvm::outs() << map.getSingleConstantResult() << "\n";
-
-        }
-        
-        index++;
-      });
-
-    });
-  }
-
-  void MemrefSubview(){
-    
-  }
 
   void indexElim(FuncOp topFunc, OpBuilder builder, SmallVectorImpl<FuncOp> &CalleeList){
     unsigned num_call = 0;
