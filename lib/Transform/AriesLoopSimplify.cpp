@@ -5,7 +5,6 @@
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "llvm/ADT/BitVector.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "llvm/Support/Debug.h"
 
@@ -45,34 +44,6 @@ private:
     return true;
   }
 
-  bool calleeFind(ModuleOp mod, FuncOp topFunc, StringRef topFuncName, FuncOp &calleeFuncOp){
-    bool topFunc_flag = false;
-    SmallVector<FuncOp, 2> CalleeList;
-    //Find topFunc and collect the Callee functions
-    for (FuncOp func : mod.getOps<FuncOp>()) {
-      // Check if the attribute exists in this function.
-      if (func->getAttr(topFuncName)){
-        topFunc = func;
-        topFunc_flag = true;
-      }
-      else{
-        CalleeList.push_back(func);
-      }
-    }
-
-    topFunc.walk([&](CallOp callerFuncOp){
-      auto calleeName = callerFuncOp.getCallee().str();
-      for(auto funcOp : CalleeList) {
-        if (funcOp.getName() == calleeName) {
-          calleeFuncOp = funcOp;
-          break;
-        }
-      }
-    });
-    return topFunc_flag;
-  }
-
-
   LogicalResult  affineMapElim(ModuleOp mod, FuncOp calleeFuncOp, OpBuilder builder){    
     
 
@@ -86,15 +57,12 @@ private:
 
     auto innerLoop = band[band.size()-1];
     for (auto forOp: band){
-      auto upperBound = forOp.getUpperBound();
-      auto upperBoundOperands = upperBound.getOperands();
-      // Current only support For loops with single arguments
-      if (upperBoundOperands.size()!=1){
-        llvm::dbgs() << "The number of loop bound operands doesn't euqal 1!\n" ;
-        return failure();
-      }
-      auto ubOperand = upperBoundOperands[0];
+      auto step = forOp.getStep().getLimitedValue();
+      auto lowerBound = forOp.getLowerBound();
+      auto lowerBoundMp = lowerBound.getMap();
+      auto lowerBoundOperands = lowerBound.getOperands();
 
+      // Current only support For loops with single arguments
       auto blockArgs = forOp.getBody()->getArguments();
       if (blockArgs.size()!=1){
         llvm::dbgs() << "The number of block arguments of the forOp doesn't euqal 1!\n" ;
@@ -106,15 +74,16 @@ private:
       //arguments to gurantee correct memref accesses
       auto context = mod.getContext();
       builder.setInsertionPointToStart(innerLoop.getBody());
-      AffineExpr d0 = getAffineDimExpr(0, context);
-      AffineExpr d1 = getAffineDimExpr(1, context);
+      AffineExpr newDim = getAffineDimExpr(lowerBoundMp.getNumDims(), context);
+      //TODO May need to deal with lowerBoundMp with multi-results
+      AffineExpr newExpr = lowerBoundMp.getResult(0) + newDim * step;
+      unsigned int dimCount = lowerBoundMp.getNumDims() + 1;
       
-      //TODO The newMap is not general enough, it should be constructed based
-      //on the original map for ubOperand
-      AffineMap newMap = AffineMap::get(2, 0, {d0 + d1}, context);
+      AffineMap newMap = AffineMap::get(dimCount, 0, newExpr, context);
       SmallVector<Value, 2> ApplyOperands;
+      for (auto lbOperand : lowerBoundOperands)
+        ApplyOperands.push_back(lbOperand);
       ApplyOperands.push_back(blockArg);
-      ApplyOperands.push_back(ubOperand);
       auto applyOp = builder.create<AffineApplyOp>(builder.getUnknownLoc(),newMap,ApplyOperands);
       blockArg.replaceUsesWithIf(applyOp, [&](OpOperand &use) {
         if (dyn_cast<AffineLoadOp>(use.getOwner()) ||

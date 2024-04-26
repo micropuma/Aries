@@ -5,14 +5,15 @@
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "llvm/ADT/BitVector.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "llvm/Support/Debug.h"
 
 using namespace mlir;
 using namespace aries;
 using namespace mlir::affine;
 using namespace mlir::arith;
+using namespace mlir::memref;
 using namespace func;
 
 
@@ -32,29 +33,61 @@ private:
   bool MemSubview (ModuleOp mod,StringRef topFuncName) {
     auto builder = OpBuilder(mod);
     auto topFunc = *(mod.getOps<FuncOp>().begin());
-    bool topFunc_flag = false;
-    SmallVector<FuncOp, 2> CalleeList;
-    
-    //Find topFunc and collect the Callee functions
-    for (FuncOp func : mod.getOps<FuncOp>()) {
-      // Check if the attribute exists in this function.
-      if (func->getAttr(topFuncName)){
-        topFunc = func;
-        topFunc_flag = true;
-      }
-      else{
-        CalleeList.push_back(func);
-      }
-    }
-    if(!topFunc_flag){
+    FuncOp calleeFuncOp;
+    if(!calleeFind(mod, topFunc, topFuncName, calleeFuncOp)){
       topFunc->emitOpError("Top function not found\n");
-      return topFunc_flag;
+      return false;
     }
 
-    // indexElim(topFunc,builder,CalleeList);
-    return topFunc_flag;
+    
+
+    return true;
   }
 
+  bool createMemsubview(FuncOp calleeFuncOp, OpBuilder builder){
+    for (auto arg : calleeFuncOp.getArguments()) {
+      // Traverse the memref arguments in the callee function
+      if (!arg.getType().dyn_cast<MemRefType>())
+        continue;
+
+      //Here assume there is only one access pattern for each memref argument
+      auto affineOp = *arg.user_begin();
+      SmallVector<Value, 4> operands;
+      AffineMap map;
+      if (auto loadOp = dyn_cast<AffineLoadOp>(affineOp)) {
+        operands = SmallVector<Value, 4>(loadOp.getMapOperands());
+        map = loadOp.getAffineMap();
+      } else if (auto storeOp = dyn_cast<AffineStoreOp>(affineOp)) {
+        operands = SmallVector<Value, 4>(storeOp.getMapOperands());
+        map = storeOp.getAffineMap();
+      }
+
+      SmallVector<Value, 4> memOffsets;
+      SmallVector<int64_t, 4> memSizes;
+      SmallVector<int64_t, 4> memStrides;
+      SmallVector<AffineExpr, 4> affineExprs;
+      //builder.create<SubViewOp>(builder.getUnknownLoc(), arg, memOffsets, memSizes, memStrides);
+      auto memDim = operands.size();
+      for (auto operand: operands){
+        auto applyOp = dyn_cast<AffineApplyOp>(operand.getDefiningOp());
+        auto applyOperands = applyOp.getOperands();
+        auto applyOperandsMap = applyOp.getAffineMap();
+        auto mapResult = applyOperandsMap.getResult(0);
+        llvm::outs() << mapResult << "\n";
+        // for (auto applyOperand: applyOperands){
+        //   auto definedOp = applyOperand.getDefiningOp()->getParentOfType<Block>().getParent();
+        //   if (auto funcOp = dyn_cast<FuncOp>(definedOp)){
+        //     memOffsets.push_back(applyOperand);
+        //   }else if (auto forOp = dyn_cast<AffineForOp>(definedOp)){
+        //     auto size = forOp->getConstantUpperBound();
+        //     memSizes.push_back(size);
+        //   }
+        // }
+      }
+
+      return true;
+    }
+  }
 
   void indexElim(FuncOp topFunc, OpBuilder builder, SmallVectorImpl<FuncOp> &CalleeList){
     unsigned num_call = 0;

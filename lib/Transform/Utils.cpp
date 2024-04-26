@@ -44,6 +44,32 @@ LogicalResult checkIfHyperRectangular(MutableArrayRef<AffineForOp> input) {
   return success();
 }
 
+bool calleeFind(ModuleOp mod, FuncOp topFunc, StringRef topFuncName, FuncOp &calleeFuncOp){
+  bool topFunc_flag = false;
+  SmallVector<FuncOp, 2> CalleeList;
+  //Find topFunc and collect the Callee functions
+  for (FuncOp func : mod.getOps<FuncOp>()) {
+    // Check if the attribute exists in this function.
+    if (func->getAttr(topFuncName)){
+      topFunc = func;
+      topFunc_flag = true;
+    }
+    else{
+      CalleeList.push_back(func);
+    }
+  }
+  topFunc.walk([&](CallOp callerFuncOp){
+    auto calleeName = callerFuncOp.getCallee().str();
+    for(auto funcOp : CalleeList) {
+      if (funcOp.getName() == calleeName) {
+        calleeFuncOp = funcOp;
+        break;
+      }
+    }
+  });
+  return topFunc_flag;
+}
+
 
 }   // namespace aries
 }   // namespace mlir

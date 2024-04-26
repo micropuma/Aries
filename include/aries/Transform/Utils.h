@@ -19,6 +19,8 @@ void getLoopBands(FuncOp f, SmallVector<AffineForOp, 6> &band, bool reverse = fa
 /// Built-in Function: Checks whether a loop nest is hyper-rectangular or not.
 LogicalResult checkIfHyperRectangular(MutableArrayRef<AffineForOp> input);
 
+bool calleeFind(ModuleOp mod, FuncOp topFunc, StringRef topFuncName, FuncOp &calleeFuncOp);
+
 }   // namespace aries
 }   // namespace mlir
 
