@@ -53,4 +53,13 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
+def AriesMemHoist : Pass<"aries-mem-hoist"> {
+  let summary = "Hoist the memref subview to the top function";
+  let description = [{
+    This pass hoists the memref subview to the top function and erase non-mem
+    arguments of the kernel function.
+  }];
+  let constructor = "mlir::aries::createAriesMemHoistPass()";
+}
+
 #endif  // ARIES_TRANSFORM_PASSES_TD
