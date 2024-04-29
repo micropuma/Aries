@@ -48,6 +48,13 @@ namespace aries {
 namespace {
 
 struct AriesTiling : public AriesTilingBase<AriesTiling> {
+    AriesTiling() = default;
+    AriesTiling(const AriesOptions &opts) {
+      for (unsigned i = 0; i < opts.TileSize.size(); ++i) {
+        TileSizes=opts.TileSize[i];
+      }
+    }
+    
     void runOnOperation() override {
         auto mod = dyn_cast<ModuleOp>(getOperation());
         unsigned defaultTileSizes = 32;
@@ -76,6 +83,11 @@ namespace aries {
 std::unique_ptr<Pass> createAriesTilingPass() {
   return std::make_unique<AriesTiling>();
 }
+
+std::unique_ptr<Pass> createAriesTilingPass(const AriesOptions &opts) {
+  return std::make_unique<AriesTiling>(opts);
+}
+
 
 } // namespace aries
 } // namespace mlir
