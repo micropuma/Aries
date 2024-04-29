@@ -69,7 +69,6 @@ private:
         map = storeOp.getAffineMap();
       }
       
-      unsigned index = 0;
       //Used to build memref.subview
       SmallVector<OpFoldResult, 4> memOffsets;
       SmallVector<OpFoldResult, 4> memSizes;
