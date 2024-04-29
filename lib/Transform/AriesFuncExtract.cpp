@@ -27,19 +27,11 @@ public:
 private:
   bool FuncExtract(ModuleOp mod,StringRef topFuncName) {
     auto b = OpBuilder(mod);
-    auto topFunc = *(mod.getOps<FuncOp>().begin());
-    bool topFunc_flag = false;
-    for (FuncOp func : mod.getOps<FuncOp>()) {
-      // Check if the attribute exists in this function.
-      if (func->getAttr(topFuncName)){
-        topFunc = func;
-        topFunc_flag = true;
-      }
-    }
+    FuncOp topFunc;
 
-    if(!topFunc_flag){
+    if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
-      return topFunc_flag;
+      return false;
     }
 
     SmallVector<AffineForOp, 6> band;
@@ -67,7 +59,7 @@ private:
 
     CallFuncCreation(b, topFunc, outerPointLoop, inputs);
       
-    return topFunc_flag;
+    return true;
   }
 
   void ArguDetect(AffineForOp innerBlockLoop,SmallVectorImpl<Value> &inputs){

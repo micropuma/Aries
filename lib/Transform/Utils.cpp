@@ -44,30 +44,41 @@ LogicalResult checkIfHyperRectangular(MutableArrayRef<AffineForOp> input) {
   return success();
 }
 
-bool calleeFind(ModuleOp mod, FuncOp topFunc, StringRef topFuncName, FuncOp &calleeFuncOp){
+// Find topFunc and collect the Callee functions
+bool topFind(ModuleOp mod, FuncOp& topFunc, StringRef topFuncName){
   bool topFunc_flag = false;
-  SmallVector<FuncOp, 2> CalleeList;
-  //Find topFunc and collect the Callee functions
   for (FuncOp func : mod.getOps<FuncOp>()) {
     // Check if the attribute exists in this function.
     if (func->getAttr(topFuncName)){
       topFunc = func;
       topFunc_flag = true;
     }
-    else{
-      CalleeList.push_back(func);
-    }
   }
+  return topFunc_flag;
+}
+
+// Find the callee function called in the topFunc
+bool calleeFind(ModuleOp mod, FuncOp topFunc, FuncOp &calleeFuncOp){
+  bool calleeFunc_flag = false;
+  SmallVector<FuncOp, 2> CalleeList;
+  auto topFuncName = topFunc.getName();
+  //Collect the callee function list
+  for (FuncOp func : mod.getOps<FuncOp>()) {
+    if (func.getName()!= topFuncName)
+      CalleeList.push_back(func);
+  }
+
   topFunc.walk([&](CallOp callerFuncOp){
-    auto calleeName = callerFuncOp.getCallee().str();
+    auto calleeName = callerFuncOp.getCallee();
     for(auto funcOp : CalleeList) {
       if (funcOp.getName() == calleeName) {
         calleeFuncOp = funcOp;
+        calleeFunc_flag = true;
         break;
       }
     }
   });
-  return topFunc_flag;
+  return calleeFunc_flag;
 }
 
 
