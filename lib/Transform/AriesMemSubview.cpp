@@ -76,7 +76,6 @@ private:
       SmallVector<OpFoldResult, 4> memStrides;
       //Traverse the operands of affine.load and affine.store
       for (auto operand: operands){
-        llvm::outs()<< "\n\nIndex is: " << index++ << "\n";
         // Get the applyOp that defines the memory access operands
         auto applyOp = dyn_cast<AffineApplyOp>(operand.getDefiningOp());
         auto applyOperands = applyOp.getOperands();
@@ -90,14 +89,11 @@ private:
           if (auto RHS1 = dyn_cast<AffineConstantExpr>(binaryExpr1.getRHS())){
             auto step = RHS1.getValue();
             memStrides.push_back(builder.getIndexAttr(step));
-            llvm::outs()<< "Step is: " << step << "\n";
           }else{
             memStrides.push_back(builder.getIndexAttr(1));
-            llvm::outs()<< "Step is: 1" << "\n";
           }
         }else{
           memStrides.push_back(builder.getIndexAttr(1));
-          llvm::outs()<< "Step is: 1" << "\n";
         }
 
         //Collect the offset and size info
@@ -112,14 +108,9 @@ private:
         }
       }
 
-      llvm::outs()<< "memOffsets size is: " << memOffsets.size() << "\n";
-      llvm::outs()<< "memSizes size is: " << memSizes.size() << "\n";
-      llvm::outs()<< "memStrides size is: " << memStrides.size() << "\n";
-
       auto subviewOutputType =
       SubViewOp::inferResultType(arg.getType().dyn_cast<MemRefType>(),memOffsets, memSizes, memStrides)
                                 .dyn_cast<MemRefType>();
-      llvm::outs()<< "memStrides size is: " << subviewOutputType << "\n";
       // Create the SubViewOp with dynmic and entries and inferred result type
       builder.setInsertionPointToStart(&calleeFuncOp.front());
     
@@ -143,34 +134,6 @@ private:
     });
 
     return true;
-  }
-
-  void indexElim(FuncOp topFunc, OpBuilder builder, SmallVectorImpl<FuncOp> &CalleeList){
-    unsigned num_call = 0;
-    //Walk through every CallOp in the topFunc and eliminate the index arguments
-    topFunc.walk([&](CallOp callerFuncOp){
-      auto calleeName = callerFuncOp.getCallee().str();
-      auto newcalleeName = calleeName + "_" + std::to_string(num_call++);
-      
-      //Find the calleeFuncOp by walking through the module
-      FuncOp calleeFuncOp; 
-      for(auto funcOp : CalleeList) {
-        if (funcOp.getName() == calleeName) {
-          calleeFuncOp = funcOp;
-          break;
-        }
-      }
-          
-      //Clone the older callee function and set the newcalleeName
-      builder.setInsertionPoint(topFunc);
-      auto newCalleeOp = calleeFuncOp.clone();
-      builder.insert(newCalleeOp);
-      newCalleeOp.setName(newcalleeName);
-
-      //Change the SymbolRef of the Caller function
-      callerFuncOp->setAttr("callee", SymbolRefAttr::get(newCalleeOp));
-      llvm::outs() << "This is the " << newcalleeName << " CallOp \n";
-    });
   }
 
 };
