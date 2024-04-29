@@ -34,10 +34,15 @@ public:
 private:
   bool MemSubview (ModuleOp mod,StringRef topFuncName) {
     auto builder = OpBuilder(mod);
-    auto topFunc = *(mod.getOps<FuncOp>().begin());
-    FuncOp calleeFuncOp;
-    if(!calleeFind(mod, topFunc, topFuncName, calleeFuncOp)){
+    FuncOp topFunc;
+    if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
+      return false;
+    }
+
+    FuncOp calleeFuncOp;
+    if(!calleeFind(mod, topFunc, calleeFuncOp)){
+      calleeFuncOp->emitOpError("Callee function not found\n");
       return false;
     }
 
@@ -46,7 +51,7 @@ private:
     return true;
   }
 
-  bool createMemsubview(FuncOp calleeFuncOp, OpBuilder builder){
+  void createMemsubview(FuncOp calleeFuncOp, OpBuilder builder){
     // Record the applyOperand that has alreday create new maps
     SmallVector<Value, 4> applyOperandRecord;
     SmallVector<Value, 4> offsets;
@@ -131,8 +136,6 @@ private:
         }
       }
     });
-
-    return true;
   }
 
 };

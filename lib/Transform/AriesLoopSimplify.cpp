@@ -30,15 +30,19 @@ public:
 private:
   bool LoopSimplify (ModuleOp mod,StringRef topFuncName) {
     auto builder = OpBuilder(mod);
-    auto topFunc = *(mod.getOps<FuncOp>().begin());
-    FuncOp calleeFuncOp;
-
-    if(!calleeFind(mod, topFunc, topFuncName, calleeFuncOp)){
+    FuncOp topFunc;
+    if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
       return false;
     }
+
+    FuncOp calleeFuncOp;
+    if(!calleeFind(mod, topFunc, calleeFuncOp)){
+      calleeFuncOp->emitOpError("Callee function not found\n");
+      return false;
+    }
     
-    if (failed(affineMapElim(mod, topFunc, builder)))
+    if (failed(affineMapElim(mod, calleeFuncOp, builder)))
       return false;
     
     return true;
