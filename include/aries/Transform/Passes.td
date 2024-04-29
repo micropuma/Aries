@@ -11,7 +11,7 @@ def AriesTiling : Pass<"aries-tiling"> {
   let constructor = "mlir::aries::createAriesTilingPass()";
   let options = [
     ListOption<"TileSizes", "tile-sizes", "unsigned",
-               "A list of upto 6 loop tile sizes",
+               "Specify a list of loop tile sizes",
                "llvm::cl::ZeroOrMore">
   ];
 }
@@ -42,6 +42,7 @@ def AriesMemSubview : Pass<"aries-memref-subview"> {
     other indeices.
   }];
   let constructor = "mlir::aries::createAriesMemSubviewPass()";
+  let dependentDialects = ["mlir::memref::MemRefDialect"];
 }
 
 def AriesFuncUnroll : Pass<"aries-func-unroll"> {

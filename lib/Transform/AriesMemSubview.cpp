@@ -15,6 +15,7 @@ using namespace mlir;
 using namespace aries;
 using namespace mlir::affine;
 using namespace mlir::arith;
+using namespace mlir::memref;
 using namespace func;
 
 
@@ -40,24 +41,9 @@ private:
       return false;
     }
 
-    create_Memsubview(topFunc, builder);
-    //createMemsubview(calleeFuncOp, builder);
+    createMemsubview(calleeFuncOp, builder);
 
     return true;
-  }
-
-  void create_Memsubview(FuncOp topFunc, OpBuilder builder){
-    builder.setInsertionPointToStart(&topFunc.front());
-    auto arg = dyn_cast<Value>(topFunc.getArgument(0));
-    auto argType = arg.getType().dyn_cast<MemRefType>();
-    if (!argType)
-      return;
-    llvm::outs()<< arg << "\n";
-    SmallVector<int64_t> bufSizes(2,32);
-    SmallVector<int64_t> bufOffsets(2,0);
-    SmallVector<int64_t> bufStrides(2,1);
-    auto subview =
-        builder.create<memref::SubViewOp>(builder.getUnknownLoc(), arg, bufOffsets, bufSizes, bufStrides);
   }
 
   bool createMemsubview(FuncOp calleeFuncOp, OpBuilder builder){
@@ -74,6 +60,7 @@ private:
       auto affineOp = *arg.user_begin();
       SmallVector<Value, 4> operands;
       AffineMap map;
+
       if (auto loadOp = dyn_cast<AffineLoadOp>(affineOp)) {
         operands = SmallVector<Value, 4>(loadOp.getMapOperands());
         map = loadOp.getAffineMap();
@@ -84,9 +71,9 @@ private:
       
       unsigned index = 0;
       //Used to build memref.subview
-      SmallVector<int64_t, 4> memOffsets;
-      SmallVector<int64_t, 4> memSizes;
-      SmallVector<int64_t, 4> memStrides;
+      SmallVector<OpFoldResult, 4> memOffsets;
+      SmallVector<OpFoldResult, 4> memSizes;
+      SmallVector<OpFoldResult, 4> memStrides;
       //Traverse the operands of affine.load and affine.store
       for (auto operand: operands){
         llvm::outs()<< "\n\nIndex is: " << index++ << "\n";
@@ -96,52 +83,31 @@ private:
         auto applyOperandsMap = applyOp.getAffineMap();
         auto mapResult = applyOperandsMap.getResult(0);
         auto binaryExpr = dyn_cast<AffineBinaryOpExpr>(mapResult);
-        //Collect the Offset info and build the newMap for the offset arguments
-        auto LHS = binaryExpr.getLHS();
-        auto mapNew = AffineMap::get(applyOperandsMap.getNumDims()-1, 0, LHS);
 
         //Collect the step info which is in the left most of the AffineExpr
         auto RHS = binaryExpr.getRHS();
         if (auto binaryExpr1 = dyn_cast<AffineBinaryOpExpr>(RHS)){
           if (auto RHS1 = dyn_cast<AffineConstantExpr>(binaryExpr1.getRHS())){
             auto step = RHS1.getValue();
-            memStrides.push_back(step);
+            memStrides.push_back(builder.getIndexAttr(step));
             llvm::outs()<< "Step is: " << step << "\n";
           }else{
-            memStrides.push_back(1);
+            memStrides.push_back(builder.getIndexAttr(1));
             llvm::outs()<< "Step is: 1" << "\n";
           }
         }else{
-          memStrides.push_back(1);
+          memStrides.push_back(builder.getIndexAttr(1));
           llvm::outs()<< "Step is: 1" << "\n";
         }
 
-        //Create applyOp for each offset argument 
+        //Collect the offset and size info
         for (auto applyOperand: applyOperands){
           auto definedOp = applyOperand.getParentBlock()->getParentOp();
-          if (auto funcOp = dyn_cast<FuncOp>(definedOp)){
-            builder.setInsertionPoint(applyOp);
-            Value offset;
-            auto it = std::find(applyOperandRecord.begin(), applyOperandRecord.end(), applyOperand);
-            // If no applyOp created for the offset argument then create one
-            if (it == applyOperandRecord.end()){
-              offset = builder.create<AffineApplyOp>(builder.getUnknownLoc(), mapNew, applyOperand);
-              llvm::outs()<< "Affine mapNew is: " << mapNew << "\n";
-              applyOperandRecord.push_back(applyOperand);
-              offsets.push_back(offset);
-              memOffsets.push_back(0);
-              llvm::outs()<< "Offset is: " << offset << "\n";
-            }else{ //Find the corresponding offset for the offset argument
-              size_t position = std::distance(applyOperandRecord.begin(), it);
-              offset = offsets[position];
-              memOffsets.push_back(0);
-              llvm::outs()<< "Offset is: " << offset << "\n";
-            }
-            
-          }else if (auto forOp = dyn_cast<AffineForOp>(definedOp)){
+          if (auto funcOp = dyn_cast<FuncOp>(definedOp))
+            memOffsets.push_back(applyOperand);
+          else if (auto forOp = dyn_cast<AffineForOp>(definedOp)){
             auto size = forOp.getConstantUpperBound();
-            memSizes.push_back(size);
-            llvm::outs()<< "Size is: " << size << "\n";
+            memSizes.push_back(builder.getIndexAttr(size));
           }
         }
       }
@@ -151,23 +117,30 @@ private:
       llvm::outs()<< "memStrides size is: " << memStrides.size() << "\n";
 
       auto subviewOutputType =
-      memref::SubViewOp::inferResultType(arg.getType().dyn_cast<MemRefType>(),memOffsets, memSizes, memStrides)
+      SubViewOp::inferResultType(arg.getType().dyn_cast<MemRefType>(),memOffsets, memSizes, memStrides)
                                 .dyn_cast<MemRefType>();
       llvm::outs()<< "memStrides size is: " << subviewOutputType << "\n";
       // Create the SubViewOp with dynmic and entries and inferred result type
       builder.setInsertionPointToStart(&calleeFuncOp.front());
-      // builder.create<arith::ConstantOp>(builder.getUnknownLoc(),builder.getI32Type(),builder.
-      // getZeroAttr(builder.getI32Type()));
-      auto subview =
-        builder.create<memref::SubViewOp>(builder.getUnknownLoc(), arg, memOffsets, memSizes, memStrides);
     
-      // auto subview =
-      //     builder.create<memref::SubViewOp>(builder.getUnknownLoc(), subviewOutputType, 
-      //                               arg, memOffsets, memSizes, memStrides);
+      auto subview =
+          builder.create<SubViewOp>(builder.getUnknownLoc(), subviewOutputType, 
+                                    arg, memOffsets, memSizes, memStrides);
+      
+      arg.replaceAllUsesExcept(subview.getResult(), subview);
     }
-    SmallVector<AffineForOp, 6> band;
-    getLoopBands(calleeFuncOp, band);
-    band[0].erase();
+
+    //Replace the memory access and erase the affine.apply op 
+    calleeFuncOp.walk([&](AffineApplyOp applyOp){
+      auto applyOperands = applyOp.getOperands();
+      for (auto applyOperand: applyOperands){
+        auto definedOp = applyOperand.getParentBlock()->getParentOp();
+        if (dyn_cast<AffineForOp>(definedOp)){
+          applyOp.replaceAllUsesWith(applyOperand);
+          applyOp.erase();
+        }
+      }
+    });
 
     return true;
   }
