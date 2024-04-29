@@ -18,7 +18,9 @@ loopsim: 2_gemm.loopsim.mlir
 mem: 3_gemm.memsubview.mlir
 3_gemm.memsubview.mlir: 2_gemm.loopsim.mlir
 	aries-opt -o $@ $< \
-			-aries-memref-subview
+			-mlir-print-ir-after-failure \
+			-aries-memref-subview \
+			-canonicalize -cse
 
 unrollfunc: 4_gemm.unrollfunc.mlir
 4_gemm.unrollfunc.mlir: 3_gemm.memsubview.mlir

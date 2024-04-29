@@ -1,18 +1,21 @@
 #include "aries/Transform/Passes.h"
 #include "aries/Transform/Utils.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "llvm/ADT/BitVector.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "llvm/Support/Debug.h"
+
+#include "mlir/IR/Builders.h"
 
 using namespace mlir;
 using namespace aries;
 using namespace mlir::affine;
 using namespace mlir::arith;
+using namespace mlir::memref;
 using namespace func;
 
 
@@ -32,56 +35,105 @@ private:
   bool MemSubview (ModuleOp mod,StringRef topFuncName) {
     auto builder = OpBuilder(mod);
     auto topFunc = *(mod.getOps<FuncOp>().begin());
-    bool topFunc_flag = false;
-    SmallVector<FuncOp, 2> CalleeList;
-    
-    //Find topFunc and collect the Callee functions
-    for (FuncOp func : mod.getOps<FuncOp>()) {
-      // Check if the attribute exists in this function.
-      if (func->getAttr(topFuncName)){
-        topFunc = func;
-        topFunc_flag = true;
-      }
-      else{
-        CalleeList.push_back(func);
-      }
-    }
-    if(!topFunc_flag){
+    FuncOp calleeFuncOp;
+    if(!calleeFind(mod, topFunc, topFuncName, calleeFuncOp)){
       topFunc->emitOpError("Top function not found\n");
-      return topFunc_flag;
+      return false;
     }
 
-    // indexElim(topFunc,builder,CalleeList);
-    return topFunc_flag;
+    createMemsubview(calleeFuncOp, builder);
+
+    return true;
   }
 
+  bool createMemsubview(FuncOp calleeFuncOp, OpBuilder builder){
+    // Record the applyOperand that has alreday create new maps
+    SmallVector<Value, 4> applyOperandRecord;
+    SmallVector<Value, 4> offsets;
+    for (auto arg : calleeFuncOp.getArguments()) {
+      // Traverse the memref arguments in the callee function
+      auto argType = arg.getType().dyn_cast<MemRefType>();
+      if (!argType)
+        continue;
 
-  void indexElim(FuncOp topFunc, OpBuilder builder, SmallVectorImpl<FuncOp> &CalleeList){
-    unsigned num_call = 0;
-    //Walk through every CallOp in the topFunc and eliminate the index arguments
-    topFunc.walk([&](CallOp callerFuncOp){
-      auto calleeName = callerFuncOp.getCallee().str();
-      auto newcalleeName = calleeName + "_" + std::to_string(num_call++);
+      //Here assume there is only one access pattern for each memref argument
+      auto affineOp = *arg.user_begin();
+      SmallVector<Value, 4> operands;
+      AffineMap map;
+
+      if (auto loadOp = dyn_cast<AffineLoadOp>(affineOp)) {
+        operands = SmallVector<Value, 4>(loadOp.getMapOperands());
+        map = loadOp.getAffineMap();
+      } else if (auto storeOp = dyn_cast<AffineStoreOp>(affineOp)) {
+        operands = SmallVector<Value, 4>(storeOp.getMapOperands());
+        map = storeOp.getAffineMap();
+      }
       
-      //Find the calleeFuncOp by walking through the module
-      FuncOp calleeFuncOp; 
-      for(auto funcOp : CalleeList) {
-        if (funcOp.getName() == calleeName) {
-          calleeFuncOp = funcOp;
-          break;
+      unsigned index = 0;
+      //Used to build memref.subview
+      SmallVector<OpFoldResult, 4> memOffsets;
+      SmallVector<OpFoldResult, 4> memSizes;
+      SmallVector<OpFoldResult, 4> memStrides;
+      //Traverse the operands of affine.load and affine.store
+      for (auto operand: operands){
+        // Get the applyOp that defines the memory access operands
+        auto applyOp = dyn_cast<AffineApplyOp>(operand.getDefiningOp());
+        auto applyOperands = applyOp.getOperands();
+        auto applyOperandsMap = applyOp.getAffineMap();
+        auto mapResult = applyOperandsMap.getResult(0);
+        auto binaryExpr = dyn_cast<AffineBinaryOpExpr>(mapResult);
+
+        //Collect the step info which is in the left most of the AffineExpr
+        auto RHS = binaryExpr.getRHS();
+        if (auto binaryExpr1 = dyn_cast<AffineBinaryOpExpr>(RHS)){
+          if (auto RHS1 = dyn_cast<AffineConstantExpr>(binaryExpr1.getRHS())){
+            auto step = RHS1.getValue();
+            memStrides.push_back(builder.getIndexAttr(step));
+          }else{
+            memStrides.push_back(builder.getIndexAttr(1));
+          }
+        }else{
+          memStrides.push_back(builder.getIndexAttr(1));
+        }
+
+        //Collect the offset and size info
+        for (auto applyOperand: applyOperands){
+          auto definedOp = applyOperand.getParentBlock()->getParentOp();
+          if (auto funcOp = dyn_cast<FuncOp>(definedOp))
+            memOffsets.push_back(applyOperand);
+          else if (auto forOp = dyn_cast<AffineForOp>(definedOp)){
+            auto size = forOp.getConstantUpperBound();
+            memSizes.push_back(builder.getIndexAttr(size));
+          }
         }
       }
-          
-      //Clone the older callee function and set the newcalleeName
-      builder.setInsertionPoint(topFunc);
-      auto newCalleeOp = calleeFuncOp.clone();
-      builder.insert(newCalleeOp);
-      newCalleeOp.setName(newcalleeName);
 
-      //Change the SymbolRef of the Caller function
-      callerFuncOp->setAttr("callee", SymbolRefAttr::get(newCalleeOp));
-      llvm::outs() << "This is the " << newcalleeName << " CallOp \n";
+      auto subviewOutputType =
+      SubViewOp::inferResultType(arg.getType().dyn_cast<MemRefType>(),memOffsets, memSizes, memStrides)
+                                .dyn_cast<MemRefType>();
+      // Create the SubViewOp with dynmic and entries and inferred result type
+      builder.setInsertionPointToStart(&calleeFuncOp.front());
+    
+      auto subview =
+          builder.create<SubViewOp>(builder.getUnknownLoc(), subviewOutputType, 
+                                    arg, memOffsets, memSizes, memStrides);
+      
+      arg.replaceAllUsesExcept(subview.getResult(), subview);
+    }
+
+    //Replace the memory access and erase the affine.apply op 
+    calleeFuncOp.walk([&](AffineApplyOp applyOp){
+      auto applyOperands = applyOp.getOperands();
+      for (auto applyOperand: applyOperands){
+        auto definedOp = applyOperand.getParentBlock()->getParentOp();
+        if (dyn_cast<AffineForOp>(definedOp)){
+          applyOp.replaceAllUsesWith(applyOperand);
+          applyOp.erase();
+        }
+      }
     });
+
+    return true;
   }
 
 };
