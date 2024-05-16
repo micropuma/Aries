@@ -31,59 +31,57 @@ public:
 
 private:
   bool MemHoist (ModuleOp mod,StringRef topFuncName) {
-    auto builder = OpBuilder(mod);
     FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
       return false;
     }
 
-    FuncOp calleeFuncOp;
-    if(!calleeFind(mod ,topFunc, calleeFuncOp)){
-      calleeFuncOp->emitOpError("Callee function not found\n");
+    if(!subviewHoist(mod, topFunc)){
       return false;
     }
 
-    if(!subviewHoist(builder, topFunc, calleeFuncOp)){
-      return false;
-    }
-
-    funcUpdate(builder, topFunc, calleeFuncOp);
+    funcUpdate(mod, topFunc);
 
     return true;
   }
 
   //eliminate the unused arguments in callee and caller functions
-  void funcUpdate(OpBuilder builder, FuncOp topFunc, FuncOp calleeFuncOp){
+  void funcUpdate(ModuleOp mod, FuncOp topFunc){
+    auto builder = OpBuilder(mod);
+
     
-    SmallVector<Type, 8> newinTypes;
-    auto outTypes = calleeFuncOp.getResultTypes();
-    SmallVector<unsigned, 8> usedArgIndex;
-    SmallVector<unsigned, 8> unusedArgIndex;
-    
-    //Record the unused and used arguments
-    for (auto arg : calleeFuncOp.getArguments()) {
-      if(!arg.use_empty()){
-        newinTypes.push_back(arg.getType());
-        usedArgIndex.push_back(arg.getArgNumber());
-      }else{
-        unusedArgIndex.push_back(arg.getArgNumber()); 
-      }
-    }
-
-    // Update the callee function type.
-    calleeFuncOp.setType(builder.getFunctionType(newinTypes, outTypes));
-
-    //Erase the unsed block arguments in the callee
-    BitVector bv(calleeFuncOp.getArguments().size());
-    for (auto index:unusedArgIndex){
-      bv.set(index);
-    }
-    auto& entryBlock = calleeFuncOp.front();
-    entryBlock.eraseArguments(bv);
-
-    //Create new CallOp functions
     topFunc.walk([&](CallOp caller){
+      auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
+
+      SmallVector<Type, 8> newinTypes;
+      auto outTypes = calleeFuncOp.getResultTypes();
+      SmallVector<unsigned, 8> usedArgIndex;
+      SmallVector<unsigned, 8> unusedArgIndex;
+
+      //Record the unused and used arguments
+      for (auto arg : calleeFuncOp.getArguments()) {
+        if(!arg.use_empty()){
+          newinTypes.push_back(arg.getType());
+          usedArgIndex.push_back(arg.getArgNumber());
+        }else{
+          unusedArgIndex.push_back(arg.getArgNumber()); 
+        }
+      }
+      if (unusedArgIndex.empty())
+        return WalkResult::advance();
+
+      // Update the callee function type.
+      calleeFuncOp.setType(builder.getFunctionType(newinTypes, outTypes));
+
+      //Erase the unsed block arguments in the callee
+      BitVector bv(calleeFuncOp.getArguments().size());
+      for (auto index:unusedArgIndex){
+        bv.set(index);
+      }
+      auto& entryBlock = calleeFuncOp.front();
+      entryBlock.eraseArguments(bv);
+
       SmallVector<Value, 8> newOperands;
       for (unsigned i = 0; i < usedArgIndex.size(); ++i) {
         newOperands.push_back(caller.getOperand(usedArgIndex[i]));
@@ -95,11 +93,16 @@ private:
       // Replace the old CallOp with the new one
       caller.replaceAllUsesWith(newCallOp);
       caller.erase();
+
+      return WalkResult::advance();
     });
   }
 
-  bool subviewHoist(OpBuilder builder, FuncOp topFunc, FuncOp calleeFuncOp){
+  bool subviewHoist(ModuleOp mod, FuncOp topFunc){
+    auto builder = OpBuilder(mod);
+    
     topFunc.walk([&](CallOp caller){
+      auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
 
       //Change the offset of the subview to the caller arguments
       for (auto arg : calleeFuncOp.getArguments()) {
