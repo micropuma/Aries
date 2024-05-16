@@ -26,7 +26,7 @@ public:
 
 private:
   bool FuncExtract(ModuleOp mod,StringRef topFuncName) {
-    auto b = OpBuilder(mod);
+    auto builder = OpBuilder(mod);
     FuncOp topFunc;
 
     if(!topFind(mod, topFunc, topFuncName)){
@@ -57,7 +57,7 @@ private:
     //Detect all the arguments used in the innermost block loop 
     ArguDetect(innerBlockLoop, inputs);
 
-    CallFuncCreation(b, topFunc, outerPointLoop, inputs);
+    CallFuncCreation(builder, topFunc, outerPointLoop, inputs);
       
     return true;
   }

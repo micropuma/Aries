@@ -29,89 +29,90 @@ public:
 
 private:
   bool LoopSimplify (ModuleOp mod,StringRef topFuncName) {
-    auto builder = OpBuilder(mod);
     FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
       return false;
     }
 
-    FuncOp calleeFuncOp;
-    if(!calleeFind(mod, topFunc, calleeFuncOp)){
-      calleeFuncOp->emitOpError("Callee function not found\n");
-      return false;
-    }
-    
-    if (failed(affineMapElim(mod, calleeFuncOp, builder)))
+    if (failed(affineMapElim(mod, topFunc)))
       return false;
     
     return true;
   }
 
-  LogicalResult  affineMapElim(ModuleOp mod, FuncOp calleeFuncOp, OpBuilder builder){    
-    
+  LogicalResult  affineMapElim(ModuleOp mod, FuncOp topFunc){    
+    auto builder = OpBuilder(mod);
+    auto flag = topFunc.walk([&](CallOp caller){
+      auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
 
-    SmallVector<AffineForOp, 6> band;
-    getLoopBands(calleeFuncOp, band);
+      SmallVector<AffineForOp, 6> band;
+      getLoopBands(calleeFuncOp, band);
 
-    if (failed(checkIfHyperRectangular(band))){
-      llvm::dbgs() << "Not recutangular nested loops!\n";
+      if (failed(checkIfHyperRectangular(band))){
+        llvm::dbgs() << "Not recutangular nested loops!\n";
+        return WalkResult::interrupt();
+      }
+
+      auto innerLoop = band[band.size()-1];
+      for (auto forOp: band){
+        auto step = forOp.getStep().getLimitedValue();
+        auto lowerBound = forOp.getLowerBound();
+        auto lowerBoundMp = lowerBound.getMap();
+        auto lowerBoundOperands = lowerBound.getOperands();
+
+        // Current only support For loops with single arguments
+        auto blockArgs = forOp.getBody()->getArguments();
+        if (blockArgs.size()!=1){
+          llvm::dbgs() << "The number of block arguments of the forOp doesn't euqal 1!\n" ;
+          return WalkResult::interrupt();
+        }
+        auto blockArg = blockArgs[0];
+
+        //Construct newAffineMaps using affine.apply and replace the old block 
+        //arguments to gurantee correct memref accesses
+        auto context = mod.getContext();
+        builder.setInsertionPointToStart(innerLoop.getBody());
+        AffineExpr newDim = getAffineDimExpr(lowerBoundMp.getNumDims(), context);
+        //TODO May need to deal with lowerBoundMp with multi-results
+        AffineExpr newExpr = lowerBoundMp.getResult(0) + newDim * step;
+        unsigned int dimCount = lowerBoundMp.getNumDims() + 1;
+
+        AffineMap newMap = AffineMap::get(dimCount, 0, newExpr, context);
+        SmallVector<Value, 2> ApplyOperands;
+        for (auto lbOperand : lowerBoundOperands)
+          ApplyOperands.push_back(lbOperand);
+        ApplyOperands.push_back(blockArg);
+        auto applyOp = builder.create<AffineApplyOp>(builder.getUnknownLoc(),newMap,ApplyOperands);
+        blockArg.replaceUsesWithIf(applyOp, [&](OpOperand &use) {
+          if (dyn_cast<AffineLoadOp>(use.getOwner()) ||
+              dyn_cast<AffineStoreOp>(use.getOwner()))
+              return true;
+          else
+              return false;
+        });
+
+        //Check if the loops has constant trip count
+        //And replace the loop bound with constant value
+        //TODO: This should work for recutangular loop nests, but may need to extend
+        SmallVector<Value, 4> operands;
+        AffineMap map;
+        getTripCountMapAndOperands(forOp, &map, &operands);
+        if (!map.isSingleConstant()){
+          llvm::dbgs() << "Involve loops with non-consant trip count!\n";
+          return WalkResult::interrupt();
+        }
+        auto tripCount = map.getSingleConstantResult();
+        forOp.setConstantLowerBound(0);
+        forOp.setConstantUpperBound(tripCount);
+
+      }
+      return WalkResult::advance();
+    });
+
+    if (flag == WalkResult::interrupt())
       return failure();
-    }
 
-    auto innerLoop = band[band.size()-1];
-    for (auto forOp: band){
-      auto step = forOp.getStep().getLimitedValue();
-      auto lowerBound = forOp.getLowerBound();
-      auto lowerBoundMp = lowerBound.getMap();
-      auto lowerBoundOperands = lowerBound.getOperands();
-
-      // Current only support For loops with single arguments
-      auto blockArgs = forOp.getBody()->getArguments();
-      if (blockArgs.size()!=1){
-        llvm::dbgs() << "The number of block arguments of the forOp doesn't euqal 1!\n" ;
-        return failure();
-      }
-      auto blockArg = blockArgs[0];
-
-      //Construct newAffineMaps using affine.apply and replace the old block 
-      //arguments to gurantee correct memref accesses
-      auto context = mod.getContext();
-      builder.setInsertionPointToStart(innerLoop.getBody());
-      AffineExpr newDim = getAffineDimExpr(lowerBoundMp.getNumDims(), context);
-      //TODO May need to deal with lowerBoundMp with multi-results
-      AffineExpr newExpr = lowerBoundMp.getResult(0) + newDim * step;
-      unsigned int dimCount = lowerBoundMp.getNumDims() + 1;
-      
-      AffineMap newMap = AffineMap::get(dimCount, 0, newExpr, context);
-      SmallVector<Value, 2> ApplyOperands;
-      for (auto lbOperand : lowerBoundOperands)
-        ApplyOperands.push_back(lbOperand);
-      ApplyOperands.push_back(blockArg);
-      auto applyOp = builder.create<AffineApplyOp>(builder.getUnknownLoc(),newMap,ApplyOperands);
-      blockArg.replaceUsesWithIf(applyOp, [&](OpOperand &use) {
-        if (dyn_cast<AffineLoadOp>(use.getOwner()) ||
-            dyn_cast<AffineStoreOp>(use.getOwner()))
-            return true;
-        else
-            return false;
-      });
-
-      //Check if the loops has constant trip count
-      //And replace the loop bound with constant value
-      //TODO: This should work for recutangular loop nests, but may need to extend
-      SmallVector<Value, 4> operands;
-      AffineMap map;
-      getTripCountMapAndOperands(forOp, &map, &operands);
-      if (!map.isSingleConstant()){
-        llvm::dbgs() << "Involve loops with non-consant trip count!\n";
-        return failure();
-      }
-      auto tripCount = map.getSingleConstantResult();
-      forOp.setConstantLowerBound(0);
-      forOp.setConstantUpperBound(tripCount);
-      
-    }
     return success();
   }
 
