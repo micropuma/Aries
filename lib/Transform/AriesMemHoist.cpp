@@ -44,44 +44,62 @@ private:
       return false;
     }
 
-    if(!subviewHoist(topFunc, calleeFuncOp)){
+    if(!subviewHoist(builder, topFunc, calleeFuncOp)){
       return false;
     }
+
+    
 
     return true;
   }
 
-  bool subviewHoist(FuncOp topFunc, FuncOp calleeFuncOp){
-    unsigned num=0;
-    topFunc.walk([&](CallOp call) { ++num; });
-    auto flag = topFunc.walk([&](CallOp caller){
-      unsigned opNum = 0;
-      auto operands = caller.getOperands();
-      for (auto operand: operands){
-        auto defineOp = operand.getDefiningOp();
-        //Check if the input arguments are constant values or memref
-        if ( !(dyn_cast<arith::ConstantOp>(defineOp) || dyn_cast<MemRefType>(operand.getType())) ){
-          caller->emitOpError("There is non-constant or non-mem argument in the caller function\n");
-          return WalkResult::interrupt();
-        }else if(dyn_cast<MemRefType>(operand.getType())){
-          //Create the memref subview on the topFunc for each memref argument
-          SmallVector<unsigned, 4> memOffsets;
-          auto subview = dyn_cast<SubViewOp>(*calleeFuncOp.getArgument(opNum).user_begin());
-          auto memSizes = subview.getStaticSizes();
-          auto memStrides = subview.getStaticSizes();
-          llvm::outs() << memStrides.size() << "\n";
-          for (unsigned i = 0; i< memStrides.size(); i++){
-            auto memOffset = subview.getDynamicOffset(i);
-            llvm::outs() << memOffset << "\n";
-          }
+  bool subviewHoist(OpBuilder builder, FuncOp topFunc, FuncOp calleeFuncOp){
+    topFunc.walk([&](CallOp caller){
+      
+      //Change the offset of the subview to the caller arguments
+      for (auto arg : calleeFuncOp.getArguments()) {
+        auto firstUser = *arg.user_begin(); 
+        if(dyn_cast<SubViewOp>(firstUser)&&!dyn_cast<MemRefType>(arg.getType())){
+          arg.replaceAllUsesWith(caller.getOperand(arg.getArgNumber()));
         }
-        opNum++;
       }
-      return WalkResult::advance();
+
+      auto inTypes = SmallVector<Type, 8>(calleeFuncOp.getArgumentTypes().begin(),
+                                           calleeFuncOp.getArgumentTypes().end());
+
+      auto outTypes = calleeFuncOp.getResultTypes();
+
+      for (auto subview : llvm::make_early_inc_range(calleeFuncOp.getOps<SubViewOp>())) {
+        //check if the source of the subview is an argument of the callee
+        auto arg = subview.getSource().dyn_cast<BlockArgument>();
+        if (!arg)
+          continue;
+        
+        //Record the corrsponding arguments in caller since the subview will be
+        //replaced by the new callee arguments next
+        auto callerMem = caller.getOperand(arg.getArgNumber());
+
+        //Change the memref of callee to the type of corrsponding subview
+        //And replace the use of subview by the arguments 
+        inTypes[arg.getArgNumber()] = subview.getType();
+        arg.setType(subview.getType());
+        subview.replaceAllUsesWith(arg);
+        
+        //Move the subview before the caller function
+        subview.getSourceMutable().assign(callerMem);
+        subview->remove();
+        builder.setInsertionPoint(caller);
+        builder.insert(subview);
+
+        //Change the arguments of the caller function
+        caller.setOperand(arg.getArgNumber(), subview);
+      }
+
+      // Update the callee function type.
+      calleeFuncOp.setType(builder.getFunctionType(inTypes, outTypes));
+
     });
-    if (flag == WalkResult::interrupt())
-      return false;
-    
+
     return true;
   }
 
