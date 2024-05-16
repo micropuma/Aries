@@ -37,12 +37,20 @@ def AriesLoopSimplify : Pass<"aries-loop-simplify"> {
 def AriesMemSubview : Pass<"aries-memref-subview"> {
   let summary = "Extract Memref subview for each operands";
   let description = [{
-    This pass extract the memref subview for every operands in each function call.
-    The function call is finally simplified with only memref arguments without 
-    other indeices.
+    This pass extract the memref subview for every memref operands in the callee
+    function call.
   }];
   let constructor = "mlir::aries::createAriesMemSubviewPass()";
   let dependentDialects = ["mlir::memref::MemRefDialect"];
+}
+
+def AriesMemHoist : Pass<"aries-mem-hoist"> {
+  let summary = "Hoist the memref subview to the top function";
+  let description = [{
+    This pass hoists the memref subview to the top function and erase non-mem
+    arguments of the kernel function.
+  }];
+  let constructor = "mlir::aries::createAriesMemHoistPass()";
 }
 
 def AriesFuncUnroll : Pass<"aries-func-unroll"> {

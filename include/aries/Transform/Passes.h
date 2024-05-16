@@ -30,6 +30,7 @@ std::unique_ptr<Pass> createAriesFuncExtractPass();
 std::unique_ptr<Pass> createAriesLoopSimplifyPass();
 std::unique_ptr<Pass> createAriesMemSubviewPass();
 std::unique_ptr<Pass> createAriesFuncUnrollPass();
+std::unique_ptr<Pass> createAriesMemHoistPass();
 
 void registerAriesPasses();
 void registerAriesPassPipeline();

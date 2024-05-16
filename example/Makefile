@@ -28,6 +28,13 @@ unrollfunc: 4_gemm.unrollfunc.mlir
 			-aries-func-unroll \
 			-canonicalize -cse
 
+hoistmem: 5_gemm.hoistmem.mlir
+5_gemm.hoistmem.mlir: 3_gemm.memsubview.mlir
+	aries-opt -o $@ $< \
+			-mlir-print-ir-after-failure \
+			-aries-mem-hoist \
+			-canonicalize -cse
+
 tadd:0_add.tiled.mlir
 0_add.tiled.mlir: add.mlir
 	aries-opt -o $@ $< \

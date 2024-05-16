@@ -19,6 +19,7 @@ void mlir::aries::registerAriesPassPipeline() {
     pm.addPass(createAriesLoopSimplifyPass());
     pm.addPass(createAriesMemSubviewPass());
     pm.addPass(createAriesFuncUnrollPass());
+    pm.addPass(createAriesMemHoistPass());
   });
 }
 
