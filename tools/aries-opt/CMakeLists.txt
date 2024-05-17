@@ -7,6 +7,7 @@ set (LIBS
     MLIRAriesPasses
     MLIROptLib
     MLIRPass
+    MLIRADF
 )
 
 add_llvm_executable(aries-opt aries-opt.cpp)
