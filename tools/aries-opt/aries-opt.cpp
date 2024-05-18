@@ -9,8 +9,8 @@
 
 int main(int argc, char **argv) {
     mlir::DialectRegistry registry;
-    registry.insert<mlir::aries::adf::ADFDialect>();
     mlir::registerAllDialects(registry);
+    registry.insert<mlir::aries::adf::ADFDialect>();
     mlir::registerAllPasses();
 
     mlir::aries::registerAriesPasses();
