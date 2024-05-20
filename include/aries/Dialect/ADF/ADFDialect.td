@@ -13,6 +13,8 @@ def ADF_Dialect : Dialect {
   }];
 
   let cppNamespace = "::mlir::aries::adf";
+
+  let useDefaultTypePrinterParser = 1;
 }
 
 #endif  // ARIES_DIALECT_ARIES_ADF_DIALECT_TD
