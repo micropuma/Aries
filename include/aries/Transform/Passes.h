@@ -29,8 +29,9 @@ std::unique_ptr<Pass> createAriesTilingPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesFuncExtractPass();
 std::unique_ptr<Pass> createAriesLoopSimplifyPass();
 std::unique_ptr<Pass> createAriesMemSubviewPass();
-std::unique_ptr<Pass> createAriesFuncUnrollPass();
 std::unique_ptr<Pass> createAriesMemHoistPass();
+std::unique_ptr<Pass> createAriesMemCopyPass();
+std::unique_ptr<Pass> createAriesFuncUnrollPass();
 
 void registerAriesPasses();
 void registerAriesPassPipeline();

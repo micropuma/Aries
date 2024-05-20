@@ -34,7 +34,7 @@ def AriesLoopSimplify : Pass<"aries-loop-simplify"> {
   let constructor = "mlir::aries::createAriesLoopSimplifyPass()";
 }
 
-def AriesMemSubview : Pass<"aries-memref-subview"> {
+def AriesMemSubview : Pass<"aries-mem-subview"> {
   let summary = "Extract Memref subview for each operands";
   let description = [{
     This pass extract the memref subview for every memref operands in the callee
@@ -51,6 +51,16 @@ def AriesMemHoist : Pass<"aries-mem-hoist"> {
     arguments of the kernel function.
   }];
   let constructor = "mlir::aries::createAriesMemHoistPass()";
+}
+
+def AriesMemCopy : Pass<"aries-mem-copy"> {
+  let summary = "Allocate new mem and copy the subview to it";
+  let description = [{
+    This pass allocates new buffers which the memref subview is copied to. 
+    This pass aims to represents the dma operation from other memory hierarchy 
+    to the local memory of a kernel.
+  }];
+  let constructor = "mlir::aries::createAriesMemCopyPass()";
 }
 
 def AriesFuncUnroll : Pass<"aries-func-unroll"> {
