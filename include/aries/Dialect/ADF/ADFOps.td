@@ -18,16 +18,45 @@ def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
     the other defined operations in ADF dialect including the GraphOp as well. 
 
     ```mlir
-    adf.graph("name") {
+    adf.graph(input_plio0,input_plio1,output_plio0) attributes {name = "name"} {
       adf_operations
     }
     ```
   }];
 
-  let arguments = (ins StrAttr:$name);
+  let arguments = (ins Variadic<Index>:$input_ports);
   let regions = (region AnyRegion:$region);
-  let assemblyFormat = "`(` $name `)` regions attr-dict";
+  let results = (outs Variadic<Index>:$output_ports);
+  let assemblyFormat = [{
+    `(` $input_ports `)` regions attr-dict `:` type($output_ports)
+    }];
 }
+
+def KernelOp : ADF_Op<"kernel", [Pure]> {
+  let summary = "ADF Dialcet CallOp";
+  let description = [{
+    This operation is the Callop function in ADF dialect which creates and calls
+    the single kernel runs on an AIE. It takes the arguments with KernelArgType
+    as inputs and will also return the KernelArgType outputs. Thus the direction
+    information (in or out or inout) can be attached.
+
+    ```mlir
+      %out = adf.kernel @kernel(%0, %1) :
+              (memref<32x32xf32>, !adf.cascade) -> !ADF.cascade
+    ```
+  }];
+
+  let arguments = (ins FlatSymbolRefAttr:$callee, 
+                  Variadic<KernelArgType>:$kernel_inputs);
+  let results = (outs Variadic<KernelArgType>:$kernel_outputs);
+
+  let assemblyFormat = [{
+    $callee `(` $kernel_inputs `)` attr-dict 
+    `:` functional-type($kernel_inputs, $kernel_outputs)
+  }];
+}
+
+
 
 
 #endif  // ARIES_DIALECT_ARIES_ADF_OPS_TD
