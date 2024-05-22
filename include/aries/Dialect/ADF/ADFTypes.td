@@ -4,6 +4,7 @@
 include "ADFDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinTypes.td"
+include "mlir/IR/CommonTypeConstraints.td"
 
 
 // Base class for ADF types 
@@ -11,9 +12,19 @@ class ADF_Type<string name, string typeMnemonic> : TypeDef<ADF_Dialect, name> {
   let mnemonic = typeMnemonic;
 }
 
-def InterfaceType : ADF_Type<"Interface", "interface"> {
-  let summary = "interface type";
+def PortType : ADF_Type<"Port", "port"> {
+  let summary = "port type";
 }
+
+def PLIOType : ADF_Type<"PLIO", "plio"> {
+  let summary = "plio type";
+}
+
+def GMIOType : ADF_Type<"GMIO", "gmio"> {
+  let summary = "gmio type";
+}
+
+def InterfaceType : AnyTypeOf<[PLIOType, GMIOType, PortType]>;
 
 def StreamType : ADF_Type<"Stream", "stream"> {
   let summary = "stream type";
@@ -26,7 +37,7 @@ def CascadeType : ADF_Type<"Cascade", "cascade"> {
 def AnyScalarType : AnyTypeOf<[Index, AnySignlessInteger, AnyFloat]>;
 
 def KernelArgType : AnyTypeOf<[StreamType, CascadeType, 
-                              Builtin_MemRef, AnyScalarType]>;
+                              AnyMemRef, AnyScalarType]>;
 
 
 #endif  // ARIES_DIALECT_ARIES_ADF_TYPES_TD

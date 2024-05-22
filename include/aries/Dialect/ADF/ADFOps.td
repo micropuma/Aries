@@ -5,7 +5,9 @@ include "ADFDialect.td"
 include "ADFTypes.td"
 
 include "mlir/IR/OpBase.td"
+include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Interfaces/CallInterfaces.td"
 
 // Base class for ADF operations 
 class ADF_Op<string mnemonic, list<Trait> traits = []> :
@@ -24,15 +26,16 @@ def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
     ```
   }];
 
-  let arguments = (ins Variadic<Index>:$input_ports);
+  let arguments = (ins Variadic<InterfaceType>:$input_ports);
   let regions = (region AnyRegion:$region);
-  let results = (outs Variadic<Index>:$output_ports);
+  let results = (outs Variadic<InterfaceType>:$output_ports);
   let assemblyFormat = [{
     `(` $input_ports `)` regions attr-dict `:` type($output_ports)
     }];
 }
 
-def KernelOp : ADF_Op<"kernel", [Pure]> {
+def KernelOp : ADF_Op<"kernel", [CallOpInterface,
+     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "ADF Dialcet CallOp";
   let description = [{
     This operation is the Callop function in ADF dialect which creates and calls
@@ -42,7 +45,7 @@ def KernelOp : ADF_Op<"kernel", [Pure]> {
 
     ```mlir
       %out = adf.kernel @kernel(%0, %1) :
-              (memref<32x32xf32>, !adf.cascade) -> !ADF.cascade
+              (memref<32x32xf32>, !cascade) -> !cascade
     ```
   }];
 
@@ -53,6 +56,17 @@ def KernelOp : ADF_Op<"kernel", [Pure]> {
   let assemblyFormat = [{
     $callee `(` $kernel_inputs `)` attr-dict 
     `:` functional-type($kernel_inputs, $kernel_outputs)
+  }];
+}
+
+def PLIOOp : ADF_Op<"plio", [Pure]> {
+  let summary = "PLIO port creation";
+  let description = [{
+    This operation creates a plio port with port width and direction.
+
+    ```mlir
+      %plio0 = adf.plio(0,128) : !plio<IN,128>
+    ```
   }];
 }
 
