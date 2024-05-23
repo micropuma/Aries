@@ -6,10 +6,9 @@ add_mlir_dialect_library(MLIRADF
   ${PROJECT_SOURCE_DIR}/include/aries
 
   DEPENDS
-  MLIRADFOpsIncGen
-  MLIRADFTypesIncGen
-  MLIRADFAttrsIncGen
   MLIRADFEnumsIncGen
+  MLIRADFAttrsIncGen
 
 	LINK_LIBS PUBLIC
+  MLIRIR
 	)

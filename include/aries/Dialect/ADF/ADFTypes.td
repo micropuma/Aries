@@ -2,19 +2,22 @@
 #define ARIES_DIALECT_ARIES_ADF_TYPES_TD
 
 include "ADFDialect.td"
-include "mlir/IR/BuiltinTypes.td"
-include "mlir/IR/CommonTypeConstraints.td"
+include "ADFAttrs.td"
 
+// Base class for ADF types 
+class ADF_Type<string name, string typeMnemonic> : TypeDef<ADF_Dialect, name> {
+  let mnemonic = typeMnemonic;
+}
 
 def PortType : ADF_Type<"Port", "port"> {
   let summary = "port type";
-  let parameters = (ins "Attribute":$dir);
+  let parameters = (ins PortDirParam:$dir);
   let assemblyFormat = "`<` $dir `>` ";
 }
 
 def PLIOType : ADF_Type<"PLIO", "plio"> {
   let summary = "plio type";
-  let parameters = (ins "Attribute":$dir, AnySignlessInteger:$width);
+  let parameters = (ins "Attribute":$dir, "int":$width);
   let assemblyFormat = "`<` $dir `,` $width `>`";
 }
 
@@ -35,7 +38,7 @@ def CascadeType : ADF_Type<"Cascade", "cascade"> {
 def AnyScalarType : AnyTypeOf<[Index, AnySignlessInteger, AnyFloat]>;
 
 def KernelArgType : AnyTypeOf<[StreamType, CascadeType, 
-                              AnyMemRef, AnyScalarType]>;
+                              AnyMemRef]>;
 
 
 #endif  // ARIES_DIALECT_ARIES_ADF_TYPES_TD

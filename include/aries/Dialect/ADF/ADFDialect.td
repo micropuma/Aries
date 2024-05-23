@@ -3,6 +3,12 @@
 
 include "mlir/IR/OpBase.td"
 include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/EnumAttr.td"
+include "mlir/IR/BuiltinTypes.td"
+include "mlir/IR/CommonTypeConstraints.td"
+include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Interfaces/CallInterfaces.td"
 
 def ADF_Dialect : Dialect {
   let name = "adf";
@@ -16,16 +22,6 @@ def ADF_Dialect : Dialect {
   let cppNamespace = "::mlir::aries::adf";
 
   let useDefaultTypePrinterParser = 1;
-}
-
-
-// Base class for ADF operations 
-class ADF_Op<string mnemonic, list<Trait> traits = []> :
-    Op<ADF_Dialect, mnemonic, traits>;
-
-// Base class for ADF types 
-class ADF_Type<string name, string typeMnemonic> : TypeDef<ADF_Dialect, name> {
-  let mnemonic = typeMnemonic;
 }
 
 #endif  // ARIES_DIALECT_ARIES_ADF_DIALECT_TD
