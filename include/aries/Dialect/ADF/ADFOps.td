@@ -4,9 +4,6 @@
 include "ADFDialect.td"
 include "ADFTypes.td"
 
-include "mlir/IR/OpBase.td"
-include "mlir/Interfaces/SideEffectInterfaces.td"
-
 // Base class for ADF operations 
 class ADF_Op<string mnemonic, list<Trait> traits = []> :
     Op<ADF_Dialect, mnemonic, traits>;
@@ -24,36 +21,52 @@ def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
     ```
   }];
 
-  let arguments = (ins Variadic<Index>:$input_ports);
+  let arguments = (ins Variadic<InterfaceType>:$input_ports);
   let regions = (region AnyRegion:$region);
-  let results = (outs Variadic<Index>:$output_ports);
-  let assemblyFormat = [{
-    `(` $input_ports `)` regions attr-dict `:` type($output_ports)
-    }];
+  let results = (outs Variadic<InterfaceType>:$output_ports);
+  // let assemblyFormat = [{
+  //   `(` $input_ports `)` regions attr-dict `:` type($output_ports)
+  //   }];
 }
 
-def KernelOp : ADF_Op<"kernel", [Pure]> {
-  let summary = "ADF Dialcet CallOp";
+// def KernelOp : ADF_Op<"kernel", [CallOpInterface,
+//      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+//   let summary = "ADF Dialcet CallOp";
+//   let description = [{
+//     This operation is the Callop function in ADF dialect which creates and calls
+//     the single kernel runs on an AIE. It takes the arguments with KernelArgType
+//     as inputs and will also return the KernelArgType outputs. Thus the direction
+//     information (in or out or inout) can be attached.
+
+//     ```mlir
+//       %out = adf.kernel @kernel(%0, %1) :
+//               (memref<32x32xf32>, !cascade) -> !cascade
+//     ```
+//   }];
+
+//   let arguments = (ins FlatSymbolRefAttr:$callee, 
+//                   Variadic<KernelArgType>:$kernel_inputs);
+//   let results = (outs Variadic<KernelArgType>:$kernel_outputs);
+
+//   // let assemblyFormat = [{
+//   //   $callee `(` $kernel_inputs `)` attr-dict 
+//   //   `:` functional-type($kernel_inputs, $kernel_outputs)
+//   // }];
+// }
+
+def PLIOOp : ADF_Op<"plio", [Pure]> {
+  let summary = "PLIO port creation";
   let description = [{
-    This operation is the Callop function in ADF dialect which creates and calls
-    the single kernel runs on an AIE. It takes the arguments with KernelArgType
-    as inputs and will also return the KernelArgType outputs. Thus the direction
-    information (in or out or inout) can be attached.
+    This operation creates a plio port with port width and direction.
 
     ```mlir
-      %out = adf.kernel @kernel(%0, %1) :
-              (memref<32x32xf32>, !adf.cascade) -> !ADF.cascade
+      %plio0 = adf.plio() : !plio<"In",128> 
     ```
   }];
 
-  let arguments = (ins FlatSymbolRefAttr:$callee, 
-                  Variadic<KernelArgType>:$kernel_inputs);
-  let results = (outs Variadic<KernelArgType>:$kernel_outputs);
+  let results = (outs PLIOType:$plio);
+  // let assemblyFormat = "attr-dict `:` type($plio)";
 
-  let assemblyFormat = [{
-    $callee `(` $kernel_inputs `)` attr-dict 
-    `:` functional-type($kernel_inputs, $kernel_outputs)
-  }];
 }
 
 

@@ -28,6 +28,9 @@ include(AddLLVM)
 include(AddMLIR)
 include(HandleLLVMOptions)
 
+add_custom_target(aries-headers)
+set_target_properties(aries-headers PROPERTIES FOLDER "Misc")
+
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR})
