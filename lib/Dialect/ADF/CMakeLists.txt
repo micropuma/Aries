@@ -7,6 +7,9 @@ add_mlir_dialect_library(MLIRADF
 
   DEPENDS
   MLIRADFOpsIncGen
+  MLIRADFTypesIncGen
+  MLIRADFAttrsIncGen
+  MLIRADFEnumsIncGen
 
 	LINK_LIBS PUBLIC
 	)

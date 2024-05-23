@@ -2,6 +2,7 @@
 #define ARIES_DIALECT_ARIES_ADF_OPS_TD
 
 include "ADFDialect.td"
+include "ADFAttrs.td"
 include "ADFTypes.td"
 
 include "mlir/IR/OpBase.td"
@@ -9,9 +10,6 @@ include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 
-// Base class for ADF operations 
-class ADF_Op<string mnemonic, list<Trait> traits = []> :
-    Op<ADF_Dialect, mnemonic, traits>;
 
 def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
   let summary = "An operation presenting an ADF graph";
@@ -29,9 +27,9 @@ def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
   let arguments = (ins Variadic<InterfaceType>:$input_ports);
   let regions = (region AnyRegion:$region);
   let results = (outs Variadic<InterfaceType>:$output_ports);
-  let assemblyFormat = [{
-    `(` $input_ports `)` regions attr-dict `:` type($output_ports)
-    }];
+  // let assemblyFormat = [{
+  //   `(` $input_ports `)` regions attr-dict `:` type($output_ports)
+  //   }];
 }
 
 def KernelOp : ADF_Op<"kernel", [CallOpInterface,
@@ -53,10 +51,10 @@ def KernelOp : ADF_Op<"kernel", [CallOpInterface,
                   Variadic<KernelArgType>:$kernel_inputs);
   let results = (outs Variadic<KernelArgType>:$kernel_outputs);
 
-  let assemblyFormat = [{
-    $callee `(` $kernel_inputs `)` attr-dict 
-    `:` functional-type($kernel_inputs, $kernel_outputs)
-  }];
+  // let assemblyFormat = [{
+  //   $callee `(` $kernel_inputs `)` attr-dict 
+  //   `:` functional-type($kernel_inputs, $kernel_outputs)
+  // }];
 }
 
 def PLIOOp : ADF_Op<"plio", [Pure]> {
@@ -65,9 +63,13 @@ def PLIOOp : ADF_Op<"plio", [Pure]> {
     This operation creates a plio port with port width and direction.
 
     ```mlir
-      %plio0 = adf.plio(0,128) : !plio<IN,128>
+      %plio0 = adf.plio() : !plio<"In",128> 
     ```
   }];
+
+  let results = (outs PLIOType:$plio);
+  // let assemblyFormat = "attr-dict `:` type($plio)";
+
 }
 
 

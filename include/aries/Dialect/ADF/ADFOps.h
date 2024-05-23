@@ -3,6 +3,7 @@
 
 #include "aries/Dialect/ADF/ADFDialect.h"
 #include "aries/Dialect/ADF/ADFTypes.h"
+#include "aries/Dialect/ADF/ADFAttrs.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/IR/BuiltinOps.h"     
 #include "mlir/IR/BuiltinTypes.h"   

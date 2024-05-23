@@ -2,22 +2,20 @@
 #define ARIES_DIALECT_ARIES_ADF_TYPES_TD
 
 include "ADFDialect.td"
-include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinTypes.td"
 include "mlir/IR/CommonTypeConstraints.td"
 
 
-// Base class for ADF types 
-class ADF_Type<string name, string typeMnemonic> : TypeDef<ADF_Dialect, name> {
-  let mnemonic = typeMnemonic;
-}
-
 def PortType : ADF_Type<"Port", "port"> {
   let summary = "port type";
+  let parameters = (ins "Attribute":$dir);
+  let assemblyFormat = "`<` $dir `>` ";
 }
 
 def PLIOType : ADF_Type<"PLIO", "plio"> {
   let summary = "plio type";
+  let parameters = (ins "Attribute":$dir, AnySignlessInteger:$width);
+  let assemblyFormat = "`<` $dir `,` $width `>`";
 }
 
 def GMIOType : ADF_Type<"GMIO", "gmio"> {
