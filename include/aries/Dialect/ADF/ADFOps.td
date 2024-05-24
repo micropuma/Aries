@@ -212,5 +212,32 @@ def ConnectOp : ADF_Op<"connect", []> {
 
 }
 
+def IOPushOp : ADF_Op<"io.push", [AttrSizedOperandSegments]> {
+  let summary = "Push the externel memory to a graph io";
+  let description = [{
+    This operation creates an operation to connect the externel memory 
+    (out of aie) with the graph io.
+
+    It can take multiple memories and ports as inputs to represent an all-to-all 
+    broadcast. This could be used for packet switch (multiple memory reuse one
+    io port) or broadcast(one memory broadcst to multiple io ports). 
+
+    ```mlir
+      %mem0 = memref.alloc() : memref<64x64xf32>
+      %mem1 = memref.alloc() : memref<64x64xf32>
+      %mem2 = memref.alloc() : memref<64x64xf32>
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In,128> 
+      adf.io.push(%mem0, %mem1, %mem2 : %plio0) : (memref<64x64xf32>, 
+      memref<64x64xf32>, memref<64x64xf32> : !adf.plio<In,128>)
+    ```
+  }];
+  let arguments = (ins Variadic<AnyMemRef>:$src, Variadic<GraphIOType>:$dst);
+  let assemblyFormat = [{ 
+        `(` $src `:` $dst `)` attr-dict 
+                          `:` `(` type($src) `:` type($dst) `)`
+  }]; 
+
+}
+
 
 #endif  // ARIES_DIALECT_ARIES_ADF_OPS_TD
