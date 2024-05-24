@@ -7,6 +7,8 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/Pass/Pass.h"
+#include "aries/Dialect/ADF/ADFDialect.h"
+
 #include <memory>
 #include <vector>
 
@@ -32,6 +34,7 @@ std::unique_ptr<Pass> createAriesMemSubviewPass();
 std::unique_ptr<Pass> createAriesMemHoistPass();
 std::unique_ptr<Pass> createAriesMemCopyPass();
 std::unique_ptr<Pass> createAriesFuncUnrollPass();
+std::unique_ptr<Pass> createAriesADFTestPass();
 
 void registerAriesPasses();
 void registerAriesPassPipeline();
