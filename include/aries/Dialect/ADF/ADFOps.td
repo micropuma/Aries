@@ -23,9 +23,9 @@ def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
     ```
   }];
 
-  let arguments = (ins Variadic<InterfaceType>:$input_ports);
+  let arguments = (ins Variadic<GraphIOType>:$input_ports);
   let regions = (region AnyRegion:$region);
-  let results = (outs Variadic<InterfaceType>:$output_ports);
+  let results = (outs Variadic<GraphIOType>:$output_ports);
   let assemblyFormat = [{
     `(` $input_ports `)` regions attr-dict `:` functional-type($input_ports, results)
     }];
@@ -35,8 +35,8 @@ def KernelOp : ADF_Op<"kernel", [Pure]> {
   let summary = "ADF Dialcet CallOp";
   let description = [{
     This operation is the Callop function in ADF dialect which creates and calls
-    the single kernel runs on an AIE. It takes the arguments with KernelArgType
-    as inputs and will also return the KernelArgType outputs. Thus the direction
+    the single kernel runs on an AIE. It takes the arguments with KernelIOType
+    as inputs and will also return the KernelIOType outputs. Thus the direction
     information (in or out or inout) can be attached.
 
     ```mlir
@@ -46,8 +46,8 @@ def KernelOp : ADF_Op<"kernel", [Pure]> {
   }];
 
   let arguments = (ins FlatSymbolRefAttr:$callee, 
-                  Variadic<KernelArgType>:$kernel_inputs);
-  let results = (outs Variadic<KernelArgType>:$kernel_outputs);
+                  Variadic<KernelIOType>:$kernel_inputs);
+  let results = (outs Variadic<KernelIOType>:$kernel_outputs);
 
   let assemblyFormat = [{
     $callee `(` $kernel_inputs `)` attr-dict 
@@ -57,7 +57,7 @@ def KernelOp : ADF_Op<"kernel", [Pure]> {
 
 
 // -------------
-// Operations to create InterfaceType
+// Operations to create GraphIOType
 // -------------
 
 def PORTOp : ADF_Op<"port.create", []> {
@@ -105,8 +105,27 @@ def GMIOOp : ADF_Op<"gmio.create", []> {
 }
 
 
+//This may replace the seperated operations above PORTOp, PLIOOp, GMIOOp
+def CreateGraphIOOp : ADF_Op<"graph.io", []> {
+  let summary = "graph input/output creation";
+  let description = [{
+    This operation creates either PLIO, GMIO or Port.
+
+    ```mlir
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In,128> 
+      %gmio0 = adf.graph.io(GMIO) : !adf.gmio<In,128>
+      %port0 = adf.graph.io(PORT) : !adf.port<In>
+    ```
+  }];
+
+  let arguments = (ins GraphIOName: $name);
+  let results = (outs GraphIOType:$graphio);
+  let assemblyFormat = " `(` $name `)` attr-dict `:` type(results)";
+}
+
+
 // -------------
-// Operations to create KernelArgType
+// Operations to create KernelIOType
 // -------------
 
 def BufferOp : ADF_Op<"buffer.create", []> {
@@ -154,14 +173,32 @@ def CascadeOp : ADF_Op<"cascade.create", []> {
 
 }
 
+//This may replace the seperated operations above BufferOp, StreamOp, CascadeOp
+def CreateKernelIOOp : ADF_Op<"kernel.io", []> {
+  let summary = "kernel input/output creation";
+  let description = [{
+    This operation creates either buffer, stream or cascade.
+
+    ```mlir
+      %buffer0  = adf.kernel.io() : memref<32x32xi32>
+      %stream0  = adf.kernel.io() : !adf.stream
+      %cascade0 = adf.kernel.io() : !adf.cascade
+    ```
+  }];
+
+  let arguments = (ins KernelIOName: $name);
+  let results = (outs KernelIOType:$kernelarg);
+  let assemblyFormat = " `(` $name `)` attr-dict `:` type(results)";
+}
+
 // -------------
-// Operations for connect the ADF Graph
+// Operations for connecting the ADF Graph
 // -------------
 
 def ConnectOp : ADF_Op<"connect", []> {
-  let summary = "Connect interfaces and kernel arguments";
+  let summary = "Connect graph input/output and kernel arguments";
   let description = [{
-    This operation builds up a connection between interfaces and kernel
+    This operation builds up a connection between graph input/output and kernel
     arguments. This should be translate to the connect api in adf C/C++.
 
     ```mlir

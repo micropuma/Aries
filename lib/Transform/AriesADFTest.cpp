@@ -22,8 +22,9 @@ public:
 
 private:
   bool ADFTest (ModuleOp mod) {
-    PLIOCreate(mod);
-    
+    //PLIOCreate(mod);
+    //GraphIOCreate(mod);
+    KernelIOCreate(mod);
     return true;
   }
 
@@ -33,6 +34,23 @@ private:
     auto plioOp = builder.create<PLIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), mlir::aries::adf::PortDir::In, (unsigned)mlir::aries::adf::PortWidth::Width128));
     auto type = plioOp.getType();
     llvm::outs() << "Type is :" << type << "\n" ;
+    return true;
+  }
+
+  bool GraphIOCreate(ModuleOp mod){
+    auto builder = OpBuilder(mod);
+    builder.setInsertionPointToStart(mod.getBody());
+    auto plioOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), mlir::aries::adf::PortDir::In, (unsigned)mlir::aries::adf::PortWidth::Width128), mlir::aries::adf::GraphIOName::PLIO);
+    auto gmioOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),GMIOType::get(builder.getContext(), mlir::aries::adf::PortDir::In, (unsigned)mlir::aries::adf::PortWidth::Width128), mlir::aries::adf::GraphIOName::GMIO);
+    auto portOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PortType::get(builder.getContext(), mlir::aries::adf::PortDir::In)                                                 , mlir::aries::adf::GraphIOName::PORT);
+    return true;
+  }
+
+  bool KernelIOCreate(ModuleOp mod){
+    auto builder = OpBuilder(mod);
+    builder.setInsertionPointToStart(mod.getBody());
+    auto streamOp = builder.create<CreateKernelIOOp>(builder.getUnknownLoc(),StreamType::get(builder.getContext()), mlir::aries::adf::KernelIOName::Stream);
+    auto cascadeOp = builder.create<CreateKernelIOOp>(builder.getUnknownLoc(),CascadeType::get(builder.getContext()), mlir::aries::adf::KernelIOName::Cascade);
     return true;
   }
 
