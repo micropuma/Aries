@@ -37,23 +37,27 @@ unrollfunc: 6_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-func-unroll
 
+
+add:0_add.mlir
+0_add.mlir: add.mlir
+	aries-opt -o $@ $< \
+			-aries-tiling="tile-sizes=32" \
+			-aries-func-extract \
+			-aries-loop-simplify \
+			-aries-mem-subview \
+			-aries-mem-hoist \
+			-aries-mem-copy
+
 test: test_out.mlir
 test_out.mlir: test_in.mlir
 	aries-opt -o $@ $< \
 		-aries-adf-test
 
-tadd:0_add.tiled.mlir
-0_add.tiled.mlir: add.mlir
-	aries-opt -o $@ $< \
-			-aries-tiling="tile-sizes=32"
-
-exadd: 1_add.exfunc.mlir
-1_add.exfunc.mlir: 0_add.tiled.mlir
-	aries-opt -o $@ $< \
-			-aries-func-extract
-
 clean_gemm:
 	rm -rf *_gemm*.mlir
+
+clean_add:
+	rm -rf *_add*.mlir
 
 clean_test:
 	rm -rf test_out.mlir
