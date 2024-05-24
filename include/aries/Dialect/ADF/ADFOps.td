@@ -15,61 +15,143 @@ def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
     the other defined operations in ADF dialect including the GraphOp as well. 
 
     ```mlir
-    adf.graph(input_plio0,input_plio1,output_plio0) attributes {name = "name"} {
-      adf_operations
-    }
+   %plio_in = adf.plio.create() : !adf.plio<In, 128>
+    %gmio_in = adf.gmio.create() : !adf.gmio<In, 128>
+    %gmio_out0,%gmio_out1 = adf.graph(%plio_in,%gmio_in){
+    
+    } : (!adf.plio<In, 128>, !adf.gmio<In, 128>) -> (!adf.gmio<Out, 128>,!adf.gmio<Out, 128>)
     ```
   }];
 
   let arguments = (ins Variadic<InterfaceType>:$input_ports);
   let regions = (region AnyRegion:$region);
   let results = (outs Variadic<InterfaceType>:$output_ports);
-  // let assemblyFormat = [{
-  //   `(` $input_ports `)` regions attr-dict `:` type($output_ports)
-  //   }];
+  let assemblyFormat = [{
+    `(` $input_ports `)` regions attr-dict `:` functional-type($input_ports, results)
+    }];
 }
 
-// def KernelOp : ADF_Op<"kernel", [CallOpInterface,
-//      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-//   let summary = "ADF Dialcet CallOp";
-//   let description = [{
-//     This operation is the Callop function in ADF dialect which creates and calls
-//     the single kernel runs on an AIE. It takes the arguments with KernelArgType
-//     as inputs and will also return the KernelArgType outputs. Thus the direction
-//     information (in or out or inout) can be attached.
+def KernelOp : ADF_Op<"kernel", [Pure]> {
+  let summary = "ADF Dialcet CallOp";
+  let description = [{
+    This operation is the Callop function in ADF dialect which creates and calls
+    the single kernel runs on an AIE. It takes the arguments with KernelArgType
+    as inputs and will also return the KernelArgType outputs. Thus the direction
+    information (in or out or inout) can be attached.
 
-//     ```mlir
-//       %out = adf.kernel @kernel(%0, %1) :
-//               (memref<32x32xf32>, !cascade) -> !cascade
-//     ```
-//   }];
+    ```mlir
+      %out = adf.kernel @kernel(%0, %1) :
+              (memref<32x32xf32>, !cascade) -> !cascade
+    ```
+  }];
 
-//   let arguments = (ins FlatSymbolRefAttr:$callee, 
-//                   Variadic<KernelArgType>:$kernel_inputs);
-//   let results = (outs Variadic<KernelArgType>:$kernel_outputs);
+  let arguments = (ins FlatSymbolRefAttr:$callee, 
+                  Variadic<KernelArgType>:$kernel_inputs);
+  let results = (outs Variadic<KernelArgType>:$kernel_outputs);
 
-//   // let assemblyFormat = [{
-//   //   $callee `(` $kernel_inputs `)` attr-dict 
-//   //   `:` functional-type($kernel_inputs, $kernel_outputs)
-//   // }];
-// }
+  let assemblyFormat = [{
+    $callee `(` $kernel_inputs `)` attr-dict 
+    `:` functional-type($kernel_inputs, results)
+  }];
+}
 
-def PLIOOp : ADF_Op<"plio", [Pure]> {
+
+// -------------
+// Operations to create InterfaceType
+// -------------
+
+def PORTOp : ADF_Op<"port.create", []> {
+  let summary = "General port creation";
+  let description = [{
+    This operation creates a port with direction. This will be
+    converted to PLIO or GMIO or as the subgraph in/output.
+
+    ```mlir
+      %port0 = adf.port.create() : !adf.port<In>
+    ```
+  }];
+
+  let results = (outs GMIOType:$port);
+  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
+}
+
+def PLIOOp : ADF_Op<"plio.create", []> {
   let summary = "PLIO port creation";
   let description = [{
     This operation creates a plio port with port width and direction.
 
     ```mlir
-      %plio0 = adf.plio() : !plio<"In",128> 
+      %plio0 = adf.plio.create() : !adf.plio<In,128> 
     ```
   }];
 
   let results = (outs PLIOType:$plio);
-  // let assemblyFormat = "attr-dict `:` type($plio)";
+  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
 
 }
 
+def GMIOOp : ADF_Op<"gmio.create", []> {
+  let summary = "GMIO port creation";
+  let description = [{
+    This operation creates a gmio port with port width and direction.
+
+    ```mlir
+      %gmio0 = adf.gmio.create() : !adf.gmio<In,128>
+    ```
+  }];
+
+  let results = (outs GMIOType:$gmio);
+  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
+}
 
 
+// -------------
+// Operations to create KernelArgType
+// -------------
+
+def BufferOp : ADF_Op<"buffer.create", []> {
+  let summary = "buffer creation";
+  let description = [{
+    This operation creates a buffer.
+
+    ```mlir
+      %buffer0 = adf.buffer.create() : memref<32x32xi32>
+    ```
+  }];
+
+  let results = (outs AnyMemRef:$buffer);
+  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
+
+}
+
+def StreamOp : ADF_Op<"stream.create", []> {
+  let summary = "stream creation";
+  let description = [{
+    This operation creates a stream.
+
+    ```mlir
+      %stream0 = adf.stream.create() : !adf.stream
+    ```
+  }];
+
+  let results = (outs StreamType:$stream);
+  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
+
+}
+
+def CascadeOp : ADF_Op<"cascade.create", []> {
+  let summary = "cascade creation";
+  let description = [{
+    This operation creates a cascade.
+
+    ```mlir
+      %cascade0 = adf.cascade.create() : !adf.cascade
+    ```
+  }];
+
+  let results = (outs CascadeType:$cascade);
+  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
+
+}
 
 #endif  // ARIES_DIALECT_ARIES_ADF_OPS_TD

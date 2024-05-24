@@ -37,6 +37,11 @@ unrollfunc: 6_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-func-unroll
 
+test: test_out.mlir
+test_out.mlir: test_in.mlir
+	aries-opt -o $@ $< \
+		-aries-adf-test
+
 tadd:0_add.tiled.mlir
 0_add.tiled.mlir: add.mlir
 	aries-opt -o $@ $< \
@@ -49,3 +54,6 @@ exadd: 1_add.exfunc.mlir
 
 clean_gemm:
 	rm -rf *_gemm*.mlir
+
+clean_test:
+	rm -rf test_out.mlir

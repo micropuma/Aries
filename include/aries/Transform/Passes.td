@@ -71,4 +71,10 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
+def AriesADFTest : Pass<"aries-adf-test"> {
+  let summary = "Test ADF Dialect Ops";
+  let constructor = "mlir::aries::createAriesADFTestPass()";
+  let dependentDialects = ["mlir::aries::adf::ADFDialect"];
+}
+
 #endif  // ARIES_TRANSFORM_PASSES_TD
