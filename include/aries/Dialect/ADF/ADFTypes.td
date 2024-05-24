@@ -27,7 +27,7 @@ def GMIOType : ADF_Type<"GMIO", "gmio"> {
   let assemblyFormat = "`<` $dir `,` $width `>`";
 }
 
-def InterfaceType : AnyTypeOf<[PLIOType, GMIOType, PortType]>;
+def GraphIOType : AnyTypeOf<[PLIOType, GMIOType, PortType]>;
 
 def StreamType : ADF_Type<"Stream", "stream"> {
   let summary = "stream type";
@@ -39,8 +39,9 @@ def CascadeType : ADF_Type<"Cascade", "cascade"> {
 
 def AnyScalarType : AnyTypeOf<[Index, AnySignlessInteger, AnyFloat]>;
 
-def KernelArgType : AnyTypeOf<[StreamType, CascadeType,
+def KernelIOType : AnyTypeOf<[StreamType, CascadeType, AnyScalarType,
                               AnyMemRef]>;
 
+def ConnectType : AnyTypeOf<[KernelIOType, GraphIOType]>;
 
 #endif  // ARIES_DIALECT_ARIES_ADF_TYPES_TD

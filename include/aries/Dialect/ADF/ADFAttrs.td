@@ -10,6 +10,13 @@ def DirInout:  I32EnumAttrCase<"Inout", 2>;
 def Width128:  I32EnumAttrCase<"Width128", 128>;
 def Width64:   I32EnumAttrCase<"Width64" , 64>;
 def Width32:   I32EnumAttrCase<"Width32" , 32>;
+def PLIO:      I32EnumAttrCase<"PLIO", 0>;
+def GMIO:      I32EnumAttrCase<"GMIO", 1>;
+def PORT:      I32EnumAttrCase<"PORT", 2>;
+def Buffer:    I32EnumAttrCase<"Buffer", 0>;
+def Stream:    I32EnumAttrCase<"Stream", 1>;
+def Cascade:   I32EnumAttrCase<"Cascade", 2>;
+def Scalar:   I32EnumAttrCase<"Scalar", 3>;
 
 def PortDir: I32EnumAttr<"PortDir", "Direction of the ports",
   [DirIn, DirOut, DirInout]> {
@@ -19,6 +26,16 @@ def PortDirParam: EnumParameter<PortDir>;
 
 def PortWidth: I32EnumAttr<"PortWidth", "Width of the ports",
   [Width128, Width64, Width32]> {
+  let cppNamespace = "::mlir::aries::adf";
+}
+
+def GraphIOName: I32EnumAttr<"GraphIOName", "Names of graph input/output",
+  [PLIO, GMIO, PORT]> {
+  let cppNamespace = "::mlir::aries::adf";
+}
+
+def KernelIOName: I32EnumAttr<"KernelIOName", "Names of kernel input/output",
+  [Buffer, Stream, Cascade, Scalar]> {
   let cppNamespace = "::mlir::aries::adf";
 }
 
