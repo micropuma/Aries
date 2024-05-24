@@ -15,7 +15,7 @@ def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
     the other defined operations in ADF dialect including the GraphOp as well. 
 
     ```mlir
-   %plio_in = adf.plio.create() : !adf.plio<In, 128>
+    %plio_in = adf.plio.create() : !adf.plio<In, 128>
     %gmio_in = adf.gmio.create() : !adf.gmio<In, 128>
     %gmio_out0,%gmio_out1 = adf.graph(%plio_in,%gmio_in){
     
@@ -153,5 +153,27 @@ def CascadeOp : ADF_Op<"cascade.create", []> {
   let assemblyFormat = " `(``)` attr-dict `:` type(results)";
 
 }
+
+// -------------
+// Operations for connect the ADF Graph
+// -------------
+
+def ConnectOp : ADF_Op<"connect", []> {
+  let summary = "Connect interfaces and kernel arguments";
+  let description = [{
+    This operation builds up a connection between interfaces and kernel
+    arguments. This should be translate to the connect api in adf C/C++.
+
+    ```mlir
+      %plio = adf.plio.create() : !adf.plio<In, 128>
+      %buffer0 = adf.buffer.create() : memref<32x32xi32>
+      adf.connect(%plio, %buffer0) : (!adf.plio<In, 128>, memref<32x32xi32>)
+    ```
+  }];
+  let arguments = (ins ConnectType:$src, ConnectType:$dst);
+  let assemblyFormat = " `(` $src `,` $dst `)` attr-dict `:` `(` type($src) `,` type($dst) `)`" ;
+
+}
+
 
 #endif  // ARIES_DIALECT_ARIES_ADF_OPS_TD

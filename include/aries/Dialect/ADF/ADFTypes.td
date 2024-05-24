@@ -39,8 +39,9 @@ def CascadeType : ADF_Type<"Cascade", "cascade"> {
 
 def AnyScalarType : AnyTypeOf<[Index, AnySignlessInteger, AnyFloat]>;
 
-def KernelArgType : AnyTypeOf<[StreamType, CascadeType,
+def KernelArgType : AnyTypeOf<[StreamType, CascadeType, AnyScalarType,
                               AnyMemRef]>;
 
+def ConnectType : AnyTypeOf<[KernelArgType, InterfaceType]>;
 
 #endif  // ARIES_DIALECT_ARIES_ADF_TYPES_TD
