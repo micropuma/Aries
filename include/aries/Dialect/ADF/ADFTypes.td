@@ -17,12 +17,14 @@ def PortType : ADF_Type<"Port", "port"> {
 
 def PLIOType : ADF_Type<"PLIO", "plio"> {
   let summary = "plio type";
-  let parameters = (ins "Attribute":$dir, "int":$width);
+  let parameters = (ins PortDirParam:$dir, "unsigned":$width);
   let assemblyFormat = "`<` $dir `,` $width `>`";
 }
 
 def GMIOType : ADF_Type<"GMIO", "gmio"> {
   let summary = "gmio type";
+  let parameters = (ins PortDirParam:$dir, "unsigned":$width);
+  let assemblyFormat = "`<` $dir `,` $width `>`";
 }
 
 def InterfaceType : AnyTypeOf<[PLIOType, GMIOType, PortType]>;
@@ -37,7 +39,7 @@ def CascadeType : ADF_Type<"Cascade", "cascade"> {
 
 def AnyScalarType : AnyTypeOf<[Index, AnySignlessInteger, AnyFloat]>;
 
-def KernelArgType : AnyTypeOf<[StreamType, CascadeType, 
+def KernelArgType : AnyTypeOf<[StreamType, CascadeType,
                               AnyMemRef]>;
 
 

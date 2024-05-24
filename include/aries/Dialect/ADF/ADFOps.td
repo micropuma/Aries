@@ -8,25 +8,27 @@ include "ADFTypes.td"
 class ADF_Op<string mnemonic, list<Trait> traits = []> :
     Op<ADF_Dialect, mnemonic, traits>;
 
-def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
+def GraphOp : ADF_Op<"graph", []> {
   let summary = "An operation presenting an ADF graph";
   let description = [{
     This is an operation to represent an ADF graph.  This operation includes
     the other defined operations in ADF dialect including the GraphOp as well. 
 
     ```mlir
-    adf.graph(input_plio0,input_plio1,output_plio0) attributes {name = "name"} {
-      adf_operations
-    }
+   %plio_in = adf.plio.create() : !adf.plio<In, 128>
+    %gmio_in = adf.gmio.create() : !adf.gmio<In, 128>
+    %gmio_out0,%gmio_out1 = adf.graph(%plio_in,%gmio_in){
+    
+    } : (!adf.plio<In, 128>, !adf.gmio<In, 128>) -> (!adf.gmio<Out, 128>,!adf.gmio<Out, 128>)
     ```
   }];
 
   let arguments = (ins Variadic<InterfaceType>:$input_ports);
   let regions = (region AnyRegion:$region);
   let results = (outs Variadic<InterfaceType>:$output_ports);
-  // let assemblyFormat = [{
-  //   `(` $input_ports `)` regions attr-dict `:` type($output_ports)
-  //   }];
+  let assemblyFormat = [{
+    `(` $input_ports `)` regions attr-dict `:` functional-type($input_ports, results)
+    }];
 }
 
 // def KernelOp : ADF_Op<"kernel", [CallOpInterface,
@@ -54,22 +56,49 @@ def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
 //   // }];
 // }
 
-def PLIOOp : ADF_Op<"plio", [Pure]> {
+def PORTOp : ADF_Op<"port.create", []> {
+  let summary = "General port creation";
+  let description = [{
+    This operation creates a port with direction. This will be
+    converted to PLIO or GMIO or as the subgraph in/output.
+
+    ```mlir
+      %port0 = adf.port.create() : !adf.port<In>
+    ```
+  }];
+
+  let results = (outs GMIOType:$gmio);
+  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
+}
+
+def PLIOOp : ADF_Op<"plio.create", []> {
   let summary = "PLIO port creation";
   let description = [{
     This operation creates a plio port with port width and direction.
 
     ```mlir
-      %plio0 = adf.plio() : !plio<"In",128> 
+      %plio0 = adf.plio.create() : !adf.plio<In,128> 
     ```
   }];
 
   let results = (outs PLIOType:$plio);
-  // let assemblyFormat = "attr-dict `:` type($plio)";
+  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
 
 }
 
+def GMIOOp : ADF_Op<"gmio.create", []> {
+  let summary = "GMIO port creation";
+  let description = [{
+    This operation creates a gmio port with port width and direction.
 
+    ```mlir
+      %gmio0 = adf.gmio.create() : !adf.gmio<In,128>
+    ```
+  }];
+
+  let results = (outs GMIOType:$gmio);
+  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
+}
 
 
 #endif  // ARIES_DIALECT_ARIES_ADF_OPS_TD
