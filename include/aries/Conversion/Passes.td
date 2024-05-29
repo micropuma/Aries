@@ -1,9 +1,9 @@
-#ifndef ARIES_CONVERSION_LOWERTOADF_LOWERTOADF_TD
-#define ARIES_CONVERSION_LOWERTOADF_LOWERTOADF_TD
+#ifndef ARIES_CONVERSION_PASSES_TD
+#define ARIES_CONVERSION_PASSES_TD
 
 include "mlir/Pass/PassBase.td"
 
-def LowerToADF : Pass<"lower-to-adf"> {
+def AriesLowerToADF : Pass<"aries-lower-to-adf"> {
   let summary = "Lower to adf dialect";
 
   let description = [{
@@ -12,6 +12,7 @@ def LowerToADF : Pass<"lower-to-adf"> {
   let dependentDialects = [
     "mlir::aries::adf::ADFDialect"
   ];
+  let constructor = "mlir::aries::adf::createAriesLowerToADFPass()";
 }
 
-#endif  // ARIES_CONVERSION_LOWERTOADF_LOWERTOADF_TD
+#endif  // ARIES_CONVERSION_PASSES_TD
