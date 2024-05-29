@@ -35,7 +35,8 @@ copymem: 5_gemm.copymem.mlir
 unrollfunc: 6_gemm.unrollfunc.mlir
 6_gemm.unrollfunc.mlir: 5_gemm.copymem.mlir
 	aries-opt -o $@ $< \
-			-aries-func-unroll
+			-aries-func-unroll \
+			-canonicalize -cse
 
 
 add:0_add.mlir
