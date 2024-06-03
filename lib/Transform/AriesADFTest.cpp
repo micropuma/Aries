@@ -26,7 +26,8 @@ private:
     //PLIOCreate(mod);
     //GraphIOCreate(mod);
     //KernelIOCreate(mod);
-    IOPushOpCreate(mod);
+    BufferCreate(mod);
+    //IOPushOpCreate(mod);
     return true;
   }
 
@@ -36,6 +37,16 @@ private:
     auto plioOp = builder.create<PLIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), mlir::aries::adf::PortDir::In, (unsigned)mlir::aries::adf::PortWidth::Width128));
     auto type = plioOp.getType();
     llvm::outs() << "Type is :" << type << "\n" ;
+    return true;
+  }
+
+  bool BufferCreate(ModuleOp mod){
+    auto builder = OpBuilder(mod);
+    builder.setInsertionPointToStart(mod.getBody());
+    //Create source memref
+    mlir::Type elementType = builder.getF32Type();
+    mlir::MemRefType memrefType = mlir::MemRefType::get({64,64}, elementType);
+    auto bufferOp = builder.create<BufferOp>(builder.getUnknownLoc(), memrefType);
     return true;
   }
 

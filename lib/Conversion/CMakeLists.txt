@@ -1,3 +1,5 @@
+get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
+
 add_mlir_library(MLIRAriesLowerToADF
   Passes.cpp
   AriesLowerToADF.cpp
@@ -8,10 +10,8 @@ add_mlir_library(MLIRAriesLowerToADF
   DEPENDS
   MLIRAriesLowerToADFPassIncGen
 
-  LINK_COMPONENTS
-  Core
-
   LINK_LIBS PUBLIC
+  ${conversion_libs}
   MLIRADF
   MLIRIR
   MLIRPass
