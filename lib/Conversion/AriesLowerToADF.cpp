@@ -11,6 +11,17 @@ using namespace adf;
 using namespace mlir::memref;
 using namespace mlir::func;
 
+struct AllocConvert : public OpConversionPattern<AllocOp> {
+  using OpConversionPattern<AllocOp>::OpConversionPattern;
+  LogicalResult matchAndRewrite(
+      AllocOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+      
+      auto newOp = rewriter.replaceOpWithNewOp<BufferOp>(op, op.getType());
+    return success();
+  }
+};
+
 namespace {
 
 struct AriesLowerToADF : public AriesLowerToADFBase<AriesLowerToADF> {
@@ -24,53 +35,32 @@ public:
   }
 
 private:
-  // struct AllocaConvert : public OpConversionPattern<AllocaOp> {
-  //   AllocaConvert(mlir::MLIRContext *context)
-  //       : OpConversionPattern<AllocaOp>(context) {}
-
-  //   using OpConversionPattern::OpConversionPattern;
-
-  //   LogicalResult matchAndRewrite(
-  //       AllocaOp op, OpAdaptor adaptor,
-  //       ConversionPatternRewriter &rewriter) const override {
-      
-      
-  //       rewriter.replaceOpWithNewOp<BufferOp>(op, op.getType());
-
-  //     return success();
-  //   }
-  // };
-
   bool LowerToADF(ModuleOp mod,StringRef topFuncName) {
-    auto builder = OpBuilder(mod);
-    FuncOp topFunc;
+    MLIRContext &context = getContext();
+    RewritePatternSet patterns(&context);
 
+    FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
       return false;
     }
-
-    // ConversionTarget target(*mod.getContext());
-    // RewritePatternSet patterns(mod.getContext());
-
-    // // target.addIllegalOp<SubViewOp>();
-    // // target.addIllegalOp<CopyOp>();
-    // target.addIllegalOp<AllocaOp>();
-    // // target.addIllegalOp<DeallocOp>();
-    // // target.addIllegalOp<CallOp>();
-
-    // llvm::outs() << "Print this\n";
-    // patterns.add<AllocaConvert>(patterns.getContext());
+    ConversionTarget target(context);
     
-    // //target.addLegalOp<FuncOp>();
-    // target.addLegalOp<BufferOp>();
-    // target.addLegalDialect<ADFDialect>();
+    target.addIllegalOp<SubViewOp>();
+    target.addIllegalOp<CopyOp>();
+    target.addIllegalOp<AllocOp>();
+    target.addIllegalOp<DeallocOp>();
+    target.addIllegalOp<CallOp>();
+    patterns.add<AllocConvert>(patterns.getContext());
+    target.addLegalOp<FuncOp>();
+    target.addLegalOp<BufferOp>();
+    target.addLegalDialect<ADFDialect>();
 
-    // if (failed(applyPartialConversion(mod, target, std::move(patterns)))) {
-    //   signalPassFailure();
-    // }
+    if (failed(applyPartialConversion(mod, target, std::move(patterns)))) {
+      signalPassFailure();
+    }
 
-
+    return true;
   }
 
 };

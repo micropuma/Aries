@@ -8,6 +8,7 @@ add_mlir_library(MLIRAriesLowerToADF
   ${PROJECT_SOURCE_DIR}/include/aries/Conversion
   
   DEPENDS
+  MLIRAriesPassesIncGen
   MLIRAriesLowerToADFPassIncGen
 
   LINK_LIBS PUBLIC
@@ -16,4 +17,5 @@ add_mlir_library(MLIRAriesLowerToADF
   MLIRIR
   MLIRPass
   MLIRTransforms
+  MLIRAriesPasses
   )

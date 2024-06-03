@@ -57,7 +57,6 @@ test_out.mlir: test_in.mlir
 convert: convert_out.mlir
 convert_out.mlir: convert_in.mlir
 	aries-opt -o $@ $< \
-			--debug \
 			-aries-lower-to-adf
 
 clean_gemm:
@@ -68,3 +67,6 @@ clean_add:
 
 clean_test:
 	rm -rf test_out.mlir
+
+clean_convert:
+	rm -rf convert_out.mlir
