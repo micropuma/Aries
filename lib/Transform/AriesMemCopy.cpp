@@ -71,7 +71,7 @@ private:
 
         //Allocate, copy & deallocate new memref before & after the function call
         builder.setInsertionPoint(caller);
-        auto allocOp = builder.create<AllocOp>(loc,MemRefType::get(type.getShape(),type.getElementType()));
+        auto allocOp = builder.create<AllocOp>(loc,MemRefType::get(type.getShape(),type.getElementType(),AffineMap(),(int)mlir::aries::adf::MemorySpace::L1));
         builder.create<CopyOp>(loc, argOperand, allocOp);
         builder.setInsertionPointAfter(caller);
         //Copy the allocation back if it is touched in the callee

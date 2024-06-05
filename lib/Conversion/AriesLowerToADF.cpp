@@ -17,10 +17,43 @@ struct AllocConvert : public OpConversionPattern<AllocOp> {
       AllocOp op, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
       
-      auto newOp = rewriter.replaceOpWithNewOp<BufferOp>(op, op.getType());
+      rewriter.replaceOpWithNewOp<BufferOp>(op, op.getType());
     return success();
   }
 };
+
+//Create port and replace copy to/from L1 memory with the io.push
+struct CopyConvert : public OpConversionPattern<CopyOp> {
+  using OpConversionPattern<CopyOp>::OpConversionPattern;
+  LogicalResult matchAndRewrite(
+      CopyOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+      
+      //if the CopyOp is copied to L1 mem
+      if(op.getTarget().getType().dyn_cast<MemRefType>().getMemorySpaceAsInt() == (int)mlir::aries::adf::MemorySpace::L1){
+        rewriter.setInsertionPoint(op);
+        llvm::outs()<< "Print here\n" ;
+        auto port = rewriter.create<CreateGraphIOOp>(rewriter.getUnknownLoc(),PortType::get(rewriter.getContext(), mlir::aries::adf::PortDir::In), mlir::aries::adf::GraphIOName::PORT);
+        if (auto subViewOp = dyn_cast<SubViewOp>(op.getSource().getDefiningOp())){
+          auto src = subViewOp.getSource();
+          SmallVector<Value> dst;
+          dst.push_back(port.getResult());
+          SmallVector<Value> src_offsets = subViewOp.getOffsets();
+          SmallVector<Value> src_sizes = subViewOp.getSizes();
+          SmallVector<Value> src_strides = subViewOp.getStrides();
+          rewriter.replaceOpWithNewOp<IOPushOp>(op, src, src_offsets,src_sizes,src_strides, dst);
+          llvm::outs()<< "Print here1\n" ;
+        }else {
+          return failure();
+        }
+      }//else if(op.getSource().getType().dyn_cast<MemRefType>().getMemorySpaceAsInt() == (int)mlir::aries::adf::MemorySpace::L1){
+
+      //}
+    return success();
+  }
+};
+
+
 
 namespace {
 
@@ -35,6 +68,8 @@ public:
   }
 
 private:
+  
+
   bool LowerToADF(ModuleOp mod,StringRef topFuncName) {
     MLIRContext &context = getContext();
     RewritePatternSet patterns(&context);
@@ -46,15 +81,17 @@ private:
     }
     ConversionTarget target(context);
     
-    target.addIllegalOp<SubViewOp>();
-    target.addIllegalOp<CopyOp>();
+    // target.addIllegalOp<SubViewOp>();
     target.addIllegalOp<AllocOp>();
-    target.addIllegalOp<DeallocOp>();
-    target.addIllegalOp<CallOp>();
+    target.addIllegalOp<CopyOp>();
+    // target.addIllegalOp<DeallocOp>();
+    // target.addIllegalOp<CallOp>();
     patterns.add<AllocConvert>(patterns.getContext());
-    target.addLegalOp<FuncOp>();
+    patterns.add<CopyConvert>(patterns.getContext());
+    // target.addLegalOp<FuncOp>();
     target.addLegalOp<BufferOp>();
-    target.addLegalDialect<ADFDialect>();
+    target.addLegalOp<IOPushOp>();
+    // target.addLegalDialect<ADFDialect>();
 
     if (failed(applyPartialConversion(mod, target, std::move(patterns)))) {
       signalPassFailure();

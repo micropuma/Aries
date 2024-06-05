@@ -55,7 +55,7 @@ test_out.mlir: test_in.mlir
 		-aries-adf-test
 
 convert: convert_out.mlir
-convert_out.mlir: convert_in.mlir
+convert_out.mlir: 5_gemm.copymem.mlir
 	aries-opt -o $@ $< \
 			-aries-lower-to-adf
 
