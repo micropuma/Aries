@@ -215,7 +215,7 @@ def ConnectOp : ADF_Op<"connect", []> {
 def IOPushOp: ADF_Op<"io.push", [AttrSizedOperandSegments]> {
   let summary = "Push the externel memory to a graph io";
   let description = [{
-    This operation creates an operation to connect the externel memory 
+    It creates an operation to connect the externel memory 
     (out of aie) with the graph io.
 
     It pushes an N-dimension of data in one memref to multiple ADF IOs.
@@ -240,6 +240,35 @@ def IOPushOp: ADF_Op<"io.push", [AttrSizedOperandSegments]> {
   let assemblyFormat = [{
     `(` $src `[` ($src_offsets^)? `]``[` ($src_sizes^)? `]``[` ($src_strides^)? `]` `,`
         $dst `)`  attr-dict `:` `(` type($src) `,` type($dst) `)`
+  }];
+}
+
+def IOPopOp: ADF_Op<"io.pop", [AttrSizedOperandSegments]> {
+  let summary = "Pop the data from graph io to the externel memory";
+  let description = [{
+    It creates an operation to pop the data from graph io to the externel memory 
+    (out of aie).
+
+    It pops an N-dimension of data in a memref to an ADF graph IO.
+
+    ```mlir
+      %mem0 = memref.alloc() : memref<64x64xf32>
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In,128> 
+      adf.io.pop(%plio0,%mem0[0, 0][32, 32][1, 1]) 
+      : (!adf.plio<In,128> : memref<64x64xf32>)
+    ```
+  }];
+  let arguments = (
+    ins GraphIOType:$src,
+        AnyMemRef:$dst,
+        Variadic<Index>:$dst_offsets,
+        Variadic<Index>:$dst_sizes,
+        Variadic<Index>:$dst_strides
+  );
+  let assemblyFormat = [{
+    `(` $src `,` 
+    $dst `[` ($dst_offsets^)? `]``[` ($dst_sizes^)? `]``[` ($dst_strides^)? `]`
+     `)`  attr-dict `:` `(` type($src) `,` type($dst) `)`
   }];
 }
 
