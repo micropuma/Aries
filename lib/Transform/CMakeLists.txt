@@ -6,6 +6,7 @@ add_mlir_library(MLIRAriesPasses
     AriesMemHoist.cpp
     AriesMemCopy.cpp
     AriesFuncUnroll.cpp
+    AriesDependencyExtract.cpp
     AriesADFTest.cpp
     Passes.cpp
     Utils.cpp

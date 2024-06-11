@@ -4,6 +4,7 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "aries/Transform/Passes.h"
+#include "aries/Conversion/Passes.h"
 #include "aries/Dialect/ADF/ADFDialect.h"
 
 
@@ -14,6 +15,7 @@ int main(int argc, char **argv) {
     mlir::registerAllPasses();
 
     mlir::aries::registerAriesPasses();
+    mlir::aries::adf::registerConvertToADFPasses();
 
     return mlir::asMainReturnCode(
         mlir::MlirOptMain(argc, argv, "ARIES modular optimizer Driver", registry));

@@ -71,6 +71,16 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
+def AriesDependencyExtract : Pass<"aries-dependency-extract"> {
+  let summary = "Extract carry dependency in the adf graph";
+  let description = [{
+    This pass extracts the carry dependency (pop-push) in the adf graph level.
+    It converts the pop-push pair to the direct connection between buffers.
+  }];
+  let constructor = "mlir::aries::createAriesDependencyExtractPass()";
+  let dependentDialects = ["mlir::aries::adf::ADFDialect"];
+}
+
 def AriesADFTest : Pass<"aries-adf-test"> {
   let summary = "Test ADF Dialect Ops";
   let constructor = "mlir::aries::createAriesADFTestPass()";

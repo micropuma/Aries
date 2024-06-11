@@ -121,6 +121,8 @@ def CreateGraphIOOp : ADF_Op<"graph.io", []> {
   let arguments = (ins GraphIOName: $name);
   let results = (outs GraphIOType:$graphio);
   let assemblyFormat = " `(` $name `)` attr-dict `:` type(results)";
+
+  let hasCanonicalizer = 1;
 }
 
 
@@ -212,31 +214,65 @@ def ConnectOp : ADF_Op<"connect", []> {
 
 }
 
-def IOPushOp : ADF_Op<"io.push", [AttrSizedOperandSegments]> {
+def IOPushOp: ADF_Op<"io.push", [AttrSizedOperandSegments]> {
   let summary = "Push the externel memory to a graph io";
   let description = [{
-    This operation creates an operation to connect the externel memory 
+    It creates an operation to connect the externel memory 
     (out of aie) with the graph io.
 
-    It can take multiple memories and ports as inputs to represent an all-to-all 
-    broadcast. This could be used for packet switch (multiple memory reuse one
-    io port) or broadcast(one memory broadcst to multiple io ports). 
+    It pushes an N-dimension of data in one memref to multiple ADF IOs.
+    This could be used for broadcast in the DMA side (Note that broadcast in the
+    ADF graph side is implictly handled). 
 
     ```mlir
       %mem0 = memref.alloc() : memref<64x64xf32>
-      %mem1 = memref.alloc() : memref<64x64xf32>
-      %mem2 = memref.alloc() : memref<64x64xf32>
-      %plio0 = adf.graph.io(PLIO) : !adf.plio<In,128> 
-      adf.io.push(%mem0, %mem1, %mem2 : %plio0) : (memref<64x64xf32>, 
-      memref<64x64xf32>, memref<64x64xf32> : !adf.plio<In,128>)
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In,128>
+      %plio1 = adf.graph.io(PLIO) : !adf.plio<In,128>  
+      adf.io.push(%mem0[0, 0][32, 32][1, 1], %plio0, %plio1) 
+      : (memref<64x64xf32>, : !adf.plio<In,128>, !adf.plio<In,128>)
     ```
   }];
-  let arguments = (ins Variadic<AnyMemRef>:$src, Variadic<GraphIOType>:$dst);
-  let assemblyFormat = [{ 
-        `(` $src `:` $dst `)` attr-dict 
-                          `:` `(` type($src) `:` type($dst) `)`
-  }]; 
+  let arguments = (
+    ins AnyMemRef:$src,
+        Variadic<Index>:$src_offsets,
+        Variadic<Index>:$src_sizes,
+        Variadic<Index>:$src_strides,
+        Variadic<GraphIOType>:$dst
+  );
+  let assemblyFormat = [{
+    `(` $src `[` ($src_offsets^)? `]``[` ($src_sizes^)? `]``[` ($src_strides^)? `]` `,`
+        $dst `)`  attr-dict `:` `(` type($src) `,` type($dst) `)`
+  }];
+  let hasCanonicalizer = 1;
+}
 
+def IOPopOp: ADF_Op<"io.pop", [AttrSizedOperandSegments]> {
+  let summary = "Pop the data from graph io to the externel memory";
+  let description = [{
+    It creates an operation to pop the data from graph io to the externel memory 
+    (out of aie).
+
+    It pops an N-dimension of data in a memref to an ADF graph IO.
+
+    ```mlir
+      %mem0 = memref.alloc() : memref<64x64xf32>
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In,128> 
+      adf.io.pop(%plio0,%mem0[0, 0][32, 32][1, 1]) 
+      : (!adf.plio<In,128> : memref<64x64xf32>)
+    ```
+  }];
+  let arguments = (
+    ins GraphIOType:$src,
+        AnyMemRef:$dst,
+        Variadic<Index>:$dst_offsets,
+        Variadic<Index>:$dst_sizes,
+        Variadic<Index>:$dst_strides
+  );
+  let assemblyFormat = [{
+    `(` $src `,` 
+    $dst `[` ($dst_offsets^)? `]``[` ($dst_sizes^)? `]``[` ($dst_strides^)? `]`
+     `)`  attr-dict `:` `(` type($src) `,` type($dst) `)`
+  }];
 }
 
 

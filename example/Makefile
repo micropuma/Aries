@@ -1,4 +1,4 @@
-gemm: tile exfunc loopsim mem hoistmem copymem unrollfunc
+gemm: tile exfunc loopsim mem hoistmem copymem unrollfunc toadf
 
 tile:0_gemm.tiled.mlir
 0_gemm.tiled.mlir: gemm.mlir
@@ -29,13 +29,33 @@ hoistmem: 4_gemm.hoistmem.mlir
 copymem: 5_gemm.copymem.mlir
 5_gemm.copymem.mlir: 4_gemm.hoistmem.mlir
 	aries-opt -o $@ $< \
-			-mlir-print-ir-after-failure \
 			-aries-mem-copy
 
 unrollfunc: 6_gemm.unrollfunc.mlir
 6_gemm.unrollfunc.mlir: 5_gemm.copymem.mlir
 	aries-opt -o $@ $< \
-			-aries-func-unroll
+			-aries-func-unroll \
+			-canonicalize -cse
+
+toadf: 7_gemm.adf.mlir
+7_gemm.adf.mlir: 6_gemm.unrollfunc.mlir
+	aries-opt -o $@ $< \
+			-aries-lower-to-adf \
+			-mlir-print-ir-after-failure \
+			-canonicalize -cse
+
+pass:0_gemm.adf.mlir
+0_gemm.adf.mlir: gemm.mlir
+	aries-opt -o $@ $< \
+			-aries-tiling="tile-sizes=32,32,32" \
+			-aries-func-extract \
+			-aries-loop-simplify \
+			-aries-mem-subview \
+			-aries-mem-hoist \
+			-aries-mem-copy \
+			-aries-func-unroll \
+			-aries-lower-to-adf \
+			-canonicalize -cse
 
 
 add:0_add.mlir
@@ -53,6 +73,12 @@ test_out.mlir: test_in.mlir
 	aries-opt -o $@ $< \
 		-aries-adf-test
 
+convert: convert_out.mlir
+convert_out.mlir: 5_gemm.copymem.mlir
+	aries-opt -o $@ $< \
+			-aries-lower-to-adf \
+			-canonicalize -cse
+
 clean_gemm:
 	rm -rf *_gemm*.mlir
 
@@ -61,3 +87,6 @@ clean_add:
 
 clean_test:
 	rm -rf test_out.mlir
+
+clean_convert:
+	rm -rf convert_out.mlir

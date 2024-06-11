@@ -18,6 +18,10 @@ def Stream:    I32EnumAttrCase<"Stream", 1>;
 def Cascade:   I32EnumAttrCase<"Cascade", 2>;
 def Scalar:   I32EnumAttrCase<"Scalar", 3>;
 
+def L1:  I32EnumAttrCase<"L1", 2>; //Compatible with MLIR-AIR
+def L2:  I32EnumAttrCase<"L2", 1>;
+def L3:  I32EnumAttrCase<"L3", 0>;
+
 def PortDir: I32EnumAttr<"PortDir", "Direction of the ports",
   [DirIn, DirOut, DirInout]> {
   let cppNamespace = "::mlir::aries::adf";
@@ -36,6 +40,11 @@ def GraphIOName: I32EnumAttr<"GraphIOName", "Names of graph input/output",
 
 def KernelIOName: I32EnumAttr<"KernelIOName", "Names of kernel input/output",
   [Buffer, Stream, Cascade, Scalar]> {
+  let cppNamespace = "::mlir::aries::adf";
+}
+
+def MemorySpace: I32EnumAttr<"MemorySpace", "ARIES Memory Space Indeices",
+  [L1, L2, L3]> {
   let cppNamespace = "::mlir::aries::adf";
 }
 
