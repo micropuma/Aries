@@ -50,9 +50,9 @@ struct IOPushElim : public OpRewritePattern<IOPushOp> {
 
   LogicalResult matchAndRewrite(IOPushOp op,
                                 PatternRewriter &rewriter) const override {
-    
+                                  
+    SmallVector<IOPushOp> iopushOps;
     IOPushOp firstUser = nullptr;
-
     for (auto &user : op.getSrc().getUses()) {
       if (auto otherOp = dyn_cast<IOPushOp>(user.getOwner())) {
         //Get the first pushop that pushes the same memref slice
@@ -64,27 +64,33 @@ struct IOPushElim : public OpRewritePattern<IOPushOp> {
             if (!firstUser || otherOp->isBeforeInBlock(firstUser)) {
               firstUser = otherOp;
             }
+            iopushOps.push_back(otherOp);
         }
       }
     }
-    
-    if(op == firstUser){
-      return failure();
-    }else{
-      if(IsdstTouched(op)){
-        return failure();
+    bool flag = false;
+    for (auto iopushOp: iopushOps){
+      if(iopushOp == firstUser){
+        continue;
       }else{
-        for (unsigned i = 0; i< op.getDst().size(); i++){
-          auto dst = op.getDst()[i];
-          auto dstOther = firstUser.getDst()[i];
-          dst.replaceAllUsesWith(dstOther);
-          op.erase();
-          return success();
+        if(IsdstTouched(iopushOp)){
+          continue;
+        }else{
+          for (unsigned i = 0; i< iopushOp.getDst().size(); i++){
+            auto dst = iopushOp.getDst()[i];
+            auto dstOther = firstUser.getDst()[i];
+            dst.replaceAllUsesWith(dstOther);
+          }
+          iopushOp.erase();
+          flag = true;
         }
       }
     }
+    if (flag)
+      return success();
+    else
+      return failure();
   }
-
 };
 
 // struct IOPopElim : public OpRewritePattern<IOPopOp> {
