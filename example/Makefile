@@ -44,6 +44,19 @@ toadf: 7_gemm.adf.mlir
 			-mlir-print-ir-after-failure \
 			-canonicalize -cse
 
+pass:0_gemm.adf.mlir
+0_gemm.adf.mlir: gemm.mlir
+	aries-opt -o $@ $< \
+			-aries-tiling="tile-sizes=32,32,32" \
+			-aries-func-extract \
+			-aries-loop-simplify \
+			-aries-mem-subview \
+			-aries-mem-hoist \
+			-aries-mem-copy \
+			-aries-func-unroll \
+			-aries-lower-to-adf \
+			-canonicalize -cse
+
 
 add:0_add.mlir
 0_add.mlir: add.mlir
