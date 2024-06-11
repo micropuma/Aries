@@ -39,11 +39,24 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
           auto src = subViewOp.getSource();
           SmallVector<Value> dst;
           dst.push_back(port.getResult());
-          SmallVector<Value> src_offsets = subViewOp.getOffsets();
+          SmallVector<Value> src_offsets;
           SmallVector<Value> src_sizes;
           SmallVector<Value> src_strides;
-
           auto indexType = rewriter.getIndexType();
+
+          auto mixedOffsets = subViewOp.getMixedOffsets();
+          for (auto offset : mixedOffsets) {
+            if (auto attr = dyn_cast<Attribute>(offset)) {//static offset
+              if (auto integerAttr = dyn_cast<IntegerAttr>(attr)) {
+                auto offsetAttr = rewriter.getIntegerAttr(indexType, integerAttr.getInt());
+                auto offsetValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, offsetAttr);
+                src_offsets.push_back(offsetValue);
+              }
+            }else if (auto value = dyn_cast<Value>(offset)) {//dynamic offset
+              src_offsets.push_back(value);
+            }
+          }
+          
           for(auto size : subViewOp.getStaticSizes()){
             auto sizeAttr = rewriter.getIntegerAttr(indexType, size);
             auto sizeValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, sizeAttr);
@@ -56,9 +69,13 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
             src_strides.push_back(strideValue);
           }
           
-          auto newOp = rewriter.replaceOpWithNewOp<IOPushOp>(op, src, src_offsets,src_sizes,src_strides, dst);
-          rewriter.setInsertionPointAfter(newOp);
-          rewriter.create<ConnectOp>(newOp->getLoc(),port,CopyDst);
+          auto newOp = rewriter.replaceOpWithNewOp<ConnectOp>(op, port,CopyDst);
+          rewriter.setInsertionPoint(newOp);
+          rewriter.create<IOPushOp>(newOp->getLoc(),src, src_offsets,src_sizes,src_strides, dst);
+
+          // auto newOp = rewriter.replaceOpWithNewOp<IOPushOp>(op, src, src_offsets,src_sizes,src_strides, dst);
+          // rewriter.setInsertionPointAfter(newOp);
+          // rewriter.create<ConnectOp>(newOp->getLoc(),port,CopyDst);
           return success();
         }
       }
@@ -67,11 +84,24 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
         auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),PortType::get(rewriter.getContext(), mlir::aries::adf::PortDir::Out), mlir::aries::adf::GraphIOName::PORT);
         if (auto subViewOp = dyn_cast<SubViewOp>(CopyDst.getDefiningOp())){
           auto dst = subViewOp.getSource();
-          SmallVector<Value> dst_offsets = subViewOp.getOffsets();
+          SmallVector<Value> dst_offsets;
           SmallVector<Value> dst_sizes;
           SmallVector<Value> dst_strides;
-
           auto indexType = rewriter.getIndexType();
+
+          auto mixedOffsets = subViewOp.getMixedOffsets();
+          for (auto offset : mixedOffsets) {
+            if (auto attr = dyn_cast<Attribute>(offset)) {//static offset
+              if (auto integerAttr = dyn_cast<IntegerAttr>(attr)) {
+                auto offsetAttr = rewriter.getIntegerAttr(indexType, integerAttr.getInt());
+                auto offsetValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, offsetAttr);
+                dst_offsets.push_back(offsetValue);
+              }
+            }else if (auto value = dyn_cast<Value>(offset)) {//dynamic offset
+              dst_offsets.push_back(value);
+            }
+          }
+
           for(auto size : subViewOp.getStaticSizes()){
             auto sizeAttr = rewriter.getIntegerAttr(indexType, size);
             auto sizeValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, sizeAttr);
@@ -84,9 +114,13 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
             dst_strides.push_back(strideValue);
           }
           
-          auto newOp = rewriter.replaceOpWithNewOp<IOPopOp>(op, port, dst, dst_offsets,dst_sizes,dst_strides);
-          rewriter.setInsertionPoint(newOp);
-          rewriter.create<ConnectOp>(newOp->getLoc(),CopySrc, port);
+          auto newOp = rewriter.replaceOpWithNewOp<ConnectOp>(op, CopySrc, port);
+          rewriter.setInsertionPointAfter(newOp);
+          rewriter.create<IOPopOp>(newOp->getLoc(),port, dst, dst_offsets,dst_sizes,dst_strides);
+
+          // auto newOp = rewriter.replaceOpWithNewOp<IOPopOp>(op, port, dst, dst_offsets,dst_sizes,dst_strides);
+          // rewriter.setInsertionPoint(newOp);
+          // rewriter.create<ConnectOp>(newOp->getLoc(),CopySrc, port);
           return success();
         }
       }

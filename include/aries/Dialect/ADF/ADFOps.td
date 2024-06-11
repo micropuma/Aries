@@ -121,6 +121,8 @@ def CreateGraphIOOp : ADF_Op<"graph.io", []> {
   let arguments = (ins GraphIOName: $name);
   let results = (outs GraphIOType:$graphio);
   let assemblyFormat = " `(` $name `)` attr-dict `:` type(results)";
+
+  let hasCanonicalizer = 1;
 }
 
 
@@ -241,6 +243,7 @@ def IOPushOp: ADF_Op<"io.push", [AttrSizedOperandSegments]> {
     `(` $src `[` ($src_offsets^)? `]``[` ($src_sizes^)? `]``[` ($src_strides^)? `]` `,`
         $dst `)`  attr-dict `:` `(` type($src) `,` type($dst) `)`
   }];
+  let hasCanonicalizer = 1;
 }
 
 def IOPopOp: ADF_Op<"io.pop", [AttrSizedOperandSegments]> {
