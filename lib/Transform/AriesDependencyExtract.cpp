@@ -70,6 +70,7 @@ private:
     SmallVector<AffineForOp, 6> bands;
     getLoopBands(topFunc, bands);
 
+    unsigned index;
     for (auto copyWrite : copyOps){
       if (IsWrite(copyWrite)){
         auto dst = dyn_cast<SubViewOp>(copyWrite.getTarget().getDefiningOp());
@@ -83,6 +84,11 @@ private:
                 if(std::find(offset.begin(), offset.end(), vi) == offset.end()){
                   if(getConstantTripCount(band)>1){
                     band->setAttr("flow", builder.getUnitAttr());
+                    StringRef str0 = "write" + std::to_string(index);
+                    StringRef str1 = "read" + std::to_string(index);
+                    copyWrite->setAttr(str0, builder.getUnitAttr());
+                    copyRead->setAttr(str1, builder.getUnitAttr());
+                    index++;
                   }
                 }
               }
