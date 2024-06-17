@@ -70,8 +70,8 @@ private:
     SmallVector<AffineForOp, 6> bands;
     getLoopBands(topFunc, bands);
 
-    unsigned index;
     for (auto copyWrite : copyOps){
+      unsigned opIndex=0;
       if (IsWrite(copyWrite)){
         auto dst = dyn_cast<SubViewOp>(copyWrite.getTarget().getDefiningOp());
         for (auto copyRead : copyOps){
@@ -79,16 +79,57 @@ private:
             auto src = dyn_cast<SubViewOp>(copyRead.getSource().getDefiningOp());
             if(src == dst){
               auto offset = src.getOffsets();
+              unsigned bandIndex = 0;
               for(auto band: bands){
                 auto vi = band.getInductionVar();
                 if(std::find(offset.begin(), offset.end(), vi) == offset.end()){
                   if(getConstantTripCount(band)>1){
+                    if(bandIndex>=1){
+                      llvm::outs() << "Currently doesn't support more than 1 loop-carried flow dependencies";
+                      return false;
+                    }
+                    auto bandAttr = builder.getIntegerAttr(builder.getIndexType(), bandIndex++);
+                    band->setAttr("flow", bandAttr);
+                    auto opAttr = builder.getIntegerAttr(builder.getIndexType(), opIndex++);
+                    copyWrite->setAttr("write", opAttr);
+                    copyRead->setAttr("read", opAttr);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    
+    for (auto copyWrite : copyOps){
+      unsigned opIndex=0;
+      if (IsWrite(copyWrite)){
+        auto dst = dyn_cast<SubViewOp>(copyWrite.getTarget().getDefiningOp());
+        for (auto copyRead : copyOps){
+          if (!IsWrite(copyRead)){
+            auto src = dyn_cast<SubViewOp>(copyRead.getSource().getDefiningOp());
+            if(src == dst){
+              auto offset = src.getOffsets();
+              unsigned bandIndex=0;
+              for(auto band: bands){
+                auto vi = band.getInductionVar();
+                if(std::find(offset.begin(), offset.end(), vi) == offset.end()){
+                  if(getConstantTripCount(band)>1){
+                    if(opIndex>0){
+                      llvm::outs() << "More than one flow dependencies found\n" ;
+                      return false;
+                    }
+                    if(bandIndex>0){
+                      llvm::outs() << "More than one loops leads to flow dependency\n" ;
+                      return false;
+                    }  
                     band->setAttr("flow", builder.getUnitAttr());
-                    StringRef str0 = "write" + std::to_string(index);
-                    StringRef str1 = "read" + std::to_string(index);
-                    copyWrite->setAttr(str0, builder.getUnitAttr());
-                    copyRead->setAttr(str1, builder.getUnitAttr());
-                    index++;
+                    copyWrite->setAttr("write", builder.getUnitAttr());
+                    copyRead->setAttr("read", builder.getUnitAttr());
+                    opIndex++;
+                    bandIndex++;
                   }
                 }
               }
