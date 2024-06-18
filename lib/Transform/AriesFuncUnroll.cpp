@@ -51,11 +51,9 @@ private:
         auto annotateFn = [](unsigned i, Operation *op, OpBuilder builder) {
           if (auto copyop = dyn_cast<CopyOp>(op)){
             if(auto attr = copyop->getAttr("write")){
-              auto intAttr = dyn_cast<IntegerAttr>(attr);
               auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), i);
               copyop->setAttr("write", valueAttr);
             }else if(auto attr = copyop->getAttr("read")){
-              auto intAttr = dyn_cast<IntegerAttr>(attr);
               auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), i);
               copyop->setAttr("read", valueAttr);
             }
