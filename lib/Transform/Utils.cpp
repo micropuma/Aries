@@ -3,6 +3,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
+#include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "mlir/Dialect/Affine/Analysis/AffineAnalysis.h"
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/IR/IRMapping.h"
@@ -16,6 +17,21 @@ using namespace presburger;
 
 namespace mlir {
 namespace aries {
+
+/// Unrolls this loop completely.
+LogicalResult loopUnrollFull(AffineForOp forOp, function_ref<void(unsigned, Operation *, OpBuilder)> annotateFn) {
+  std::optional<uint64_t> mayBeConstantTripCount = mlir::affine::getConstantTripCount(forOp);
+  if (mayBeConstantTripCount.has_value()) {
+    uint64_t tripCount = *mayBeConstantTripCount;
+    if (tripCount == 0)
+      return success();
+    if (tripCount == 1)
+      return promoteIfSingleIteration(forOp);
+    return loopUnrollByFactor(forOp, tripCount, annotateFn);
+  }
+  return failure();
+}
+
 
 // Get all the affine.for loops within the FuncOp and return them in the band
 void getLoopBands(FuncOp f, SmallVector<AffineForOp, 6> &band, bool reverse) {

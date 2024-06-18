@@ -63,22 +63,22 @@ def AriesMemCopy : Pass<"aries-mem-copy"> {
   let constructor = "mlir::aries::createAriesMemCopyPass()";
 }
 
+def AriesDependencyExtract : Pass<"aries-dependency-extract"> {
+  let summary = "Extract loop-carried dependency";
+  let description = [{
+    This pass extracts the loop-carried dependency for the parallel loops.
+    Currently detect the flow dependency and anotate the loop with "flow".
+  }];
+  let constructor = "mlir::aries::createAriesDependencyExtractPass()";
+  let dependentDialects = ["mlir::aries::adf::ADFDialect"];
+}
+
 def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let summary = "Unroll all the block loops as seperated function calls";
   let description = [{
     This pass unrolls all the block loops to function calls with different arguments.
   }];
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
-}
-
-def AriesDependencyExtract : Pass<"aries-dependency-extract"> {
-  let summary = "Extract carry dependency in the adf graph";
-  let description = [{
-    This pass extracts the carry dependency (pop-push) in the adf graph level.
-    It converts the pop-push pair to the direct connection between buffers.
-  }];
-  let constructor = "mlir::aries::createAriesDependencyExtractPass()";
-  let dependentDialects = ["mlir::aries::adf::ADFDialect"];
 }
 
 def AriesADFTest : Pass<"aries-adf-test"> {

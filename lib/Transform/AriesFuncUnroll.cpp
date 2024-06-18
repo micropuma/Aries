@@ -4,10 +4,13 @@
 #include "mlir/Dialect/Affine/LoopUtils.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 
 using namespace mlir;
 using namespace aries;
 using namespace mlir::affine;
+using namespace mlir::memref;
 using namespace func;
 
 
@@ -40,13 +43,30 @@ private:
       return topFunc_flag;
     }
 
-    SmallVector<AffineForOp, 6> band;
-    getLoopBands(topFunc, band, true);
-    
-    
-    for (auto loop: band) {
-      if (failed(loopUnrollFull(loop)))
-        return false;
+    //Start from the innermost loop
+    SmallVector<AffineForOp, 6> bands;
+    getLoopBands(topFunc, bands, true);
+    for (auto band: bands) {
+      if (band->getAttr("flow")){
+        auto annotateFn = [](unsigned i, Operation *op, OpBuilder builder) {
+          if (auto copyop = dyn_cast<CopyOp>(op)){
+            if(auto attr = copyop->getAttr("write")){
+              auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), i);
+              copyop->setAttr("write", valueAttr);
+            }else if(auto attr = copyop->getAttr("read")){
+              auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), i);
+              copyop->setAttr("read", valueAttr);
+            }
+          }
+        };
+        if (failed(loopUnrollFull(band,annotateFn)))
+          return false;
+      }
+      else {
+        if (failed(loopUnrollFull(band)))
+          return false;
+      }
+      
     }
     
 

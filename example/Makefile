@@ -1,4 +1,4 @@
-gemm: tile exfunc loopsim mem hoistmem copymem unrollfunc toadf
+gemm: toadf
 
 tile:0_gemm.tiled.mlir
 0_gemm.tiled.mlir: gemm.mlir
@@ -31,14 +31,20 @@ copymem: 5_gemm.copymem.mlir
 	aries-opt -o $@ $< \
 			-aries-mem-copy
 
-unrollfunc: 6_gemm.unrollfunc.mlir
-6_gemm.unrollfunc.mlir: 5_gemm.copymem.mlir
+flow: 6_gemm.flow.mlir
+6_gemm.flow.mlir: 5_gemm.copymem.mlir
+	aries-opt -o $@ $< \
+			-aries-dependency-extract
+
+
+unrollfunc: 7_gemm.unrollfunc.mlir
+7_gemm.unrollfunc.mlir: 6_gemm.flow.mlir
 	aries-opt -o $@ $< \
 			-aries-func-unroll \
 			-canonicalize -cse
 
-toadf: 7_gemm.adf.mlir
-7_gemm.adf.mlir: 6_gemm.unrollfunc.mlir
+toadf: 8_gemm.adf.mlir
+8_gemm.adf.mlir: 7_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-lower-to-adf \
 			-mlir-print-ir-after-failure \
@@ -53,6 +59,7 @@ pass:0_gemm.adf.mlir
 			-aries-mem-subview \
 			-aries-mem-hoist \
 			-aries-mem-copy \
+			-aries-dependency-extract \
 			-aries-func-unroll \
 			-aries-lower-to-adf \
 			-canonicalize -cse
