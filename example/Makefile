@@ -1,4 +1,4 @@
-gemm: toadf
+gemm: adfgraph
 
 tile:0_gemm.tiled.mlir
 0_gemm.tiled.mlir: gemm.mlir
@@ -47,8 +47,12 @@ toadf: 8_gemm.adf.mlir
 8_gemm.adf.mlir: 7_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-lower-to-adf \
-			-mlir-print-ir-after-failure \
 			-canonicalize -cse
+
+adfgraph: 9_gemm.adfgraph.mlir
+9_gemm.adfgraph.mlir: 8_gemm.adf.mlir
+	aries-opt -o $@ $< \
+			-aries-adf-graph-create
 
 pass:0_gemm.adf.mlir
 0_gemm.adf.mlir: gemm.mlir
