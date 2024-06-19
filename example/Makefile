@@ -31,26 +31,26 @@ copymem: 5_gemm.copymem.mlir
 	aries-opt -o $@ $< \
 			-aries-mem-copy
 
-flow: 6_gemm.flow.mlir
-6_gemm.flow.mlir: 5_gemm.copymem.mlir
-	aries-opt -o $@ $< \
-			-aries-dependency-extract
-
-
-unrollfunc: 7_gemm.unrollfunc.mlir
-7_gemm.unrollfunc.mlir: 6_gemm.flow.mlir
-	aries-opt -o $@ $< \
-			-aries-func-unroll \
-			-canonicalize -cse
-
-toadf: 8_gemm.adf.mlir
-8_gemm.adf.mlir: 7_gemm.unrollfunc.mlir
+toadf: 6_gemm.adf.mlir
+6_gemm.adf.mlir: 5_gemm.copymem.mlir
 	aries-opt -o $@ $< \
 			-aries-lower-to-adf \
 			-canonicalize -cse
 
+flow: 7_gemm.flow.mlir
+7_gemm.flow.mlir: 6_gemm.adf.mlir
+	aries-opt -o $@ $< \
+			-canonicalize -cse \
+			-aries-dependency-extract
+
+unrollfunc: 8_gemm.unrollfunc.mlir
+8_gemm.unrollfunc.mlir: 7_gemm.flow.mlir
+	aries-opt -o $@ $< \
+			-aries-func-unroll \
+			-canonicalize -cse
+
 adfgraph: 9_gemm.adfgraph.mlir
-9_gemm.adfgraph.mlir: 8_gemm.adf.mlir
+9_gemm.adfgraph.mlir: 8_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-adf-graph-create
 
@@ -63,9 +63,9 @@ pass:0_gemm.adf.mlir
 			-aries-mem-subview \
 			-aries-mem-hoist \
 			-aries-mem-copy \
+			-aries-lower-to-adf \
 			-aries-dependency-extract \
 			-aries-func-unroll \
-			-aries-lower-to-adf \
 			-canonicalize -cse
 
 
