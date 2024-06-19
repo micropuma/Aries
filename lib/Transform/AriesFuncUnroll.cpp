@@ -1,5 +1,6 @@
 #include "aries/Transform/Passes.h"
 #include "aries/Transform/Utils.h"
+#include "aries/Dialect/ADF/ADFDialect.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -9,6 +10,7 @@
 
 using namespace mlir;
 using namespace aries;
+using namespace adf;
 using namespace mlir::affine;
 using namespace mlir::memref;
 using namespace func;
@@ -28,6 +30,7 @@ public:
 
 private:
   bool FuncUnroll (ModuleOp mod,StringRef topFuncName) {
+    auto builder = OpBuilder(mod);
     auto topFunc = *(mod.getOps<FuncOp>().begin());
     bool topFunc_flag = false;
     for (FuncOp func : mod.getOps<FuncOp>()) {
@@ -43,19 +46,21 @@ private:
       return topFunc_flag;
     }
 
-    //Start from the innermost loop
+    
     SmallVector<AffineForOp, 6> bands;
     getLoopBands(topFunc, bands, true);
+    
+    //Start from the innermost band loop
     for (auto band: bands) {
       if (band->getAttr("flow")){
         auto annotateFn = [](unsigned i, Operation *op, OpBuilder builder) {
-          if (auto copyop = dyn_cast<CopyOp>(op)){
-            if(auto attr = copyop->getAttr("write")){
+          if (auto dmaop = dyn_cast<DmaOp>(op)){
+            if(auto attr = dmaop->getAttr("write")){
               auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), i);
-              copyop->setAttr("write", valueAttr);
-            }else if(auto attr = copyop->getAttr("read")){
+              dmaop->setAttr("write", valueAttr);
+            }else if(auto attr = dmaop->getAttr("read")){
               auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), i);
-              copyop->setAttr("read", valueAttr);
+              dmaop->setAttr("read", valueAttr);
             }
           }
         };
