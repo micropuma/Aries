@@ -8,7 +8,7 @@ include "ADFTypes.td"
 class ADF_Op<string mnemonic, list<Trait> traits = []> :
     Op<ADF_Dialect, mnemonic, traits>;
 
-def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
+def GraphOp : ADF_Op<"graph", [Pure]> {
   let summary = "An operation presenting an ADF graph";
   let description = [{
     This is an operation to represent an ADF graph.  This operation includes
@@ -17,18 +17,32 @@ def GraphOp : ADF_Op<"graph", [Pure, SingleBlock, NoTerminator]> {
     ```mlir
     %plio_in = adf.plio.create() : !adf.plio<In, 128>
     %gmio_in = adf.gmio.create() : !adf.gmio<In, 128>
-    %gmio_out0,%gmio_out1 = adf.graph(%plio_in,%gmio_in){
+    adf.graph(%plio_in,%gmio_in){
     
-    } : (!adf.plio<In, 128>, !adf.gmio<In, 128>) -> (!adf.gmio<Out, 128>,!adf.gmio<Out, 128>)
+    } : (!adf.plio<In, 128>, !adf.gmio<In, 128>)
     ```
   }];
 
   let arguments = (ins Variadic<GraphIOType>:$input_ports);
   let regions = (region AnyRegion:$region);
-  let results = (outs Variadic<GraphIOType>:$output_ports);
   let assemblyFormat = [{
-    `(` $input_ports `)` regions attr-dict `:` functional-type($input_ports, results)
+    `(` $input_ports `)` regions attr-dict `:` `(` type($input_ports) `)`
     }];
+}
+
+def GraphReturnOp : ADF_Op<"return", [HasParent<"GraphOp">, Pure, Terminator]>{
+  let summary = "Terminator for adf graph regions.";
+  let description = [{
+    This is a terminator op for the adf.graph region which returns the GraphIOType.
+  }];
+  
+  let arguments = (ins Variadic<GraphIOType>:$output_ports);
+
+  let builders = [OpBuilder<(ins), [{
+    build($_builder, $_state, std::nullopt);
+  }]>];
+
+  let assemblyFormat = "attr-dict ($output_ports^ `:` type($output_ports))?";
 }
 
 def KernelOp : ADF_Op<"kernel", [Pure]> {

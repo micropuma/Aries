@@ -26,8 +26,9 @@ private:
     //PLIOCreate(mod);
     //GraphIOCreate(mod);
     //KernelIOCreate(mod);
-    BufferCreate(mod);
+    //BufferCreate(mod);
     //IOPushOpCreate(mod);
+    GraphOpCreate(mod);
     return true;
   }
 
@@ -106,6 +107,14 @@ private:
     dst.push_back(plioOp1.getResult());
     builder.setInsertionPointAfter(plioOp1);
     auto ioPushOp = builder.create<IOPushOp>(builder.getUnknownLoc(),src,src_offsets,src_sizes,src_strides,dst);
+    return true;
+  }
+
+  bool GraphOpCreate(ModuleOp mod){
+    auto builder = OpBuilder(mod);
+    builder.setInsertionPointToStart(mod.getBody());
+    SmallVector<Value> GraphIOs;
+    auto graphOp = builder.create<GraphOp>(builder.getUnknownLoc(),GraphIOs);
     return true;
   }
 
