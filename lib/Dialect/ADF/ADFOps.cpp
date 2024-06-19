@@ -93,40 +93,6 @@ struct IOPushElim : public OpRewritePattern<IOPushOp> {
   }
 };
 
-// struct IOPopElim : public OpRewritePattern<IOPopOp> {
-//   using OpRewritePattern<IOPopOp>::OpRewritePattern;
-
-//   LogicalResult matchAndRewrite(IOPopOp op,
-//                                 PatternRewriter &rewriter) const override {
-    
-//     IOPopOp firstUser = nullptr;
-
-//     for (auto &use : op.getDst().getUses()) {
-//       if (auto otherOp = dyn_cast<IOPopOp>(use.getOwner())) {
-//         //Get the first Popop that popes from local mem to the same memref slice
-//         if (op.getDst() == otherOp.getDst() &&
-//             op.getDstOffsets() == otherOp.getDstOffsets() &&
-//             op.getDstSizes() == otherOp.getDstSizes() &&
-//             op.getDstStrides() == otherOp.getDstStrides()){
-//             if (!firstUser || otherOp->isBeforeInBlock(firstUser)) {
-//               firstUser = otherOp;
-//             }
-//         }
-//       }
-//     }
-//     if(op == firstUser){
-//       return failure();
-//     }else{
-//       auto src = op.getSrc();
-//       auto srcOther = firstUser.getSrc();
-//       src.replaceAllUsesWith(srcOther);
-//       op.erase();
-//       return success();
-//     }
-//   }
-// };
-
-
 void CreateGraphIOOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                            MLIRContext *context) {
   results.add<DeadElim<CreateGraphIOOp>>(context);
@@ -136,9 +102,3 @@ void IOPushOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                            MLIRContext *context) {
   results.add<IOPushElim>(context);
 }
-
-// void IOPopOp::getCanonicalizationPatterns(RewritePatternSet &results,
-//                                            MLIRContext *context) {
-//   results.add<IOPopElim>(context);
-// }
-

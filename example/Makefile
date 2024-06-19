@@ -49,8 +49,14 @@ unrollfunc: 8_gemm.unrollfunc.mlir
 			-aries-func-unroll \
 			-canonicalize -cse
 
-adfgraph: 9_gemm.adfgraph.mlir
-9_gemm.adfgraph.mlir: 8_gemm.unrollfunc.mlir
+dmaio: 9_gemm.dmaio.mlir
+9_gemm.dmaio.mlir: 8_gemm.unrollfunc.mlir
+	aries-opt -o $@ $< \
+			-aries-dma-io \
+			-canonicalize -cse
+
+adfgraph: 10_gemm.adfgraph.mlir
+10_gemm.adfgraph.mlir: 9_gemm.dmaio.mlir
 	aries-opt -o $@ $< \
 			-aries-adf-graph-create
 
