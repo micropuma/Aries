@@ -34,6 +34,17 @@ struct DeallocConvert : public OpConversionPattern<DeallocOp> {
   }
 };
 
+struct SubViewConvert : public OpConversionPattern<SubViewOp> {
+  using OpConversionPattern<SubViewOp>::OpConversionPattern;
+  LogicalResult matchAndRewrite(
+      SubViewOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+      
+      rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 //Create port and replace copy to/from L1 memory with the io.push
 struct CopyConvert : public OpConversionPattern<CopyOp> {
   using OpConversionPattern<CopyOp>::OpConversionPattern;
@@ -42,176 +53,86 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
       ConversionPatternRewriter &rewriter) const override {
     auto CopySrc = op.getSource();
     auto CopyDst = op.getTarget();
-    auto SrcSpace = CopySrc.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
-    auto DstSpace = CopyDst.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
-    
-    if(op->getAttr("finish")){
-      rewriter.eraseOp(op);
-      return success();
-    }
 
-    //if the CopyOp is copied to L1 mem
-    if(DstSpace && DstSpace == (int)mlir::aries::adf::MemorySpace::L1){
-      if(auto readAttr = op->getAttr("read")){
-        auto intRAttr = dyn_cast<IntegerAttr>(readAttr);
-        auto RIndex = intRAttr.getInt();
-        for(auto use: CopySrc.getUsers()){
-          if(auto copyop = dyn_cast<CopyOp>(use)){
-            if(auto writeAttr = copyop->getAttr("write")){
-              auto intWAttr = dyn_cast<IntegerAttr>(writeAttr);
-              auto WIndex = intWAttr.getInt();
-              if(WIndex == RIndex -1){
-                auto src = copyop.getSource();
-                auto dst = op.getTarget();
-                rewriter.setInsertionPointAfter(op);
-                rewriter.replaceOpWithNewOp<ConnectOp>(op, src,dst);
-                copyop->removeAttr("write");
-                copyop->setAttr("finish",rewriter.getUnitAttr());
-                return success();
-              }
+    Value src;
+    SmallVector<Value> src_offsets;
+    SmallVector<Value> src_sizes;
+    SmallVector<Value> src_strides;
+    Value dst;
+    SmallVector<Value> dst_offsets;
+    SmallVector<Value> dst_sizes;
+    SmallVector<Value> dst_strides;
+
+    //Check if the src memref is defined by subviewOp
+    if(auto defineOp = CopySrc.getDefiningOp()){
+      if (auto subViewOp = dyn_cast<SubViewOp>(defineOp)){
+        src = subViewOp.getSource();
+        auto indexType = rewriter.getIndexType();
+        auto mixedOffsets = subViewOp.getMixedOffsets();
+        for (auto offset : mixedOffsets) {
+          if (auto attr = dyn_cast<Attribute>(offset)) {//static offset
+            if (auto integerAttr = dyn_cast<IntegerAttr>(attr)) {
+              auto offsetAttr = rewriter.getIntegerAttr(indexType, integerAttr.getInt());
+              auto offsetValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, offsetAttr);
+              src_offsets.push_back(offsetValue);
             }
+          }else if (auto value = dyn_cast<Value>(offset)) {//dynamic offset
+            src_offsets.push_back(value);
           }
+        }
+        for(auto size : subViewOp.getStaticSizes()){
+          auto sizeAttr = rewriter.getIntegerAttr(indexType, size);
+          auto sizeValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, sizeAttr);
+          src_sizes.push_back(sizeValue);
+        }
+        for(auto stride : subViewOp.getStaticStrides()){
+          auto strideAttr = rewriter.getIntegerAttr(indexType, stride);
+          auto strideValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, strideAttr);
+          src_strides.push_back(strideValue);
         }
       }
-
-      //Check if the src memref is defined by subviewOp
-      if(auto defineOp = CopySrc.getDefiningOp()){
-        if (auto subViewOp = dyn_cast<SubViewOp>(defineOp)){
-          rewriter.setInsertionPoint(op);
-          auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),PortType::get(rewriter.getContext(), mlir::aries::adf::PortDir::In), mlir::aries::adf::GraphIOName::PORT);
-          auto src = subViewOp.getSource();
-          SmallVector<Value> dst;
-          dst.push_back(port.getResult());
-          SmallVector<Value> src_offsets;
-          SmallVector<Value> src_sizes;
-          SmallVector<Value> src_strides;
-          auto indexType = rewriter.getIndexType();
-
-          auto mixedOffsets = subViewOp.getMixedOffsets();
-          for (auto offset : mixedOffsets) {
-            if (auto attr = dyn_cast<Attribute>(offset)) {//static offset
-              if (auto integerAttr = dyn_cast<IntegerAttr>(attr)) {
-                auto offsetAttr = rewriter.getIntegerAttr(indexType, integerAttr.getInt());
-                auto offsetValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, offsetAttr);
-                src_offsets.push_back(offsetValue);
-              }
-            }else if (auto value = dyn_cast<Value>(offset)) {//dynamic offset
-              src_offsets.push_back(value);
-            }
-          }
-
-          for(auto size : subViewOp.getStaticSizes()){
-            auto sizeAttr = rewriter.getIntegerAttr(indexType, size);
-            auto sizeValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, sizeAttr);
-            src_sizes.push_back(sizeValue);
-          }
-
-          for(auto stride : subViewOp.getStaticStrides()){
-            auto strideAttr = rewriter.getIntegerAttr(indexType, stride);
-            auto strideValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, strideAttr);
-            src_strides.push_back(strideValue);
-          }
-
-          auto newOp = rewriter.replaceOpWithNewOp<ConnectOp>(op, port,CopyDst);
-          rewriter.setInsertionPoint(newOp);
-          rewriter.create<IOPushOp>(newOp->getLoc(),src, src_offsets,src_sizes,src_strides, dst);
-          return success();
-        }
-      }else{
-        rewriter.setInsertionPoint(op);
-        auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),PortType::get(rewriter.getContext(), mlir::aries::adf::PortDir::In), mlir::aries::adf::GraphIOName::PORT);
-        
-        SmallVector<Value> dst;
-        dst.push_back(port.getResult());
-        
-        SmallVector<Value> src_offsets;
-        SmallVector<Value> src_sizes;
-        SmallVector<Value> src_strides;
-        
-        auto newOp = rewriter.replaceOpWithNewOp<ConnectOp>(op, port,CopyDst);
-        rewriter.setInsertionPoint(newOp);
-        rewriter.create<IOPushOp>(newOp->getLoc(), CopySrc, src_offsets,src_sizes,src_strides, dst);
-        return success();
+      else{
+        src = CopySrc;
       }
     }
-    else if(SrcSpace && SrcSpace == (int)mlir::aries::adf::MemorySpace::L1){ //if the CopyOp is copied from L1 mem
-      if(auto writeAttr = op->getAttr("write")){
-        auto intWAttr = dyn_cast<IntegerAttr>(writeAttr);
-        auto WIndex = intWAttr.getInt();
-        for(auto use: CopyDst.getUsers()){
-          if(auto copyop = dyn_cast<CopyOp>(use)){
-            if(auto readAttr = copyop->getAttr("read")){
-              auto intRAttr = dyn_cast<IntegerAttr>(readAttr);
-              auto RIndex = intRAttr.getInt();
-              if(WIndex == RIndex - 1){
-                auto src = op.getSource();
-                auto dst = copyop.getTarget();
-                rewriter.setInsertionPointAfter(copyop);
-                rewriter.replaceOpWithNewOp<ConnectOp>(op, src,dst);
-                copyop->removeAttr("read");
-                copyop->setAttr("finish",rewriter.getUnitAttr());
-                return success();
-              }
+
+    if(auto defineOp = CopyDst.getDefiningOp()){
+      if (auto subViewOp = dyn_cast<SubViewOp>(defineOp)){
+        dst = subViewOp.getSource();
+        auto indexType = rewriter.getIndexType();
+
+        auto mixedOffsets = subViewOp.getMixedOffsets();
+        for (auto offset : mixedOffsets) {
+          if (auto attr = dyn_cast<Attribute>(offset)) {//static offset
+            if (auto integerAttr = dyn_cast<IntegerAttr>(attr)) {
+              auto offsetAttr = rewriter.getIntegerAttr(indexType, integerAttr.getInt());
+              auto offsetValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, offsetAttr);
+              dst_offsets.push_back(offsetValue);
             }
+          }else if (auto value = dyn_cast<Value>(offset)) {//dynamic offset
+            dst_offsets.push_back(value);
           }
+        }
+
+        for(auto size : subViewOp.getStaticSizes()){
+          auto sizeAttr = rewriter.getIntegerAttr(indexType, size);
+          auto sizeValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, sizeAttr);
+          dst_sizes.push_back(sizeValue);
+        }
+
+        for(auto stride : subViewOp.getStaticStrides()){
+          auto strideAttr = rewriter.getIntegerAttr(indexType, stride);
+          auto strideValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, strideAttr);
+          dst_strides.push_back(strideValue);
         }
       }
-      
-      if(auto defineOp = CopyDst.getDefiningOp()){
-        if (auto subViewOp = dyn_cast<SubViewOp>(defineOp)){
-          rewriter.setInsertionPoint(op);
-          auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),PortType::get(rewriter.getContext(), mlir::aries::adf::PortDir::Out), mlir::aries::adf::GraphIOName::PORT);
-          auto dst = subViewOp.getSource();
-          SmallVector<Value> dst_offsets;
-          SmallVector<Value> dst_sizes;
-          SmallVector<Value> dst_strides;
-          auto indexType = rewriter.getIndexType();
-
-          auto mixedOffsets = subViewOp.getMixedOffsets();
-          for (auto offset : mixedOffsets) {
-            if (auto attr = dyn_cast<Attribute>(offset)) {//static offset
-              if (auto integerAttr = dyn_cast<IntegerAttr>(attr)) {
-                auto offsetAttr = rewriter.getIntegerAttr(indexType, integerAttr.getInt());
-                auto offsetValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, offsetAttr);
-                dst_offsets.push_back(offsetValue);
-              }
-            }else if (auto value = dyn_cast<Value>(offset)) {//dynamic offset
-              dst_offsets.push_back(value);
-            }
-          }
-
-          for(auto size : subViewOp.getStaticSizes()){
-            auto sizeAttr = rewriter.getIntegerAttr(indexType, size);
-            auto sizeValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, sizeAttr);
-            dst_sizes.push_back(sizeValue);
-          }
-
-          for(auto stride : subViewOp.getStaticStrides()){
-            auto strideAttr = rewriter.getIntegerAttr(indexType, stride);
-            auto strideValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, strideAttr);
-            dst_strides.push_back(strideValue);
-          }
-
-          auto newOp = rewriter.replaceOpWithNewOp<ConnectOp>(op, CopySrc, port);
-          rewriter.setInsertionPointAfter(newOp);
-          rewriter.create<IOPopOp>(newOp->getLoc(),port, dst, dst_offsets,dst_sizes,dst_strides);
-          return success();
-        }
-      }else{
-        rewriter.setInsertionPoint(op);
-        auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),PortType::get(rewriter.getContext(), mlir::aries::adf::PortDir::Out), mlir::aries::adf::GraphIOName::PORT);
-        
-        SmallVector<Value> dst_offsets;
-        SmallVector<Value> dst_sizes;
-        SmallVector<Value> dst_strides;
-        
-        auto newOp = rewriter.replaceOpWithNewOp<ConnectOp>(op, CopySrc, port);
-        rewriter.setInsertionPointAfter(newOp);
-        rewriter.create<IOPopOp>(newOp->getLoc(), port, CopyDst, dst_offsets,dst_sizes,dst_strides);
-        return success();
+      else{
+        dst = CopyDst;
       }
     }
-    return failure();
+
+    rewriter.replaceOpWithNewOp<DmaOp>(op,src,src_offsets,src_sizes,src_strides,dst,dst_offsets,dst_sizes,dst_strides);
+    return success();
   }
 };
 
@@ -246,15 +167,14 @@ private:
     target.addIllegalOp<AllocOp>();
     target.addIllegalOp<DeallocOp>();
     target.addIllegalOp<CopyOp>();
+    target.addIllegalOp<SubViewOp>();
     patterns.add<AllocConvert>(patterns.getContext());
     patterns.add<DeallocConvert>(patterns.getContext());
     patterns.add<CopyConvert>(patterns.getContext());
+    patterns.add<SubViewConvert>(patterns.getContext());
     target.addLegalOp<arith::ConstantOp>();
     target.addLegalOp<BufferOp>();
-    target.addLegalOp<CreateGraphIOOp>();
-    target.addLegalOp<IOPushOp>();
-    target.addLegalOp<IOPopOp>();
-    target.addLegalOp<ConnectOp>();
+    target.addLegalOp<DmaOp>();
     target.addLegalDialect<ADFDialect>();
 
     if (failed(applyPartialConversion(mod, target, std::move(patterns)))) {

@@ -1,4 +1,4 @@
-gemm: toadf
+gemm: adfgraph
 
 tile:0_gemm.tiled.mlir
 0_gemm.tiled.mlir: gemm.mlir
@@ -31,24 +31,34 @@ copymem: 5_gemm.copymem.mlir
 	aries-opt -o $@ $< \
 			-aries-mem-copy
 
-flow: 6_gemm.flow.mlir
-6_gemm.flow.mlir: 5_gemm.copymem.mlir
+toadf: 6_gemm.adf.mlir
+6_gemm.adf.mlir: 5_gemm.copymem.mlir
 	aries-opt -o $@ $< \
+			-aries-lower-to-adf \
+			-canonicalize -cse
+
+flow: 7_gemm.flow.mlir
+7_gemm.flow.mlir: 6_gemm.adf.mlir
+	aries-opt -o $@ $< \
+			-canonicalize -cse \
 			-aries-dependency-extract
 
-
-unrollfunc: 7_gemm.unrollfunc.mlir
-7_gemm.unrollfunc.mlir: 6_gemm.flow.mlir
+unrollfunc: 8_gemm.unrollfunc.mlir
+8_gemm.unrollfunc.mlir: 7_gemm.flow.mlir
 	aries-opt -o $@ $< \
 			-aries-func-unroll \
 			-canonicalize -cse
 
-toadf: 8_gemm.adf.mlir
-8_gemm.adf.mlir: 7_gemm.unrollfunc.mlir
+dmaio: 9_gemm.dmaio.mlir
+9_gemm.dmaio.mlir: 8_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
-			-aries-lower-to-adf \
-			-mlir-print-ir-after-failure \
+			-aries-dma-to-io="port-type=PLIO port-width=128" \
 			-canonicalize -cse
+
+adfgraph: 10_gemm.adfgraph.mlir
+10_gemm.adfgraph.mlir: 9_gemm.dmaio.mlir
+	aries-opt -o $@ $< \
+			-aries-adf-graph-create
 
 pass:0_gemm.adf.mlir
 0_gemm.adf.mlir: gemm.mlir
@@ -59,9 +69,9 @@ pass:0_gemm.adf.mlir
 			-aries-mem-subview \
 			-aries-mem-hoist \
 			-aries-mem-copy \
+			-aries-lower-to-adf \
 			-aries-dependency-extract \
 			-aries-func-unroll \
-			-aries-lower-to-adf \
 			-canonicalize -cse
 
 

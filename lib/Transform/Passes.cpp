@@ -1,9 +1,11 @@
 #include "aries/Transform/Passes.h"
+#include "aries/Conversion/Passes.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 
 using namespace mlir;
 using namespace aries;
+using namespace adf;
 
 namespace {
 #define GEN_PASS_REGISTRATION
@@ -22,6 +24,10 @@ void mlir::aries::registerAriesPassPipeline() {
     pm.addPass(createAriesMemCopyPass());
     pm.addPass(createAriesFuncUnrollPass());
     pm.addPass(createAriesDependencyExtractPass());
+    pm.addPass(createAriesLowerToADFPass());
+    pm.addPass(createAriesDMAToIOPass());
+    pm.addPass(createAriesDMAToIOPass(opts));
+    pm.addPass(createAriesADFGraphCreatePass());
     pm.addPass(createAriesADFTestPass());
   });
 }

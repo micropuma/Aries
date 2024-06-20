@@ -81,6 +81,14 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
+def AriesADFGraphCreate : Pass<"aries-adf-graph-create"> {
+  let summary = "Create adf graph with input/output ports";
+  let description = [{
+    This pass create the adf graph with input arguments and output values.
+  }];
+  let constructor = "mlir::aries::createAriesADFGraphCreatePass()";
+}
+
 def AriesADFTest : Pass<"aries-adf-test"> {
   let summary = "Test ADF Dialect Ops";
   let constructor = "mlir::aries::createAriesADFTestPass()";
