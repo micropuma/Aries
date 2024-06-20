@@ -52,7 +52,7 @@ unrollfunc: 8_gemm.unrollfunc.mlir
 dmaio: 9_gemm.dmaio.mlir
 9_gemm.dmaio.mlir: 8_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
-			-aries-dma-io \
+			-aries-dma-to-io \
 			-canonicalize -cse
 
 adfgraph: 10_gemm.adfgraph.mlir

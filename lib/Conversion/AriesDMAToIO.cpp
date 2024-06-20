@@ -2,11 +2,12 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "llvm/Support/Debug.h"
-#include "aries/Transform/Passes.h"
+#include "aries/Conversion/Passes.h"
 #include "aries/Transform/Utils.h"
 
 using namespace mlir;
 using namespace aries;
+using namespace adf;
 using namespace mlir::func;
 
 namespace {
@@ -46,6 +47,7 @@ private:
 
 namespace mlir {
 namespace aries {
+namespace adf {
 
 std::unique_ptr<Pass> createAriesDMAToIOPass() {
   return std::make_unique<AriesDMAToIO>();
@@ -55,5 +57,6 @@ std::unique_ptr<Pass> createAriesDMAToIOPass(const AriesOptions &opts) {
   return std::make_unique<AriesDMAToIO>(opts);
 }
 
+} // namespace adf
 } // namespace aries
 } // namespace mlir

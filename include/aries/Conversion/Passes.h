@@ -4,6 +4,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include "aries/Dialect/ADF/ADFDialect.h"
+#include "aries/Transform/Passes.h"
 
 namespace mlir {
 class Pass;
@@ -14,6 +15,8 @@ namespace aries {
 namespace adf {
 
 std::unique_ptr<Pass> createAriesLowerToADFPass();
+std::unique_ptr<Pass> createAriesDMAToIOPass();
+std::unique_ptr<Pass> createAriesDMAToIOPass(const AriesOptions &opts);
 void registerConvertToADFPasses();
 
 #define GEN_PASS_CLASSES
