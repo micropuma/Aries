@@ -30,7 +30,6 @@ public:
 
 private:
   bool FuncUnroll (ModuleOp mod,StringRef topFuncName) {
-    auto builder = OpBuilder(mod);
     auto topFunc = *(mod.getOps<FuncOp>().begin());
     bool topFunc_flag = false;
     for (FuncOp func : mod.getOps<FuncOp>()) {

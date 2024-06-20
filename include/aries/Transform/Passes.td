@@ -81,6 +81,16 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
+def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
+  let summary = "Forward the data from local buffer to another local buffer";
+  let description = [{
+    This pass detect the opportunities to do data forwarding between local buffers
+    instead of writing to then reading back from memory out of L1. This pass
+    should reply on the annotation in AriesFuncUnroll pass.
+  }];
+  let constructor = "mlir::aries::createAriesLocalDataForwardPass()";
+}
+
 def AriesADFGraphCreate : Pass<"aries-adf-graph-create"> {
   let summary = "Create adf graph with input/output ports";
   let description = [{
