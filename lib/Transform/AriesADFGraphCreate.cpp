@@ -22,7 +22,7 @@ public:
   }
 
 private:
-    
+
   bool ADFGraphCreate (ModuleOp mod, StringRef topFuncName) {
     auto builder = OpBuilder(mod);
     FuncOp topFunc;
@@ -30,6 +30,29 @@ private:
       topFunc->emitOpError("Top function not found\n");
       return false;
     }
+
+    SmallVector<AffineForOp, 6> bands;
+    getLoopBands(topFunc, bands, true);
+
+    //Create an empty adf.graph before the outmost band loop
+    auto outermostband = bands[bands.size()-1];
+
+    //Create an empty func adf_graph before the outmost band loop
+    builder.setInsertionPoint(topFunc);
+    auto funcName = "adf_graph";
+    auto funcType = builder.getFunctionType(TypeRange({}), TypeRange({}));
+    auto newfunc = builder.create<FuncOp>(builder.getUnknownLoc(), funcName, funcType);
+    auto destBlock = newfunc.addEntryBlock();
+    builder.setInsertionPointToEnd(destBlock);
+    auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
+
+    // Create the function CallOp
+    builder.setInsertionPoint(outermostband);
+    builder.create<CallOp>(outermostband.getLoc(), newfunc, ValueRange({}));
+
+    // Move the entire block of outermostband before the returnOp
+    builder.setInsertionPointToEnd(destBlock);
+    outermostband->moveBefore(returnOp);
 
     return true;
   }
