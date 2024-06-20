@@ -3,6 +3,8 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
 #include "llvm/Support/Debug.h"
 #include "aries/Transform/Passes.h"
 #include "aries/Transform/Utils.h"
@@ -122,6 +124,14 @@ private:
     FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
+      return false;
+    }
+
+    PassManager pm(&getContext());
+    pm.addPass(createCSEPass());
+    pm.addPass(createCanonicalizerPass());
+
+    if (failed(pm.run(topFunc))) {
       return false;
     }
 
