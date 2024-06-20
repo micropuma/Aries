@@ -13,15 +13,21 @@ using namespace aries;
 using namespace adf;
 using namespace mlir::func;
 
-struct ConnectForward: public OpRewritePattern<ConnectOp>{
-ConnectForward(MLIRContext *context)
-      : OpRewritePattern<ConnectOp>(context, /*benefit=*/1) {}
+struct DMAForward: public OpRewritePattern<DmaOp>{
+DMAForward(MLIRContext *context)
+      : OpRewritePattern<DmaOp>(context, /*benefit=*/1) {}
 
   LogicalResult matchAndRewrite(
-    ConnectOp op, PatternRewriter &rewriter) const override {
+    DmaOp op, PatternRewriter &rewriter) const override {
 
     auto ConSrc = op.getSrc();
+    SmallVector<Value> src_offsets=op.getSrcOffsets();
+    SmallVector<Value> src_sizes  =op.getSrcSizes();
+    SmallVector<Value> src_strides=op.getSrcStrides();
     auto ConDst = op.getDst();
+    SmallVector<Value> dst_offsets=op.getDstOffsets();
+    SmallVector<Value> dst_sizes  =op.getDstSizes();
+    SmallVector<Value> dst_strides=op.getDstStrides();
     
     if(op->getAttr("finish")){
       rewriter.eraseOp(op);
@@ -32,17 +38,28 @@ ConnectForward(MLIRContext *context)
       auto intRAttr = dyn_cast<IntegerAttr>(readAttr);
       auto RIndex = intRAttr.getInt();
       for(auto use: ConSrc.getUsers()){
-        if(auto conop = dyn_cast<ConnectOp>(use)){
-          if(auto writeAttr = conop->getAttr("write")){
+        if(auto dmaop = dyn_cast<DmaOp>(use)){
+          auto writeAttr = dmaop->getAttr("write");
+          SmallVector<Value> Wdst_offsets=dmaop.getDstOffsets();
+          SmallVector<Value> Wdst_sizes  =dmaop.getDstSizes();
+          SmallVector<Value> Wdst_strides=dmaop.getDstStrides();
+          if(writeAttr
+             && src_offsets == Wdst_offsets
+             && src_sizes   == Wdst_sizes
+             && src_strides == Wdst_strides){
             auto intWAttr = dyn_cast<IntegerAttr>(writeAttr);
             auto WIndex = intWAttr.getInt();
             if(WIndex == RIndex -1){
-              auto src = conop.getSrc();
-              auto dst = op.getDst();
+              auto src = dmaop.getSrc();
+              SmallVector<Value> Rsrc_offsets=dmaop.getSrcOffsets();
+              SmallVector<Value> Rsrc_sizes  =dmaop.getSrcSizes();
+              SmallVector<Value> Rsrc_strides=dmaop.getSrcStrides();
               rewriter.setInsertionPointAfter(op);
-              rewriter.replaceOpWithNewOp<ConnectOp>(op,src,dst);
-              conop->removeAttr("write");
-              conop->setAttr("finish",rewriter.getUnitAttr());
+              rewriter.replaceOpWithNewOp<DmaOp>
+              (op,src,    Rsrc_offsets, Rsrc_sizes, Rsrc_strides, 
+                  ConDst, dst_offsets,  dst_sizes,  dst_strides);
+              dmaop->removeAttr("write");
+              dmaop->setAttr("finish",rewriter.getUnitAttr());
               return success();
             }
           }
@@ -52,17 +69,28 @@ ConnectForward(MLIRContext *context)
       auto intWAttr = dyn_cast<IntegerAttr>(writeAttr);
       auto WIndex = intWAttr.getInt();
       for(auto use: ConDst.getUsers()){
-        if(auto conop = dyn_cast<ConnectOp>(use)){
-          if(auto readAttr = conop->getAttr("read")){
+        if(auto dmaop = dyn_cast<DmaOp>(use)){
+          auto readAttr = dmaop->getAttr("read");
+          SmallVector<Value> Rsrc_offsets=dmaop.getSrcOffsets();
+          SmallVector<Value> Rsrc_sizes  =dmaop.getSrcSizes();
+          SmallVector<Value> Rsrc_strides=dmaop.getSrcStrides();
+          if(readAttr
+             && dst_offsets == Rsrc_offsets
+             && dst_sizes   == Rsrc_sizes  
+             && dst_strides == Rsrc_strides){
             auto intRAttr = dyn_cast<IntegerAttr>(readAttr);
             auto RIndex = intRAttr.getInt();
             if(WIndex == RIndex - 1){
-              auto src = op.getSrc();
-              auto dst = conop.getDst();
-              rewriter.setInsertionPointAfter(conop);
-              rewriter.replaceOpWithNewOp<ConnectOp>(op, src,dst);
-              conop->removeAttr("read");
-              conop->setAttr("finish",rewriter.getUnitAttr());
+              auto dst = dmaop.getDst();
+              SmallVector<Value> Rdst_offsets=dmaop.getDstOffsets();
+              SmallVector<Value> Rdst_sizes  =dmaop.getDstSizes();
+              SmallVector<Value> Rdst_strides=dmaop.getDstStrides();
+              rewriter.setInsertionPointAfter(dmaop);
+              rewriter.replaceOpWithNewOp<DmaOp>
+              (op, ConSrc,src_offsets, src_sizes,  src_strides,
+                   dst,   Rdst_offsets,Rdst_sizes, Rdst_strides);
+              dmaop->removeAttr("read");
+              dmaop->setAttr("finish",rewriter.getUnitAttr());
               return success();
             }
           }
@@ -97,7 +125,7 @@ private:
       return false;
     }
 
-    patterns.add<ConnectForward>(patterns.getContext());
+    patterns.add<DMAForward>(patterns.getContext());
 
     (void)applyPatternsAndFoldGreedily(mod, std::move(patterns));
 

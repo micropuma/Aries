@@ -49,20 +49,20 @@ unrollfunc: 8_gemm.unrollfunc.mlir
 			-aries-func-unroll \
 			-canonicalize -cse
 
-dmaio: 9_gemm.dmaio.mlir
-9_gemm.dmaio.mlir: 8_gemm.unrollfunc.mlir
-	aries-opt -o $@ $< \
-			-aries-dma-to-io="port-type=PLIO port-width=128" \
-			-canonicalize -cse
-
-dataforward: 10_gemm.dataforward.mlir
-10_gemm.dataforward.mlir: 9_gemm.dmaio.mlir
+dataforward: 9_gemm.dataforward.mlir
+9_gemm.dataforward.mlir: 8_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-local-data-forward \
 			-canonicalize -cse
 
+dmaio: 10_gemm.dmaio.mlir
+10_gemm.dmaio.mlir: 9_gemm.dataforward.mlir
+	aries-opt -o $@ $< \
+			-aries-dma-to-io="port-type=PLIO port-width=128" \
+			-canonicalize -cse
+
 adfgraph: 11_gemm.adfgraph.mlir
-11_gemm.adfgraph.mlir: 10_gemm.dataforward.mlir
+11_gemm.adfgraph.mlir: 8_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-adf-graph-create
 
