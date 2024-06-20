@@ -47,7 +47,7 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
       }
         
       //if the DmaOp is copied to L1 mem
-      if(DstSpace && DstSpace == (int)MemorySpace::L1){
+      if(SrcSpace !=(int)MemorySpace::L1 && DstSpace == (int)MemorySpace::L1){
         rewriter.setInsertionPoint(op);
         auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portIn,portName);
         SmallVector<Value> dst;
@@ -63,7 +63,7 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         rewriter.setInsertionPoint(newOp);
         rewriter.create<IOPushOp>(newOp->getLoc(),DmaSrc, src_offsets,src_sizes,src_strides, dst);
         return success();
-      }else if(SrcSpace && SrcSpace == (int)MemorySpace::L1){
+      }else if(SrcSpace == (int)MemorySpace::L1 && DstSpace != (int)MemorySpace::L1){
         rewriter.setInsertionPoint(op);
         auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portOut,portName);
         SmallVector<Value> dst_offsets=op.getDstOffsets();
@@ -76,6 +76,9 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         }
         rewriter.setInsertionPointAfter(newOp);
         rewriter.create<IOPopOp>(newOp->getLoc(), port, DmaDst, dst_offsets,dst_sizes,dst_strides);
+        return success();
+      }else if(SrcSpace == (int)MemorySpace::L1 && DstSpace == (int)MemorySpace::L1){
+        rewriter.replaceOpWithNewOp<ConnectOp>(op, DmaSrc, DmaDst);
         return success();
       }
       return failure();
