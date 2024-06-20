@@ -26,12 +26,12 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       llvm::cl::desc("Specify a list of loop tile sizes")};
   
   /// Configure the DMAToIO pass.
-  Option<std::string> PortType{
+  Option<std::string> OptPortType{
       *this, "port-type", llvm::cl::init("PLIO"),
       llvm::cl::desc("Specify the type of the ports(PORT,GMIO,PLIO)")};
 
   /// Configure the DMAToIO pass.
-  Option<int64_t> PortWidth{
+  Option<int64_t> OptPortWidth{
       *this, "port-width", llvm::cl::init(128),
       llvm::cl::desc("Specify the port width of a port (32,64,128)")};
 };

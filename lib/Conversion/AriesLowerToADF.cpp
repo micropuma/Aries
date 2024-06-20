@@ -174,10 +174,6 @@ private:
     patterns.add<SubViewConvert>(patterns.getContext());
     target.addLegalOp<arith::ConstantOp>();
     target.addLegalOp<BufferOp>();
-    target.addLegalOp<CreateGraphIOOp>();
-    target.addLegalOp<IOPushOp>();
-    target.addLegalOp<IOPopOp>();
-    target.addLegalOp<ConnectOp>();
     target.addLegalOp<DmaOp>();
     target.addLegalDialect<ADFDialect>();
 

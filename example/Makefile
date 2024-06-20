@@ -52,7 +52,7 @@ unrollfunc: 8_gemm.unrollfunc.mlir
 dmaio: 9_gemm.dmaio.mlir
 9_gemm.dmaio.mlir: 8_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
-			-aries-dma-to-io \
+			-aries-dma-to-io="port-type=PLIO port-width=128" \
 			-canonicalize -cse
 
 adfgraph: 10_gemm.adfgraph.mlir
