@@ -59,7 +59,7 @@ dmaio: 10_gemm.dmaio.mlir
 			-canonicalize -cse
 
 adfgraph: 11_gemm.adfgraph.mlir
-11_gemm.adfgraph.mlir: 8_gemm.unrollfunc.mlir
+11_gemm.adfgraph.mlir: 10_gemm.dmaio.mlir
 	aries-opt -o $@ $< \
 			-aries-adf-graph-create
 
@@ -77,6 +77,7 @@ pass:0_gemm.adf.mlir
 			-aries-func-unroll \
 			-aries-local-data-forward \
 			-aries-dma-to-io="port-type=PLIO port-width=128" \
+			-aries-adf-graph-create \
 			-canonicalize -cse
 
 
