@@ -178,7 +178,7 @@ private:
     target.addLegalDialect<ADFDialect>();
 
     if (failed(applyPartialConversion(mod, target, std::move(patterns)))) {
-      signalPassFailure();
+      return false;
     }
 
     return true;

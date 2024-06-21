@@ -6,6 +6,8 @@
 #include "aries/Dialect/ADF/ADFDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
 
 using namespace mlir;
 using namespace aries;
@@ -66,6 +68,14 @@ private:
     FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
+      return false;
+    }
+
+    PassManager pm(&getContext());
+    pm.addPass(createCSEPass());
+    pm.addPass(createCanonicalizerPass());
+
+    if (failed(pm.run(topFunc))) {
       return false;
     }
 

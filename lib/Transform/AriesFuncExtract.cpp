@@ -84,6 +84,7 @@ private:
     auto funcName = "kernel_" + symbol.str();
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
     auto newfunc = builder.create<FuncOp>(builder.getUnknownLoc(), funcName, funcType);
+    newfunc->setAttr("adf.kernel",builder.getUnitAttr());
     auto destBlock = newfunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
