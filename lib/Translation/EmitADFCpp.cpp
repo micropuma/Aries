@@ -1,6 +1,7 @@
 #include "mlir/InitAllDialects.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Debug.h"
 #include "aries/Translation/EmitADFCpp.h"
 #include "aries/Transform/Utils.h"
 #include "aries/Dialect/ADF/ADFDialect.h"
@@ -8,6 +9,10 @@
 using namespace mlir;
 using namespace aries;
 using namespace adf;
+using namespace mlir::func;
+
+static SmallString<16> getType(Type type) {
+}
 
 namespace {
 class ADFEmitter : public ADFEmitterBase {
@@ -15,12 +20,18 @@ public:
   explicit ADFEmitter(ADFEmitterState &state) : ADFEmitterBase(state) {}
   /// Top-level MLIR module emitter.
   void emitModule(ModuleOp module);
+private:
+  void emitADFGraphHeader(FuncOp func);
 };
 }
 
+void ADFEmitter::emitADFGraphHeader(FuncOp func) {
+  llvm::outs() << "this entered\n" ;
+}
+
 void ADFEmitter::emitModule(ModuleOp module) {
-std::string adf_header = R"XXX(
-//===------------------------------------------------------------*- C++ -*-===//
+  std::string adf_header = R"XXX(
+//===----------------------------------------------------------------------===//
 //
 // Automatically generated file for adf graph
 //
@@ -36,7 +47,12 @@ using namespace adf;
 #endif /**********__GRAPH_H__**********/
 )XXX";
 
-os << adf_header;
+  for (auto op : module.getOps<FuncOp>()) {
+      if (op->getAttr("adf.graph")){
+        os << adf_header;
+        emitADFGraphHeader(op);
+      } 
+  }
 
 }
 
