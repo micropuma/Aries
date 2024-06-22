@@ -30,26 +30,46 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
 
       GraphIOName portName;
       Type portIn,portOut;
+      PortWidth portwid;
       if (portType=="PLIO" || portType=="plio"){
         portName = GraphIOName::PLIO;
-        portIn = PLIOType::get(rewriter.getContext(), mlir::aries::adf::PortDir::In, portWidth);
-        portOut = PLIOType::get(rewriter.getContext(), mlir::aries::adf::PortDir::Out, portWidth);
+        portIn = PLIOType::get(rewriter.getContext(), PortDir::In);
+        portOut = PLIOType::get(rewriter.getContext(), PortDir::Out);
       }else if(portType=="GMIO" || portType=="gmio"){
         portName = GraphIOName::GMIO;
-        portIn = GMIOType::get(rewriter.getContext(), mlir::aries::adf::PortDir::In, portWidth);
-        portOut = GMIOType::get(rewriter.getContext(), mlir::aries::adf::PortDir::Out, portWidth);
+        portIn = GMIOType::get(rewriter.getContext(), PortDir::In);
+        portOut = GMIOType::get(rewriter.getContext(), PortDir::Out);
       }else if(portType=="PORT" || portType=="port"){
         portName = GraphIOName::PORT;
-        portIn = PortType::get(rewriter.getContext(), mlir::aries::adf::PortDir::In);
-        portOut = PortType::get(rewriter.getContext(), mlir::aries::adf::PortDir::Out);
+        portIn = PortType::get(rewriter.getContext(), PortDir::In);
+        portOut = PortType::get(rewriter.getContext(), PortDir::Out);
       }else{
         return failure();
       }
+      
+      switch(portWidth) {
+        case 0:
+          portwid = PortWidth::WidthNULL;
+          break;
+        case 32:
+          portwid = PortWidth::Width32;
+          break;
+        case 64:
+          portwid = PortWidth::Width64;
+          break;
+        case 128:
+          portwid = PortWidth::Width128;
+          break;
+        default:
+          portwid = PortWidth::Width128;
+      }
+
+
         
       //if the DmaOp is copied to L1 mem
       if(SrcSpace !=(int)MemorySpace::L1 && DstSpace == (int)MemorySpace::L1){
         rewriter.setInsertionPoint(op);
-        auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portIn,portName);
+        auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portIn,portName,portwid);
         SmallVector<Value> dst;
         dst.push_back(port.getResult());
         SmallVector<Value> src_offsets=op.getSrcOffsets();
@@ -65,7 +85,7 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         return success();
       }else if(SrcSpace == (int)MemorySpace::L1 && DstSpace != (int)MemorySpace::L1){
         rewriter.setInsertionPoint(op);
-        auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portOut,portName);
+        auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portOut,portName,portwid);
         SmallVector<Value> dst_offsets=op.getDstOffsets();
         SmallVector<Value> dst_sizes=op.getDstSizes();
         SmallVector<Value> dst_strides=op.getDstStrides();

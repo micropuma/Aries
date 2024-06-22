@@ -17,14 +17,14 @@ def PortType : ADF_Type<"Port", "port"> {
 
 def PLIOType : ADF_Type<"PLIO", "plio"> {
   let summary = "plio type";
-  let parameters = (ins PortDirParam:$dir, "unsigned":$width);
-  let assemblyFormat = "`<` $dir `,` $width `>`";
+  let parameters = (ins PortDirParam:$dir);
+  let assemblyFormat = "`<` $dir `>`";
 }
 
 def GMIOType : ADF_Type<"GMIO", "gmio"> {
   let summary = "gmio type";
-  let parameters = (ins PortDirParam:$dir, "unsigned":$width);
-  let assemblyFormat = "`<` $dir `,` $width `>`";
+  let parameters = (ins PortDirParam:$dir);
+  let assemblyFormat = "`<` $dir `>`";
 }
 
 def GraphIOType : AnyTypeOf<[PLIOType, GMIOType, PortType]>;
