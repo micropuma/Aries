@@ -30,6 +30,7 @@ public:
 
 private:
   bool FuncUnroll (ModuleOp mod,StringRef topFuncName) {
+    auto builder = OpBuilder(mod);
     auto topFunc = *(mod.getOps<FuncOp>().begin());
     bool topFunc_flag = false;
     for (FuncOp func : mod.getOps<FuncOp>()) {
@@ -70,10 +71,27 @@ private:
         if (failed(loopUnrollFull(band)))
           return false;
       }
-      
     }
-    
 
+    llvm::SmallVector<std::pair<StringRef, unsigned>, 4> calleeCounts;
+    topFunc.walk([&](CallOp call){
+      auto calleeName = call.getCallee();
+      bool found = false;
+      for (auto &entry : calleeCounts) {
+        if (entry.first == calleeName) {
+          entry.second++;
+          auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), entry.second);
+          call->setAttr(calleeName,valueAttr);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        calleeCounts.push_back(std::make_pair(calleeName, 0));
+        auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), 0);
+        call->setAttr(calleeName,valueAttr);
+      }
+    });
     return topFunc_flag;
   }
 
