@@ -2,6 +2,7 @@
 #define ARIES_TRANSLATION_EMITADFCPP_H
 
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/InitAllDialects.h"
 
 namespace mlir {
 namespace aries {
@@ -27,6 +28,7 @@ public:
 
   // This table contains all declared values.
   DenseMap<Value, SmallString<8>> nameTable;
+  DenseMap<func::CallOp, SmallString<8>> callTable;
   std::map<std::string, int> nameConflictCnt;
 
 private:
@@ -49,6 +51,18 @@ public:
 
   // The stream to emit to.
   raw_ostream &os;
+
+  /// Value name management methods.
+  SmallString<8> addName(Value val, bool isPtr = false, std::string name = "");
+
+  SmallString<8> getName(Value val);
+
+  bool isDeclared(Value val) {
+    if (getName(val).empty()) {
+      return false;
+    } else
+      return true;
+  }
 
 private:
   ADFEmitterBase(const ADFEmitterBase &) = delete;
