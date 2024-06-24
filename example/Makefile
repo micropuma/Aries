@@ -42,24 +42,29 @@ flow: 7_gemm.flow.mlir
 	aries-opt -o $@ $< \
 			-aries-dependency-extract
 
-unrollfunc: 8_gemm.unrollfunc.mlir
-8_gemm.unrollfunc.mlir: 7_gemm.flow.mlir
+kernelio: 8_gemm.kernelio.mlir
+8_gemm.kernelio.mlir: 7_gemm.flow.mlir
+	aries-opt -o $@ $< \
+			-aries-dependency-extract
+
+unrollfunc: 9_gemm.unrollfunc.mlir
+9_gemm.unrollfunc.mlir: 8_gemm.kernelio.mlir
 	aries-opt -o $@ $< \
 			-aries-func-unroll
 
-dataforward: 9_gemm.dataforward.mlir
-9_gemm.dataforward.mlir: 8_gemm.unrollfunc.mlir
+dataforward: 10_gemm.dataforward.mlir
+10_gemm.dataforward.mlir: 9_gemm.unrollfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-local-data-forward
 
-dmaio: 10_gemm.dmaio.mlir
-10_gemm.dmaio.mlir: 9_gemm.dataforward.mlir
+dmaio: 11_gemm.dmaio.mlir
+11_gemm.dmaio.mlir: 10_gemm.dataforward.mlir
 	aries-opt -o $@ $< \
 			-aries-dma-to-io="port-type=PLIO port-width=128" \
 			-canonicalize -cse
 
-adfgraph: 11_gemm.adfgraph.mlir
-11_gemm.adfgraph.mlir: 10_gemm.dmaio.mlir
+adfgraph: 12_gemm.adfgraph.mlir
+12_gemm.adfgraph.mlir: 11_gemm.dmaio.mlir
 	aries-opt -o $@ $< \
 			-aries-adf-graph-create
 

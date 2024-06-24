@@ -81,6 +81,15 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
+def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
+  let summary = "Create new kenrel with interface compatable with ADF kernels";
+  let description = [{
+    This pass creates the new kernel function that returns the buffers be touched.
+    This identifies the direction of the buffer which is required by ADF kernels.
+  }];
+  let constructor = "mlir::aries::createAriesKernelInterfaceCreatePass()";
+}
+
 def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
   let summary = "Forward the data from local buffer to another local buffer";
   let description = [{
