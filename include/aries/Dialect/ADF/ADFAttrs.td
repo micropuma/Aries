@@ -10,6 +10,7 @@ def DirInout:  I32EnumAttrCase<"Inout", 2>;
 def Width128:  I32EnumAttrCase<"Width128", 128>;
 def Width64:   I32EnumAttrCase<"Width64" , 64>;
 def Width32:   I32EnumAttrCase<"Width32" , 32>;
+def WidthNULL: I32EnumAttrCase<"WidthNULL" ,0>;
 def PLIO:      I32EnumAttrCase<"PLIO", 0>;
 def GMIO:      I32EnumAttrCase<"GMIO", 1>;
 def PORT:      I32EnumAttrCase<"PORT", 2>;
@@ -29,7 +30,7 @@ def PortDir: I32EnumAttr<"PortDir", "Direction of the ports",
 def PortDirParam: EnumParameter<PortDir>;
 
 def PortWidth: I32EnumAttr<"PortWidth", "Width of the ports",
-  [Width128, Width64, Width32]> {
+  [Width128, Width64, Width32, WidthNULL]> {
   let cppNamespace = "::mlir::aries::adf";
 }
 

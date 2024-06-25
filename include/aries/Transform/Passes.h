@@ -45,6 +45,7 @@ std::unique_ptr<Pass> createAriesMemHoistPass();
 std::unique_ptr<Pass> createAriesMemCopyPass();
 std::unique_ptr<Pass> createAriesDependencyExtractPass();
 std::unique_ptr<Pass> createAriesFuncUnrollPass();
+std::unique_ptr<Pass> createAriesKernelInterfaceCreatePass();
 std::unique_ptr<Pass> createAriesLocalDataForwardPass();
 std::unique_ptr<Pass> createAriesADFGraphCreatePass();
 std::unique_ptr<Pass> createAriesADFTestPass();

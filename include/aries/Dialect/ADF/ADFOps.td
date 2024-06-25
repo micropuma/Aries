@@ -74,51 +74,6 @@ def KernelOp : ADF_Op<"kernel", [Pure]> {
 // Operations to create GraphIOType
 // -------------
 
-def PORTOp : ADF_Op<"port.create", []> {
-  let summary = "General port creation";
-  let description = [{
-    This operation creates a port with direction. This will be
-    converted to PLIO or GMIO or as the subgraph in/output.
-
-    ```mlir
-      %port0 = adf.port.create() : !adf.port<In>
-    ```
-  }];
-
-  let results = (outs GMIOType:$port);
-  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
-}
-
-def PLIOOp : ADF_Op<"plio.create", []> {
-  let summary = "PLIO port creation";
-  let description = [{
-    This operation creates a plio port with port width and direction.
-
-    ```mlir
-      %plio0 = adf.plio.create() : !adf.plio<In,128> 
-    ```
-  }];
-
-  let results = (outs PLIOType:$plio);
-  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
-
-}
-
-def GMIOOp : ADF_Op<"gmio.create", []> {
-  let summary = "GMIO port creation";
-  let description = [{
-    This operation creates a gmio port with port width and direction.
-
-    ```mlir
-      %gmio0 = adf.gmio.create() : !adf.gmio<In,128>
-    ```
-  }];
-
-  let results = (outs GMIOType:$gmio);
-  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
-}
-
-
 //This may replace the seperated operations above PORTOp, PLIOOp, GMIOOp
 def CreateGraphIOOp : ADF_Op<"graph.io", []> {
   let summary = "graph input/output creation";
@@ -132,9 +87,9 @@ def CreateGraphIOOp : ADF_Op<"graph.io", []> {
     ```
   }];
 
-  let arguments = (ins GraphIOName: $name);
+  let arguments = (ins GraphIOName: $name, PortWidth: $portwid);
   let results = (outs GraphIOType:$graphio);
-  let assemblyFormat = " `(` $name `)` attr-dict `:` type(results)";
+  let assemblyFormat = " `(` $name `,` $portwid `)` attr-dict `:` type(results)";
 
   let hasCanonicalizer = 1;
 }
