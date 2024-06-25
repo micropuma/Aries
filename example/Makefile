@@ -45,7 +45,7 @@ flow: 7_gemm.flow.mlir
 kernelio: 8_gemm.kernelio.mlir
 8_gemm.kernelio.mlir: 7_gemm.flow.mlir
 	aries-opt -o $@ $< \
-			-aries-dependency-extract
+			-aries-kernel-interface-create
 
 unrollfunc: 9_gemm.unrollfunc.mlir
 9_gemm.unrollfunc.mlir: 8_gemm.kernelio.mlir

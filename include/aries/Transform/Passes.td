@@ -88,6 +88,7 @@ def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
     This identifies the direction of the buffer which is required by ADF kernels.
   }];
   let constructor = "mlir::aries::createAriesKernelInterfaceCreatePass()";
+  let dependentDialects = ["mlir::memref::MemRefDialect"];
 }
 
 def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
