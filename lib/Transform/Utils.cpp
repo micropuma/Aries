@@ -97,6 +97,21 @@ bool calleeFind(ModuleOp mod, FuncOp topFunc, FuncOp &calleeFuncOp){
   return calleeFunc_flag;
 }
 
+/// Parse other attributes.
+SmallVector<int64_t, 8> getIntArrayAttrValue(Operation *op,
+                                                  StringRef name) {
+  SmallVector<int64_t, 8> array;
+  if (auto arrayAttr = op->getAttrOfType<ArrayAttr>(name)) {
+    for (auto attr : arrayAttr)
+      if (auto intAttr = attr.dyn_cast<IntegerAttr>())
+        array.push_back(intAttr.getInt());
+      else
+        return SmallVector<int64_t, 8>();
+    return array;
+  } else
+    return SmallVector<int64_t, 8>();
+}
+
 
 }   // namespace aries
 }   // namespace mlir

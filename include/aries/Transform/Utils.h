@@ -28,6 +28,8 @@ bool topFind(ModuleOp mod, FuncOp& topFunc, StringRef topFuncName);
 // Find the callee function called in the topFunc
 bool calleeFind(ModuleOp mod, FuncOp topFunc, FuncOp &calleeFuncOp);
 
+SmallVector<int64_t, 8> getIntArrayAttrValue(Operation *op, StringRef name);
+
 }   // namespace aries
 }   // namespace mlir
 
