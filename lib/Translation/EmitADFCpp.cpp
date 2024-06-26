@@ -1431,8 +1431,14 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
   
   emitIODef(func);
 
+  indent();
   os << GraphName << "() {\n";
+  
   emitBlock(func.getBody().front());
+
+  indent();
+  os << "}\n";
+
   os << "};\n\n";
 }
 
