@@ -177,6 +177,21 @@ static SmallString<16> getTypeName(Value val) {
   return getTypeName(valType);
 }
 
+/// Parse other attributes.
+SmallVector<int64_t, 8> getIntArrayAttrValue(Operation *op,
+                                                  StringRef name) {
+  SmallVector<int64_t, 8> array;
+  if (auto arrayAttr = op->getAttrOfType<ArrayAttr>(name)) {
+    for (auto attr : arrayAttr)
+      if (auto intAttr = attr.dyn_cast<IntegerAttr>())
+        array.push_back(intAttr.getInt());
+      else
+        return SmallVector<int64_t, 8>();
+    return array;
+  } else
+    return SmallVector<int64_t, 8>();
+}
+
 namespace {
 class ModuleEmitter : public ADFEmitterBase {
 public:
@@ -210,6 +225,8 @@ public:
   void emitMaxMin(Operation *op, const char *syntax);
 
   /// Special expression emitters.
+  void emitCall(func::CallOp op);
+  
   void emitSelect(arith::SelectOp op);
   void emitConstant(arith::ConstantOp op);
   template <typename CastOpType> void emitCast(CastOpType op);
@@ -320,8 +337,26 @@ namespace {
 class StmtVisitor : public ADFVisitorBase<StmtVisitor, bool> {
 public:
   StmtVisitor(ModuleEmitter &emitter) : emitter(emitter) {}
-  
   using ADFVisitorBase::visitOp;
+  
+  /// ADF statements
+  bool visitOp(adf::GraphOp op) { return true; };
+  bool visitOp(adf::GraphReturnOp op) { return true; };
+  bool visitOp(adf::KernelOp op) { return true; };
+  bool visitOp(adf::CreateGraphIOOp op) { return true; };
+  bool visitOp(adf::BufferOp op) { return true; };
+  bool visitOp(adf::StreamOp op) { return true; };
+  bool visitOp(adf::CascadeOp op) { return true; };
+  bool visitOp(adf::CreateKernelIOOp op) { return true; };
+  bool visitOp(adf::DmaOp op) { return true; };
+  bool visitOp(adf::ConnectOp op) { return true; };
+  bool visitOp(adf::IOPushOp op) { return true; };
+  bool visitOp(adf::IOPopOp op) { return true; };
+
+  /// Function operations.
+  bool visitOp(func::CallOp op) { return emitter.emitCall(op), true; }
+  bool visitOp(func::ReturnOp op) { return true; }
+
   /// SCF statements.
   bool visitOp(scf::ForOp op) { return emitter.emitScfFor(op), true; };
   bool visitOp(scf::IfOp op) { return emitter.emitScfIf(op), true; };
@@ -496,6 +531,52 @@ bool ExprVisitor::visitOp(arith::CmpIOp op) {
 //===----------------------------------------------------------------------===//
 // ModuleEmitter Class Definition
 //===----------------------------------------------------------------------===//
+
+void ModuleEmitter::emitCall(func::CallOp op) {
+  // No operaion needed for callOp marked by adf.kernel in the adf.graph
+  auto calleeName = op.getCallee();
+  if(op->getAttr(calleeName))
+    return;
+
+  // Handle returned value by the callee.
+  for (auto result : op.getResults()) {
+    if (!isDeclared(result)) {
+      indent();
+      if (result.getType().isa<ShapedType>())
+        emitArrayDecl(result);
+      else
+        emitValue(result);
+      os << ";\n";
+    }
+  }
+
+  // Emit the function call.
+  indent();
+  os << op.getCallee() << "(";
+
+  // Handle input arguments.
+  unsigned argIdx = 0;
+  for (auto arg : op.getOperands()) {
+    emitValue(arg);
+
+    if (argIdx++ != op.getNumOperands() - 1)
+      os << ", ";
+  }
+
+  // Handle output arguments.
+  for (auto result : op.getResults()) {
+    // The address should be passed in for scalar result arguments.
+    if (result.getType().isa<ShapedType>())
+      os << ", ";
+    else
+      os << ", &";
+
+    emitValue(result);
+  }
+
+  os << ");";
+  emitInfoAndNewLine(op);
+}
 
 /// SCF statement emitters.
 void ModuleEmitter::emitScfFor(scf::ForOp op) {
@@ -1336,20 +1417,22 @@ void ModuleEmitter::emitIODef(FuncOp func) {
 }
 
 void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
-  
+  if (func.getBlocks().size() != 1)
+    func->emitError("has zero or more than one basic blocks.");
+
   auto GraphName = func.getName();
   os << "class " << GraphName << ": public adf::graph{\n";
   os << "private:\n";
   
-  ModuleEmitter::emitKernelDef(func);
+  emitKernelDef(func);
 
   reduceIndent();
   os << "public:\n";
   
-  ModuleEmitter::emitIODef(func);
+  emitIODef(func);
 
   os << GraphName << "() {\n";
-
+  emitBlock(func.getBody().front());
   os << "};\n\n";
 }
 

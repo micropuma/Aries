@@ -26,9 +26,9 @@ public:
     return TypeSwitch<Operation *, ResultType>(op)
         .template Case<
             // ADF dialect operations.
-            GraphOp, GraphReturnOp, KernelOp, BufferOp, StreamOp,
-            CascadeOp, CreateKernelIOOp, DmaOp, ConnectOp, IOPushOp,
-            IOPopOp,
+            GraphOp, GraphReturnOp, KernelOp, CreateGraphIOOp,
+            BufferOp, StreamOp, CascadeOp, CreateKernelIOOp, 
+            DmaOp, ConnectOp, IOPushOp, IOPopOp,
 
             // Function operations.
             func::CallOp, func::ReturnOp,
@@ -101,6 +101,7 @@ public:
   HANDLE(GraphOp);
   HANDLE(GraphReturnOp);
   HANDLE(KernelOp);
+  HANDLE(CreateGraphIOOp);
   HANDLE(BufferOp);
   HANDLE(StreamOp);
   HANDLE(CascadeOp);
