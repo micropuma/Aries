@@ -97,6 +97,5 @@ bool calleeFind(ModuleOp mod, FuncOp topFunc, FuncOp &calleeFuncOp){
   return calleeFunc_flag;
 }
 
-
 }   // namespace aries
 }   // namespace mlir

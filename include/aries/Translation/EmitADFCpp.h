@@ -55,10 +55,21 @@ public:
   /// Value name management methods.
   SmallString<8> addName(Value val, bool isPtr = false, std::string name = "");
 
+  SmallString<8> addCall(func::CallOp call, std::string name = "");
+
   SmallString<8> getName(Value val);
+
+  SmallString<8> getCall(func::CallOp call);
 
   bool isDeclared(Value val) {
     if (getName(val).empty()) {
+      return false;
+    } else
+      return true;
+  }
+
+  bool isDeclared(func::CallOp call) {
+    if (getCall(call).empty()) {
       return false;
     } else
       return true;
