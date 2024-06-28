@@ -71,6 +71,7 @@ adfgraph: 12_gemm.adfgraph.mlir
 PROJECT_NAME=adf_graph
 PROJECT_PATH=./${PROJECT_NAME}
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
+KERNEL_NAME=kernel
 
 pass:${PROJECT_PATH}/0_gemm.adf.mlir
 ${PROJECT_PATH}/0_gemm.adf.mlir: gemm.mlir
@@ -98,10 +99,19 @@ fileCreate:
 copyFile:
 	cp -r Makefile_VCK190 ${PROJECT_PATH}/Makefile
 
-translate: ${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp
+translate: adf_graph kernel_header
+adf_graph: ${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp
 ${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp: ${PROJECT_PATH}/0_gemm.adf.mlir
 	aries-translate -o $@ $< \
 		-emit-aie-adf
+
+kernel_header: ${PROJECT_AIE_PATH}/${KERNEL_NAME}.h
+${PROJECT_AIE_PATH}/${KERNEL_NAME}.h: ${PROJECT_PATH}/0_gemm.adf.mlir
+	aries-translate -o $@ $< \
+		-emit-kenrel-header
+
+clean_translate:
+	rm -rf ${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp ${PROJECT_AIE_PATH}/${KERNEL_NAME}.h
 
 clean_project:
 	rm -rf ${PROJECT_PATH}

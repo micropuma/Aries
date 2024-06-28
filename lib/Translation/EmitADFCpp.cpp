@@ -6,7 +6,7 @@
 #include "mlir/IR/IntegerSet.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Debug.h"
-#include "aries/Translation/EmitADFCpp.h"
+#include "aries/Translation/Emitter.h"
 #include "aries/Transform/Utils.h"
 #include "aries/Dialect/ADF/ADFDialect.h"
 #include "aries/Dialect/ADF/Visitor.h"
@@ -593,7 +593,6 @@ void ModuleEmitter::emitADFConnect(adf::ConnectOp op) {
 }
 
 void ModuleEmitter::emitCall(func::CallOp op) {
-  // No operaion needed for callOp marked by adf.kernel in the adf.graph
   if(op->getAttr("adf.kernel")){
     unsigned i=0;
     auto KName = getCall(op).str().str();
@@ -609,7 +608,7 @@ void ModuleEmitter::emitCall(func::CallOp op) {
     indent();
     os <<  KName << " = " << "adf::kernel::create(" << calleeName.str() << ");\n";
     indent();
-    os <<  "adf::source(" << KName << ") = \"" << calleeName.str() << ".cpp\";\n";
+    os <<  "adf::source(" << KName << ") = \"" << calleeName.str() << ".cc\";\n";
     indent();
     os <<  "adf::runtime<ratio>(" << KName << ") = 1;\n" ;
     return;
@@ -1493,18 +1492,18 @@ void ModuleEmitter::emitIODef(FuncOp func) {
 }
 
 void ModuleEmitter::emitADFMain(llvm::StringRef GraphName){
-  os << GraphName << " graph;\n";
+  os << GraphName << " MyGraph;\n";
 
   std::string adf_main = R"XXX(
 #if defined(__AIESIM__) || defined(__X86SIM__)
 int main(int argc, char ** argv) {
-  graph.init();
-  graph.run(4);
-  graph.end();
+  MyGraph.init();
+  MyGraph.run(4);
+  MyGraph.end();
   return 0;
 }
 #endif
-  )XXX";
+)XXX";
 
   os << adf_main;
 }
@@ -1561,7 +1560,7 @@ using namespace adf;
       if (op->getAttr("adf.graph")){
         os << adf_header;
         emitADFGraphFunction(op);
-        os << "////#endif /**********__GRAPH_H__**********/\n";
+        os << "//#endif //__GRAPH_H__\n";
       } 
   }
 
@@ -1571,17 +1570,4 @@ LogicalResult aries::emitADFCpp(ModuleOp module, llvm::raw_ostream &os) {
   ADFEmitterState state(os);
   ModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);
-}
-
-void aries::registerEmitADFCppTranslation() {
-  static TranslateFromMLIRRegistration registration(
-      "emit-aie-adf", "Emit AIE ADF Graph", emitADFCpp,
-      [&](DialectRegistry &registry) {
-        registry.insert<
-          mlir::aries::adf::ADFDialect,
-          mlir::func::FuncDialect,
-          mlir::affine::AffineDialect,
-          mlir::memref::MemRefDialect
-        >();
-      });
 }
