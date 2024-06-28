@@ -31,6 +31,7 @@ def PortDirParam: EnumParameter<PortDir>;
 
 def PortWidth: I32EnumAttr<"PortWidth", "Width of the ports",
   [Width128, Width64, Width32, WidthNULL]> {
+  let underlyingType = "int32_t";
   let cppNamespace = "::mlir::aries::adf";
 }
 

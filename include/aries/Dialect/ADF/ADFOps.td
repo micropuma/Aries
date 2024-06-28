@@ -81,16 +81,33 @@ def CreateGraphIOOp : ADF_Op<"graph.io", []> {
     This operation creates either PLIO, GMIO or Port.
 
     ```mlir
-      %plio0 = adf.graph.io(PLIO) : !adf.plio<In,128> 
-      %gmio0 = adf.graph.io(GMIO) : !adf.gmio<In,128>
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In> 
+      %gmio0 = adf.graph.io(GMIO) : !adf.gmio<In>
       %port0 = adf.graph.io(PORT) : !adf.port<In>
     ```
   }];
 
-  let arguments = (ins GraphIOName: $name, PortWidth: $portwid);
+  let arguments = (ins GraphIOName: $name);
   let results = (outs GraphIOType:$graphio);
-  let assemblyFormat = " `(` $name `,` $portwid `)` attr-dict `:` type(results)";
+  let assemblyFormat = " `(` $name `)` attr-dict `:` type(results)";
 
+  let hasCanonicalizer = 1;
+}
+
+//This may replace the seperated operations above PORTOp, PLIOOp, GMIOOp
+def SetIOWidthOp : ADF_Op<"adf.io.width", []> {
+  let summary = "graph input/output creation";
+  let description = [{
+    This operation set the port width of PLIO and GMIO in the ADF Graph.
+
+    ```mlir
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In>
+      adf.io.width(%plio0,128)
+    ```
+  }];
+
+  let arguments = (ins GraphIOType:$graphio, PortWidth:$width);
+  let assemblyFormat = " `(` $graphio `,` $width `)` attr-dict `:` type($graphio)";
   let hasCanonicalizer = 1;
 }
 
