@@ -134,27 +134,27 @@ static SmallString<16> getTypeName(Type valType) {
   else if (auto plioType = dyn_cast<PLIOType>(valType)){
     auto Dir = plioType.getDir();
     if(Dir==PortDir::In)
-      return SmallString<16>("input_plio");
+      return SmallString<16>("adf::input_plio");
     else if(Dir==PortDir::Out)
-      return SmallString<16>("output_plio");
+      return SmallString<16>("adf::output_plio");
     else
       assert("PLIO can't be an inout port.");
   }else if (auto gmioType = dyn_cast<GMIOType>(valType)){
     auto Dir = gmioType.getDir();
     if(Dir==PortDir::In)
-      return SmallString<16>("input_gmio");
+      return SmallString<16>("adf::input_gmio");
     else if(Dir==PortDir::Out)
-      return SmallString<16>("output_gmio");
+      return SmallString<16>("adf::output_gmio");
     else
       assert("GMIO can't be an inout port.");
   }else if (auto portType = dyn_cast<PortType>(valType)){
     auto Dir = portType.getDir();
     if(Dir==PortDir::In)
-      return SmallString<16>("input_port");
+      return SmallString<16>("adf::input_port");
     else if(Dir==PortDir::Out)
-      return SmallString<16>("output_port");
+      return SmallString<16>("adf::output_port");
     else
-      return SmallString<16>("inout_port");
+      return SmallString<16>("adf::inout_port");
   }else{
     assert("Dectect data type not supported.");
   }
@@ -162,9 +162,8 @@ static SmallString<16> getTypeName(Type valType) {
 }
 
 static SmallString<16> getTypeName(CallOp call) {
-  auto calleeName = call.getCallee();
-  if(call->getAttr(calleeName)){
-    return SmallString<16>("kernel");
+  if(call->getAttr("adf.kernel")){
+    return SmallString<16>("adf::kernel");
   }else{
     assert("Dectect type not supported.");
   }
@@ -226,10 +225,14 @@ public:
 
   /// Special expression emitters.
   void emitCall(func::CallOp op);
-  
   void emitSelect(arith::SelectOp op);
   void emitConstant(arith::ConstantOp op);
   template <typename CastOpType> void emitCast(CastOpType op);
+  
+  /// ADFGrpah emitters
+  void emitADFBuffer(adf::BufferOp op);
+  void emitADFIOWidth(adf::SetIOWidthOp op);
+  void emitADFConnect(adf::ConnectOp op);
 
   /// Top-level MLIR module emitter.
   void emitModule(ModuleOp module);
@@ -344,12 +347,13 @@ public:
   bool visitOp(adf::GraphReturnOp op) { return true; };
   bool visitOp(adf::KernelOp op) { return true; };
   bool visitOp(adf::CreateGraphIOOp op) { return true; };
-  bool visitOp(adf::BufferOp op) { return true; };
+  bool visitOp(adf::SetIOWidthOp op) { return emitter.emitADFIOWidth(op), true; };
+  bool visitOp(adf::BufferOp op) { return emitter.emitADFBuffer(op), true; };
   bool visitOp(adf::StreamOp op) { return true; };
   bool visitOp(adf::CascadeOp op) { return true; };
   bool visitOp(adf::CreateKernelIOOp op) { return true; };
   bool visitOp(adf::DmaOp op) { return true; };
-  bool visitOp(adf::ConnectOp op) { return true; };
+  bool visitOp(adf::ConnectOp op) { return emitter.emitADFConnect(op), true; };
   bool visitOp(adf::IOPushOp op) { return true; };
   bool visitOp(adf::IOPopOp op) { return true; };
 
@@ -532,12 +536,83 @@ bool ExprVisitor::visitOp(arith::CmpIOp op) {
 // ModuleEmitter Class Definition
 //===----------------------------------------------------------------------===//
 
+void ModuleEmitter::emitADFBuffer(adf::BufferOp op) {
+  auto buffer = op.getResult();
+  if(!isDeclared(buffer)){
+    for (auto user: buffer.getUsers()){
+      if(auto call = dyn_cast<func::CallOp>(user)){
+        if(call->getAttr("adf.kernel")){
+          auto KName = getCall(call).str().str();
+          for(unsigned i=0; i<call.getNumOperands(); i++){
+            if(buffer == call.getOperand(i)){
+              auto VName = KName + std::string(".in[") + std::to_string(i) + std::string("]");
+              addName(buffer, false, VName);
+              return;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+void ModuleEmitter::emitADFIOWidth(adf::SetIOWidthOp op){
+  auto graphIO = op.getGraphio();
+  auto IOType = getTypeName(graphIO);
+  auto width = (int)op.getWidth();
+  auto VName = getName(graphIO);
+  std::string portName ="";
+  if(auto portTpe = dyn_cast<PLIOType>(graphIO.getType()))
+    portName = portTpe.getMnemonic().str();
+  else if(auto portTpe = dyn_cast<GMIOType>(graphIO.getType()))
+    portName = portTpe.getMnemonic().str();
+  else
+    assert("Wrong IO type or it doesn't support width");
+  indent();
+  std::string portSetting = portName + "_" + std::to_string(width) + "_bits";
+  os << VName << " = " << IOType << "::create(\"" << VName << "\", " << 
+  portSetting << ", \"data/" << VName << ".txt\");\n" ;
+}
+
+void ModuleEmitter::emitADFConnect(adf::ConnectOp op) {
+  indent();
+  auto src = op.getSrc();
+  auto dst = op.getDst();
+  auto srcName = getName(src);
+  auto dstName = getName(dst);
+  auto srcType = src.getType();
+  auto dstType = dst.getType();
+  if (dyn_cast<PLIOType>(srcType) || dyn_cast<GMIOType>(srcType) ||
+      dyn_cast<PortType>(srcType))
+      srcName += ".out[0]";
+  if (dyn_cast<PLIOType>(dstType) || dyn_cast<GMIOType>(dstType) ||
+      dyn_cast<PortType>(dstType))
+      dstName += ".in[0]";
+  os << "adf::connect<>(" << srcName << ", " << dstName << ");\n";
+}
+
 void ModuleEmitter::emitCall(func::CallOp op) {
   // No operaion needed for callOp marked by adf.kernel in the adf.graph
-  auto calleeName = op.getCallee();
-  if(op->getAttr(calleeName))
+  if(op->getAttr("adf.kernel")){
+    unsigned i=0;
+    auto KName = getCall(op).str().str();
+    // Define the returned value by the callee
+    for( auto result: op.getResults()){
+      if (!isDeclared(result)) {
+        auto VName = KName + std::string(".out[") + std::to_string(i) + std::string("]");
+        addName(result, false, VName);
+      }
+      i++;
+    }
+    auto calleeName = op.getCallee();
+    indent();
+    os <<  KName << " = " << "adf::kernel::create(" << calleeName.str() << ");\n";
+    indent();
+    os <<  "adf::source(" << KName << ") = \"" << calleeName.str() << ".cpp\";\n";
+    indent();
+    os <<  "adf::runtime<ratio>(" << KName << ") = 1;\n" ;
     return;
-
+  }
   // Handle returned value by the callee.
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
@@ -1433,9 +1508,11 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
 
   indent();
   os << GraphName << "() {\n";
-  
+  addIndent();
+
   emitBlock(func.getBody().front());
 
+  reduceIndent();
   indent();
   os << "}\n";
 
