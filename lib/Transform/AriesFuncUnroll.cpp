@@ -82,6 +82,7 @@ private:
           entry.second++;
           auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), entry.second);
           call->setAttr(calleeName,valueAttr);
+          call->setAttr("adf.kernel",builder.getUnitAttr());
           found = true;
           break;
         }
@@ -90,6 +91,7 @@ private:
         calleeCounts.push_back(std::make_pair(calleeName, 0));
         auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), 0);
         call->setAttr(calleeName,valueAttr);
+        call->setAttr("adf.kernel",builder.getUnitAttr());
       }
     });
     return topFunc_flag;
