@@ -68,8 +68,12 @@ adfgraph: 12_gemm.adfgraph.mlir
 	aries-opt -o $@ $< \
 			-aries-adf-graph-create
 
-pass:0_gemm.adf.mlir
-0_gemm.adf.mlir: gemm.mlir
+PROJECT_NAME=adf_graph
+PROJECT_PATH=./${PROJECT_NAME}
+PROJECT_AIE_PATH=${PROJECT_PATH}/aie
+
+pass:${PROJECT_PATH}/0_gemm.adf.mlir
+${PROJECT_PATH}/0_gemm.adf.mlir: gemm.mlir
 	aries-opt -o $@ $< \
 			-aries-tiling="tile-sizes=32,32,32" \
 			-aries-func-extract \
@@ -79,12 +83,28 @@ pass:0_gemm.adf.mlir
 			-aries-mem-copy \
 			-aries-lower-to-adf \
 			-aries-dependency-extract \
+			-aries-kernel-interface-create \
 			-aries-func-unroll \
 			-aries-local-data-forward \
 			-aries-dma-to-io="port-type=PLIO port-width=128" \
 			-aries-adf-graph-create \
 			-canonicalize -cse
 
+project: fileCreate copyFile translate
+
+fileCreate:
+	mkdir -p ${PROJECT_AIE_PATH}
+
+copyFile:
+	cp -r Makefile_VCK190 ${PROJECT_PATH}/Makefile
+
+translate: ${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp
+${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp: ${PROJECT_PATH}/0_gemm.adf.mlir
+	aries-translate -o $@ $< \
+		-emit-aie-adf
+
+clean_project:
+	rm -rf ${PROJECT_PATH}
 
 add:0_add.mlir
 0_add.mlir: add.mlir

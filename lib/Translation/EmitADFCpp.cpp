@@ -250,6 +250,7 @@ private:
   void emitADFGraphFunction(FuncOp func);
   void emitKernelDef(FuncOp func);
   void emitIODef(FuncOp func);
+  void emitADFMain(llvm::StringRef GraphName);
 };
 }
 
@@ -1491,6 +1492,23 @@ void ModuleEmitter::emitIODef(FuncOp func) {
   os << "\n";
 }
 
+void ModuleEmitter::emitADFMain(llvm::StringRef GraphName){
+  os << GraphName << " graph;\n";
+
+  std::string adf_main = R"XXX(
+#if defined(__AIESIM__) || defined(__X86SIM__)
+int main(int argc, char ** argv) {
+  graph.init();
+  graph.run(4);
+  graph.end();
+  return 0;
+}
+#endif
+  )XXX";
+
+  os << adf_main;
+}
+
 void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
   if (func.getBlocks().size() != 1)
     func->emitError("has zero or more than one basic blocks.");
@@ -1517,6 +1535,8 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
   os << "}\n";
 
   os << "};\n\n";
+
+  emitADFMain(GraphName);
 }
 
 void ModuleEmitter::emitModule(ModuleOp module) {
@@ -1526,11 +1546,12 @@ void ModuleEmitter::emitModule(ModuleOp module) {
 // Automatically generated file for adf graph
 //
 //===----------------------------------------------------------------------===//
-#ifndef __GRAPH_H__
-#define __GRAPH_H__
+//#ifndef __GRAPH_H__
+//#define __GRAPH_H__
 
 #include <adf.h>
 #include <stdio.h>
+#include "kernel.h"
 using namespace adf;
 
 
@@ -1540,7 +1561,7 @@ using namespace adf;
       if (op->getAttr("adf.graph")){
         os << adf_header;
         emitADFGraphFunction(op);
-        os << "#endif /**********__GRAPH_H__**********/\n";
+        os << "////#endif /**********__GRAPH_H__**********/\n";
       } 
   }
 
