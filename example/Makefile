@@ -88,8 +88,8 @@ ${PROJECT_PATH}/0_gemm.adf.mlir: gemm.mlir
 			-aries-func-unroll \
 			-aries-local-data-forward \
 			-aries-dma-to-io="port-type=PLIO port-width=128" \
-			-aries-adf-graph-create \
-			-canonicalize -cse
+			-canonicalize -cse \
+			-aries-adf-graph-create
 
 project: fileCreate copyFile translate
 
@@ -112,6 +112,9 @@ ${PROJECT_AIE_PATH}/${KERNEL_NAME}.h: ${PROJECT_PATH}/0_gemm.adf.mlir
 
 clean_translate:
 	rm -rf ${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp ${PROJECT_AIE_PATH}/${KERNEL_NAME}.h
+
+clean_pass:
+	rm -rf ${PROJECT_PATH}/0_gemm.adf.mlir
 
 clean_project:
 	rm -rf ${PROJECT_PATH}

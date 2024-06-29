@@ -250,6 +250,7 @@ private:
   void emitADFGraphFunction(FuncOp func);
   void emitKernelDef(FuncOp func);
   void emitIODef(FuncOp func);
+  void emitKernelCreate(FuncOp func);
   void emitADFMain(llvm::StringRef GraphName);
 };
 }
@@ -593,26 +594,8 @@ void ModuleEmitter::emitADFConnect(adf::ConnectOp op) {
 }
 
 void ModuleEmitter::emitCall(func::CallOp op) {
-  if(op->getAttr("adf.kernel")){
-    unsigned i=0;
-    auto KName = getCall(op).str().str();
-    // Define the returned value by the callee
-    for( auto result: op.getResults()){
-      if (!isDeclared(result)) {
-        auto VName = KName + std::string(".out[") + std::to_string(i) + std::string("]");
-        addName(result, false, VName);
-      }
-      i++;
-    }
-    auto calleeName = op.getCallee();
-    indent();
-    os <<  KName << " = " << "adf::kernel::create(" << calleeName.str() << ");\n";
-    indent();
-    os <<  "adf::source(" << KName << ") = \"" << calleeName.str() << ".cc\";\n";
-    indent();
-    os <<  "adf::runtime<ratio>(" << KName << ") = 1;\n" ;
+  if(op->getAttr("adf.kernel"))
     return;
-  }
   // Handle returned value by the callee.
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
@@ -1472,6 +1455,31 @@ void ModuleEmitter::emitKernelDef(FuncOp func) {
   os << "\n";
 }
 
+void ModuleEmitter::emitKernelCreate(FuncOp func){
+  func.walk([&](CallOp op){
+    if(op->getAttr("adf.kernel")){
+      unsigned i=0;
+      auto KName = getCall(op).str().str();
+      // Define the returned value by the callee
+      for( auto result: op.getResults()){
+        if (!isDeclared(result)) {
+          auto VName = KName + std::string(".out[") + std::to_string(i) + std::string("]");
+          addName(result, false, VName);
+        }
+        i++;
+      }
+      auto calleeName = op.getCallee();
+      indent();
+      os <<  KName << " = " << "adf::kernel::create(" << calleeName.str() << ");\n";
+      indent();
+      os <<  "adf::source(" << KName << ") = \"" << calleeName.str() << ".cc\";\n";
+      indent();
+      os <<  "adf::runtime<ratio>(" << KName << ") = 1;\n" ;
+      return;
+    }
+  });
+}
+
 void ModuleEmitter::emitIODef(FuncOp func) {
   addIndent();
   for (auto arg: func.getArguments()){
@@ -1526,6 +1534,8 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
   indent();
   os << GraphName << "() {\n";
   addIndent();
+
+  emitKernelCreate(func);
 
   emitBlock(func.getBody().front());
 
