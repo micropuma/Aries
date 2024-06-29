@@ -29,7 +29,7 @@ private:
                  SmallVector<Value> &ArgOuts){
     topFunc.walk([&](Operation *op){
       if( dyn_cast<BufferOp>(op) || dyn_cast<ConnectOp>(op) || 
-          dyn_cast<CallOp>(op) ){
+          dyn_cast<CallOp>(op)   || dyn_cast<SetIOWidthOp>(op)){
             GraphOps.push_back(op);
       }else if(auto graphio = dyn_cast<CreateGraphIOOp>(op)){
         PortDir portDir = PortDir::In;

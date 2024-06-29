@@ -1,5 +1,5 @@
-#ifndef ARIES_TRANSLATION_EMITADFCPP_H
-#define ARIES_TRANSLATION_EMITADFCPP_H
+#ifndef ARIES_TRANSLATION_EMITTER_H
+#define ARIES_TRANSLATION_EMITTER_H
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/InitAllDialects.h"
@@ -9,6 +9,12 @@ namespace aries {
 
 LogicalResult emitADFCpp(ModuleOp module, llvm::raw_ostream &os);
 void registerEmitADFCppTranslation();
+
+LogicalResult emitKernelHeader(ModuleOp module, llvm::raw_ostream &os);
+void registeremitKernelHeaderTranslation();
+
+/// Register all exporters.
+void registerAriesEmitters();
 
 //===----------------------------------------------------------------------===//
 // Base Classes of emitters
@@ -85,4 +91,4 @@ private:
 } // namespace aries
 } // namespace mlir
 
-#endif // ARIES_TRANSLATION_EMITADFCPP_H
+#endif // ARIES_TRANSLATION_EMITTER_H

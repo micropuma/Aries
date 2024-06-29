@@ -23,11 +23,11 @@ public:
 
 private:
   bool ADFTest (ModuleOp mod) {
-    //GraphIOCreate(mod);
+    GraphIOCreate(mod);
     //KernelIOCreate(mod);
     //BufferCreate(mod);
     //IOPushOpCreate(mod);
-    GraphOpCreate(mod);
+    //GraphOpCreate(mod);
     return true;
   }
 
@@ -44,9 +44,10 @@ private:
   bool GraphIOCreate(ModuleOp mod){
     auto builder = OpBuilder(mod);
     builder.setInsertionPointToStart(mod.getBody());
-    auto plioOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), PortDir::In), GraphIOName::PLIO, PortWidth::Width128);
-    auto gmioOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),GMIOType::get(builder.getContext(), PortDir::In), GraphIOName::GMIO, PortWidth::Width128);
-    auto portOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PortType::get(builder.getContext(), PortDir::In), GraphIOName::PORT, PortWidth::WidthNULL);
+    auto plioOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), PortDir::In), GraphIOName::PLIO);
+    auto gmioOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),GMIOType::get(builder.getContext(), PortDir::In), GraphIOName::GMIO);
+    auto portOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PortType::get(builder.getContext(), PortDir::In), GraphIOName::PORT);
+    builder.create<SetIOWidthOp>(builder.getUnknownLoc(), plioOp, PortWidth::Width128);
     return true;
   }
 
@@ -91,8 +92,8 @@ private:
     // Create dst plios
     SmallVector<Value> dst;
     builder.setInsertionPointAfter(cons32Value);
-    auto plioOp0 = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), PortDir::In), GraphIOName::PLIO, PortWidth::Width128);
-    auto plioOp1 = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), PortDir::In), GraphIOName::PLIO, PortWidth::Width128);
+    auto plioOp0 = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), PortDir::In), GraphIOName::PLIO);
+    auto plioOp1 = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), PortDir::In), GraphIOName::PLIO);
     dst.push_back(plioOp0.getResult());
     dst.push_back(plioOp1.getResult());
     builder.setInsertionPointAfter(plioOp1);

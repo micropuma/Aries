@@ -20,6 +20,25 @@ struct DeadElim : public OpRewritePattern<OpType> {
   }
 };
 
+template<typename OpType>
+struct DuplicateElim : public OpRewritePattern<OpType> {
+  using OpRewritePattern<OpType>::OpRewritePattern;
+  LogicalResult matchAndRewrite(OpType op, PatternRewriter &rewriter) const override {
+    for (auto &newOp : *op->getBlock()) {
+      if (&newOp == op) continue;
+      if (auto newop = dyn_cast<OpType>(&newOp)) {
+        auto newoperands = newop->getOperands();
+        auto operands = op->getOperands();
+        if(newoperands == operands){
+          rewriter.eraseOp(op);
+          return success();
+        }
+      }
+    }
+    return failure();
+  }
+};
+
 
 bool IsdstTouched (IOPushOp op){
   for (unsigned i = 0; i< op.getDst().size(); i++){
@@ -101,4 +120,9 @@ void CreateGraphIOOp::getCanonicalizationPatterns(RewritePatternSet &results,
 void IOPushOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                            MLIRContext *context) {
   results.add<IOPushElim>(context);
+}
+
+void SetIOWidthOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                           MLIRContext *context) {
+  results.add<DuplicateElim<SetIOWidthOp>>(context);
 }
