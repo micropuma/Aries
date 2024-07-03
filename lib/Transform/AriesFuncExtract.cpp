@@ -34,42 +34,48 @@ private:
       return false;
     }
 
+    // Find the affineParallelOp
+    // TODO: Handle Multiple affineParallelOps
+    AffineParallelOp parallelOp;
+    for (auto affineParallelOp : topFunc.getOps<AffineParallelOp>()) {
+      parallelOp = affineParallelOp;
+    }
+
     SmallVector<AffineForOp, 6> band;
-    getLoopBands(topFunc, band);
+    getLoopBands(parallelOp, band);
     
-    // The band should be multiple of 2 after tiling
-    unsigned width = band.size()/2;
+    // There should be at least one point loop
+    unsigned width = band.size();
 
     if (width < 1){
-      topFunc->emitOpError("The number of loops is less than 2\n");
+      topFunc->emitOpError("The number of point loop is less than 1\n");
       return false;
     }
 
-    // Find the innermost block loop
-    auto innerBlockLoop = band[width-1];
+    
 
     // Find the outermost point loop
-    auto outerPointLoop = band[width];
+    auto outerPointLoop = band[0];
 
     // The Arguments in the specified block is not a live-in variable
-    SmallVector<Value, 6> inputs(innerBlockLoop.getBody()->getArguments());
+    SmallVector<Value, 6> inputs(parallelOp.getBody()->getArguments());
 
-    //Detect all the arguments used in the innermost block loop 
-    ArguDetect(innerBlockLoop, inputs);
+    //Detect all the arguments used in the AffineParallelOp
+    ArguDetect(parallelOp, inputs);
 
     CallFuncCreation(builder, topFunc, outerPointLoop, inputs);
       
     return true;
   }
 
-  void ArguDetect(AffineForOp innerBlockLoop,SmallVectorImpl<Value> &inputs){
-    //Find all the liveness within innerBlockLoop
-    auto liveness = Liveness(innerBlockLoop);
+  void ArguDetect(AffineParallelOp parallelOp,SmallVectorImpl<Value> &inputs){
+    //Find all the liveness within parallelOp
+    auto liveness = Liveness(parallelOp);
 
     //Check each liveinVal in the block
-    for (auto liveinVal: liveness.getLiveIn(innerBlockLoop.getBody())){
-      //Check if the liveinVal is defined in the AffineForOp innerBlockLoop 
-      if (!innerBlockLoop->isProperAncestor(liveinVal.getParentBlock()->getParentOp())){
+    for (auto liveinVal: liveness.getLiveIn(parallelOp.getBody())){
+      //Check if the liveinVal is defined in the AffineParallelOp 
+      if (!parallelOp->isProperAncestor(liveinVal.getParentBlock()->getParentOp())){
         inputs.push_back(liveinVal);
       }
     }

@@ -15,19 +15,20 @@ namespace aries {
 
   bool applyLoopTiling(ModuleOp mod, unsigned defaultTileSizes,SmallVector<unsigned,6> &optTileSizes){
     auto b = OpBuilder(mod);
-    
+    auto loc = b.getUnknownLoc();
     for (auto &op : mod.getBody()->getOperations()) {
       if (auto func = dyn_cast<FuncOp>(op)) {
         func->setAttr("top_func", b.getUnitAttr());
         std::vector<SmallVector<AffineForOp, 6>> bands;
         getTileableBands(func, &bands);
-        
+
         for (auto band : bands) {
+            auto bandSize = band.size();
             // Set the default tiling fatctor
-            SmallVector<unsigned,6> tileSizes(band.size(),defaultTileSizes);
+            SmallVector<unsigned,6> tileSizes(bandSize,defaultTileSizes);
 
             // Assign received tiling factors to the tilable loop bands
-            for (unsigned i = 0; i < std::min(band.size(),optTileSizes.size()); ++i) {
+            for (unsigned i = 0; i < std::min(bandSize,optTileSizes.size()); ++i) {
               tileSizes[i] = optTileSizes[i];
             }
             
@@ -35,6 +36,37 @@ namespace aries {
             SmallVector<AffineForOp,6> tileBand;
             if (failed(tilePerfectlyNested(band, tileSizes, &tileBand)))
                 return false;
+            
+            SmallVector<AffineMap, 6> lbMaps;
+            SmallVector<AffineMap, 6> ubMaps;
+            SmallVector<Value, 6> lbs;
+            SmallVector<Value, 6> ubs;
+            SmallVector<int64_t, 6> steps;
+            auto outerBlockLoop = tileBand[0];
+
+            for (unsigned i=0; i<bandSize; i++){
+              auto blockloop = tileBand[i];
+              lbMaps.push_back(blockloop.getLowerBoundMap());
+              ubMaps.push_back(blockloop.getUpperBoundMap());
+              for(auto operand: blockloop.getLowerBoundOperands())
+                lbs.push_back(operand);
+              for(auto operand: blockloop.getUpperBoundOperands())
+                ubs.push_back(operand);
+              steps.push_back(blockloop.getStepAsInt());
+            }
+            b.setInsertionPoint(outerBlockLoop);
+            auto parallelOp = b.create<AffineParallelOp>(
+              loc, ArrayRef<Type>{}, ArrayRef<arith::AtomicRMWKind>{}, 
+              lbMaps, lbs, ubMaps, ubs, steps);
+            
+            for (unsigned i=0; i<bandSize; i++){
+              auto blockloop = tileBand[i];
+              blockloop.getBody()->back().erase();
+              parallelOp.getBody()->getOperations().splice(
+                  parallelOp.getBody()->begin(), blockloop.getBody()->getOperations());
+              blockloop.getInductionVar().replaceAllUsesWith(parallelOp.getIVs()[i]);
+              blockloop.erase();
+            }
         }
       }
     }
