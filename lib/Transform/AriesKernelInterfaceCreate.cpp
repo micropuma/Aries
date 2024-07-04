@@ -1,6 +1,8 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Dialect/Affine/Passes.h"
 #include "llvm/Support/Debug.h"
 #include "aries/Transform/Passes.h"
 #include "aries/Transform/Utils.h"
@@ -33,8 +35,10 @@ private:
       return false;
     }
 
+    PassManager pm(&getContext());
+    pm.addPass(createLoopFusionPass());
     auto loc = builder.getUnknownLoc();
-    topFunc.walk([&](CallOp caller){
+    auto result = topFunc.walk([&](CallOp caller){
       auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
       auto &entryBlock = calleeFuncOp.getBody().front();
       auto returnOpOld = dyn_cast<ReturnOp>(entryBlock.getTerminator());
@@ -51,10 +55,23 @@ private:
         if(auto type = dyn_cast<MemRefType>(arg.getType())){
           for (auto user : arg.getUsers()){
             if (dyn_cast<AffineStoreOp>(user)){
-              //It touched, then alloc a new buffer and return it
+              //If touched, then alloc and copy to a new buffer and return it
               builder.setInsertionPoint(returnOpOld);
               auto buffer = builder.create<AllocOp>(loc,MemRefType::get(type.getShape(),type.getElementType(),AffineMap(),type.getMemorySpaceAsInt()));
-              builder.create<CopyOp>(loc, arg, buffer);
+              builder.setInsertionPointAfter(buffer);
+              
+              //Create nested for loops
+              SmallVector<Value, 4> ivs;
+              for (int i = 0, e = type.getRank(); i < e; ++i) {
+                auto ub = type.getDimSize(i);
+                auto loop = builder.create<AffineForOp>(loc, 0, ub);
+                ivs.push_back(loop.getInductionVar());
+                builder.setInsertionPointToStart(loop.getBody());
+              }
+
+              // Load from source and store to destination
+              auto value = builder.create<AffineLoadOp>(loc, arg, ivs);
+              builder.create<AffineStoreOp>(loc, value, buffer, ivs);
               outTypes.push_back(type);
               returnOperands.push_back(buffer);
               ArgIndeices.push_back(index);
@@ -90,9 +107,16 @@ private:
 
       // Erase the old call operation
       caller.erase();
+      
+      //Apply Loop funsion to the kernel func
+      if(failed(pm.run(calleeFuncOp)))
+        return WalkResult::interrupt(); 
+
+      return WalkResult::advance();
     });
 
-
+    if (result.wasInterrupted())
+      return false;
 
     return true;
   }
