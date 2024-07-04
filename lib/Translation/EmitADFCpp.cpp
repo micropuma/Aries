@@ -347,6 +347,8 @@ public:
   /// ADF statements
   bool visitOp(adf::GraphOp op) { return true; };
   bool visitOp(adf::GraphReturnOp op) { return true; };
+  bool visitOp(adf::CellOp op) { return true; };
+  bool visitOp(adf::EndCellOp op) { return true; };
   bool visitOp(adf::KernelOp op) { return true; };
   bool visitOp(adf::CreateGraphIOOp op) { return true; };
   bool visitOp(adf::SetIOWidthOp op) { return emitter.emitADFIOWidth(op), true; };
@@ -1567,7 +1569,7 @@ using namespace adf;
 )XXX";
 
   for (auto op : module.getOps<FuncOp>()) {
-      if (op->getAttr("adf.graph")){
+      if (op->getAttr("adf.cell")){
         os << adf_header;
         emitADFGraphFunction(op);
         os << "//#endif //__GRAPH_H__\n";
