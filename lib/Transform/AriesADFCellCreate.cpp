@@ -13,21 +13,24 @@ using namespace mlir::func;
 
 namespace {
 
-struct AriesADFGraphCreate : public AriesADFGraphCreateBase<AriesADFGraphCreate> {
+struct AriesADFCellCreate : public AriesADFCellCreateBase<AriesADFCellCreate> {
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
     StringRef topFuncName = "top_func";
   
-    if (!ADFGraphCreate(mod,topFuncName))
+    if (!ADFCellCreate(mod,topFuncName))
       signalPassFailure();
   }
 
 private:
-  void OpCollect(FuncOp topFunc, SmallVector<Operation*> &GraphOps, 
-                 SmallVector<IOPopOp> &IOPopOps, SmallVector<Value> &ArgIns,
+  void OpCollect(CellOp cellop, 
+                 SmallVector<Operation*> &TopOps, 
+                 SmallVector<Operation*> &GraphOps, 
+                 SmallVector<IOPopOp> &IOPopOps, 
+                 SmallVector<Value> &ArgIns,
                  SmallVector<Value> &ArgOuts){
-    topFunc.walk([&](Operation *op){
+    cellop.walk([&](Operation *op){
       if( dyn_cast<BufferOp>(op) || dyn_cast<ConnectOp>(op) || 
           dyn_cast<CallOp>(op)   || dyn_cast<SetIOWidthOp>(op)){
             GraphOps.push_back(op);
@@ -42,6 +45,7 @@ private:
           portDir = type1.getDir();
         }
         if(portDir == PortDir::In){
+          TopOps.push_back(op);
           ArgIns.push_back(graphio.getResult());
         }else if(portDir == PortDir::Out){
           GraphOps.push_back(op);
@@ -49,11 +53,13 @@ private:
         }
       }else if(auto iopopOp = dyn_cast<IOPopOp>(op)){
         IOPopOps.push_back(iopopOp);
+      }else{
+        TopOps.push_back(op);
       }
     });
   }
 
-  bool ADFGraphCreate (ModuleOp mod, StringRef topFuncName) {
+  bool ADFCellCreate (ModuleOp mod, StringRef topFuncName) {
     auto builder = OpBuilder(mod);
     FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
@@ -61,33 +67,50 @@ private:
       return false;
     }
 
+    // Find the CellOp
+    // TODO: Handle Multiple CellOps
+    CellOp cellOp;
+    for (auto op : topFunc.getOps<CellOp>()) {
+      cellOp = op;
+    }
+
+    // Eliminate the cell.end Op
+    cellOp.getBody().front().back().erase();
+    
+    SmallVector<Operation*> TopOps;
     SmallVector<Operation*> GraphOps;
     SmallVector<IOPopOp> IOPopOps;
     SmallVector<Value> ArgIns;
     SmallVector<Value> ArgOuts;
-    OpCollect(topFunc, GraphOps, IOPopOps, ArgIns, ArgOuts);
+    OpCollect(cellOp, TopOps, GraphOps, IOPopOps, ArgIns, ArgOuts);
 
     //Create an empty func adf_graph before the outmost band loop
     builder.setInsertionPoint(topFunc);
-    auto funcName = "adf_graph";
+    auto funcName = "adf_" + cellOp.getCellName().str();
     auto funcType = builder.getFunctionType(ValueRange(ArgIns), ValueRange(ArgOuts));
     auto newfunc = builder.create<FuncOp>(builder.getUnknownLoc(), funcName, funcType);
-    newfunc->setAttr("adf.graph",builder.getUnitAttr());
+    newfunc->setAttr("adf.cell",builder.getUnitAttr());
     auto destBlock = newfunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc(),ValueRange(ArgOuts));
+
+    //Move GraphOps into adf_cell
+    builder.setInsertionPoint(returnOp);
+    for (Operation *op : GraphOps) {
+        op->moveBefore(returnOp);
+    }
 
     // Create the function CallOp
     Block &entryBlock = topFunc.getBody().front();
     auto topreturnOp = dyn_cast<ReturnOp>(entryBlock.getTerminator());
 
     builder.setInsertionPoint(topreturnOp);
-    auto callop = builder.create<CallOp>(topreturnOp.getLoc(), newfunc, ValueRange(ArgIns));
-
-    builder.setInsertionPoint(returnOp);
-    for (Operation *op : GraphOps) {
-        op->moveBefore(returnOp);
+    for (auto op : TopOps) {
+        op->moveBefore(topreturnOp);
     }
+
+    builder.setInsertionPoint(topreturnOp);
+    auto callop = builder.create<CallOp>(topreturnOp.getLoc(), newfunc, ValueRange(ArgIns));
 
     builder.setInsertionPoint(topreturnOp);
     for (auto op : IOPopOps) {
@@ -112,6 +135,9 @@ private:
         });
     }
 
+    //Erase cellop after func with adf.cell attributes has been created 
+    cellOp.erase();
+
     return true;
   }
 
@@ -123,8 +149,8 @@ private:
 namespace mlir {
 namespace aries {
 
-std::unique_ptr<Pass> createAriesADFGraphCreatePass() {
-  return std::make_unique<AriesADFGraphCreate>();
+std::unique_ptr<Pass> createAriesADFCellCreatePass() {
+  return std::make_unique<AriesADFCellCreate>();
 }
 
 } // namespace aries

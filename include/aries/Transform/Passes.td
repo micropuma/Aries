@@ -101,12 +101,12 @@ def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
   let constructor = "mlir::aries::createAriesLocalDataForwardPass()";
 }
 
-def AriesADFGraphCreate : Pass<"aries-adf-graph-create"> {
-  let summary = "Create adf graph with input/output ports";
+def AriesADFCellCreate : Pass<"aries-adf-cell-create"> {
+  let summary = "Create adf cell with input/output ports";
   let description = [{
-    This pass create the adf graph with input arguments and output values.
+    This pass create the adf cell with input arguments and output values.
   }];
-  let constructor = "mlir::aries::createAriesADFGraphCreatePass()";
+  let constructor = "mlir::aries::createAriesADFCellCreatePass()";
 }
 
 def AriesADFTest : Pass<"aries-adf-test"> {

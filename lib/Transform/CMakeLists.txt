@@ -9,7 +9,7 @@ add_mlir_library(MLIRAriesPasses
     AriesFuncUnroll.cpp
     AriesKernelInterfaceCreate.cpp
     AriesLocalDataForward.cpp
-    AriesADFGraphCreate.cpp
+    AriesADFCellCreate.cpp
     AriesADFTest.cpp
     Passes.cpp
     Utils.cpp

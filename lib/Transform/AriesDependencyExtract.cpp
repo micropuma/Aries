@@ -81,8 +81,16 @@ private:
 
     SmallVector<DmaOp, 4> dmaOps;
     DMACollect(topFunc, dmaOps);
+
+    // Find the CellOp
+    // TODO: Handle Multiple CellOps
+    CellOp cellOp;
+    for (auto op : topFunc.getOps<CellOp>()) {
+      cellOp = op;
+    }
+
     SmallVector<AffineForOp, 6> bands;
-    getLoopBands(topFunc, bands);
+    getLoopBands(cellOp, bands);
 
     for (auto dmaWrite : dmaOps){
       unsigned opIndex=0;

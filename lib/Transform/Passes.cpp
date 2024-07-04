@@ -29,7 +29,7 @@ void mlir::aries::registerAriesPassPipeline() {
     pm.addPass(createAriesLocalDataForwardPass());
     pm.addPass(createAriesDMAToIOPass());
     pm.addPass(createAriesDMAToIOPass(opts));
-    pm.addPass(createAriesADFGraphCreatePass());
+    pm.addPass(createAriesADFCellCreatePass());
     pm.addPass(createAriesADFTestPass());
   });
 }

@@ -47,8 +47,15 @@ private:
     }
 
     
+    // Find the CellOp
+    // TODO: Handle Multiple CellOps
+    CellOp cellOp;
+    for (auto op : topFunc.getOps<CellOp>()) {
+      cellOp = op;
+    }
+
     SmallVector<AffineForOp, 6> bands;
-    getLoopBands(topFunc, bands, true);
+    getLoopBands(cellOp, bands);
     
     //Start from the innermost band loop
     for (auto band: bands) {
