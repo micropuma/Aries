@@ -51,6 +51,15 @@ void getLoopBands(AffineParallelOp op, SmallVector<AffineForOp, 6> &band, bool r
     std::reverse(band.begin(), band.end());
 }
 
+// Get all the affine.for loops within the AffineParallelOp and return them in the band
+void getLoopBands(adf::CellOp op, SmallVector<AffineForOp, 6> &band, bool reverse) {
+  for (AffineForOp forOp : op.getOps<AffineForOp>()) {
+    getPerfectlyNestedLoops(band, forOp);
+  }
+  if (reverse)
+    std::reverse(band.begin(), band.end());
+}
+
 /// Built-in Function: Checks whether a loop nest is hyper-rectangular or not.
 LogicalResult checkIfHyperRectangular(MutableArrayRef<AffineForOp> input) {
   FlatAffineValueConstraints cst;

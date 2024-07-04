@@ -10,7 +10,8 @@ def AriesLowerToADF : Pass<"aries-lower-to-adf"> {
     This pass lowers the front-end IRs to adf dialect.
   }];
   let dependentDialects = [
-    "mlir::aries::adf::ADFDialect"
+    "mlir::aries::adf::ADFDialect",
+    "mlir::affine::AffineDialect"
   ];
   let constructor = "mlir::aries::adf::createAriesLowerToADFPass()";
 }

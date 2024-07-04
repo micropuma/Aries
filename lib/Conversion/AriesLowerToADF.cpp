@@ -5,12 +5,15 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 
 using namespace mlir;
 using namespace aries;
 using namespace adf;
 using namespace mlir::memref;
 using namespace mlir::func;
+using namespace mlir::arith;
+using namespace mlir::affine;
 
 struct AllocConvert : public OpConversionPattern<AllocOp> {
   using OpConversionPattern<AllocOp>::OpConversionPattern;
@@ -136,7 +139,70 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
   }
 };
 
+struct AffineParallelConvert : public OpConversionPattern<AffineParallelOp> {
+  using OpConversionPattern<AffineParallelOp>::OpConversionPattern;
+  unsigned& index;
+  AffineParallelConvert(MLIRContext *context, unsigned& index)
+        : OpConversionPattern<AffineParallelOp>(context), index(index){}
+  LogicalResult matchAndRewrite(
+      AffineParallelOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+      
+    auto lbMap = op.getLowerBoundsMap();
+    auto ubMap = op.getUpperBoundsMap();
+    auto steps = op.getSteps();
+    rewriter.setInsertionPoint(op);
+    SmallVector<AffineForOp, 4> band;
+    for (unsigned i = 0; i < op.getNumDims(); ++i) {
+      if(!dyn_cast<AffineConstantExpr>(lbMap.getResult(i))){
+        assert("The lower bound has non-constant map\n");
+        return failure();
+      }
+      if(!dyn_cast<AffineConstantExpr>(ubMap.getResult(i))){
+        assert("The upper bound has non-constant map\n");
+        return failure();
+      }
+      auto lowerBound = dyn_cast<AffineConstantExpr>(lbMap.getResult(i)).getValue();
+      auto upperBound = dyn_cast<AffineConstantExpr>(ubMap.getResult(i)).getValue();
+      auto step = steps[i];
 
+      auto affineForOp = rewriter.create<AffineForOp>(
+        op->getLoc(), lowerBound, upperBound, step);
+      band.push_back(affineForOp);
+
+      // Set the insertion point inside the newly created loop.
+      rewriter.setInsertionPointToStart(affineForOp.getBody());
+    }
+
+    //Erase the terminator of the AffineParallelOp
+    rewriter.eraseOp(&op.getBody()->back());
+
+    //Move the body of AffineParallelOp to the innermost loop
+    auto innermostLoop = band[op.getNumDims()-1];
+    innermostLoop.getBody()->getOperations().splice(
+        innermostLoop.getBody()->begin(), op.getBody()->getOperations());
+    
+    for (unsigned i = 0; i < op.getNumDims(); ++i) {
+      op.getIVs()[i].replaceAllUsesWith(band[i].getInductionVar());
+    }
+    rewriter.eraseOp(op);
+    
+    //Create adf CellOp and move operations into Cell
+    auto outermostLoop = band[0];
+    rewriter.setInsertionPoint(outermostLoop);
+    auto cellName = "cell" + std::to_string(index++);
+    auto cellOp = rewriter.create<CellOp>(outermostLoop->getLoc(),cellName);
+    Block *destBlock = rewriter.createBlock(&cellOp.getRegion());
+    rewriter.setInsertionPointToEnd(destBlock);
+    auto endCellOp = rewriter.create<EndCellOp>(cellOp->getLoc());
+    
+    // Move the entire block of outerPointLoop before the returnOp
+    rewriter.setInsertionPointToEnd(destBlock);
+    outermostLoop->moveBefore(endCellOp);
+
+    return success();
+  }
+};
 
 namespace {
 
@@ -162,12 +228,14 @@ private:
       topFunc->emitOpError("Top function not found\n");
       return false;
     }
+    unsigned index = 0;
     ConversionTarget target(context);
-    
+    target.addIllegalOp<AffineParallelOp>();
     target.addIllegalOp<AllocOp>();
     target.addIllegalOp<DeallocOp>();
     target.addIllegalOp<CopyOp>();
     target.addIllegalOp<SubViewOp>();
+    patterns.add<AffineParallelConvert>(patterns.getContext(),index);
     patterns.add<AllocConvert>(patterns.getContext());
     patterns.add<DeallocConvert>(patterns.getContext());
     patterns.add<CopyConvert>(patterns.getContext());
@@ -175,7 +243,11 @@ private:
     target.addLegalOp<arith::ConstantOp>();
     target.addLegalOp<BufferOp>();
     target.addLegalOp<DmaOp>();
+    target.addLegalOp<AffineForOp>();
+    target.addLegalOp<CellOp>();
+    target.addLegalOp<EndCellOp>();
     target.addLegalDialect<ADFDialect>();
+    target.addLegalDialect<AffineDialect>();
 
     if (failed(applyPartialConversion(mod, target, std::move(patterns)))) {
       return false;

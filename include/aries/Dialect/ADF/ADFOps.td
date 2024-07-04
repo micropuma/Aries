@@ -45,6 +45,24 @@ def GraphReturnOp : ADF_Op<"return", [HasParent<"GraphOp">, Pure, Terminator]>{
   let assemblyFormat = "attr-dict ($output_ports^ `:` type($output_ports))?";
 }
 
+def CellOp : ADF_Op<"cell", [SingleBlock]> {
+  let summary = "An operation annotate the adf cell region";
+  let arguments = (ins FlatSymbolRefAttr:$cell_name);
+  let regions = (region SizedRegion<1>:$body);
+  let assemblyFormat = [{
+      $cell_name regions attr-dict
+    }];
+}
+
+def EndCellOp : ADF_Op<"cell.end", [HasParent<"CellOp">, Pure, Terminator]>{
+  let summary = "Terminator for adf cell regions.";
+  let description = [{
+    This is a terminator op for the adf.cell region.
+  }];
+
+  let assemblyFormat = "attr-dict";
+}
+
 def KernelOp : ADF_Op<"kernel", [Pure]> {
   let summary = "ADF Dialcet CallOp";
   let description = [{

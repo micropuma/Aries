@@ -66,7 +66,7 @@ dmaio: 11_gemm.dmaio.mlir
 adfgraph: 12_gemm.adfgraph.mlir
 12_gemm.adfgraph.mlir: 11_gemm.dmaio.mlir
 	aries-opt -o $@ $< \
-			-aries-adf-graph-create
+			-aries-adf-cell-create
 
 PROJECT_NAME=adf_graph
 PROJECT_PATH=./${PROJECT_NAME}
@@ -89,7 +89,7 @@ ${PROJECT_PATH}/0_gemm.adf.mlir: gemm.mlir
 			-aries-local-data-forward \
 			-aries-dma-to-io="port-type=PLIO port-width=128" \
 			-canonicalize -cse \
-			-aries-adf-graph-create
+			-aries-adf-cell-create
 
 project: fileCreate copyFile translate
 
