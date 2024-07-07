@@ -1,6 +1,8 @@
 #include "aries/Translation/Emitter.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "aries/Dialect/ADF/ADFDialect.h"
+#include "aie/Dialect/AIE/IR/AIEDialect.h"
+#include "aie/Dialect/AIEVec/IR/AIEVecOps.h"
 
 using namespace mlir;
 using namespace aries;
@@ -32,7 +34,24 @@ void aries::registeremitKernelHeaderTranslation() {
       });
 }
 
+void aries::registeremitKernelFuncTranslation() {
+  static TranslateFromMLIRRegistration registration(
+      "emit-kenrel-func", "Emit ADF Kernel Func", emitKernelFunc,
+      [&](DialectRegistry &registry) {
+        registry.insert<
+          mlir::func::FuncDialect,
+          mlir::affine::AffineDialect,
+          mlir::memref::MemRefDialect,
+          mlir::scf::SCFDialect,
+          mlir::vector::VectorDialect,
+          xilinx::AIE::AIEDialect,
+          xilinx::aievec::AIEVecDialect
+        >();
+      });
+}
+
 void aries::registerAriesEmitters() {
   registerEmitADFCppTranslation();
   registeremitKernelHeaderTranslation();
+  registeremitKernelFuncTranslation();
 }

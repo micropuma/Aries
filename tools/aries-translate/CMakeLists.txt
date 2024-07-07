@@ -21,6 +21,11 @@ target_link_libraries(aries-translate
   MLIRSupport
   MLIRADF
   MLIRARIESEmitADFCpp
+  AIE
+  AIETransforms
+  AIETargets
+  MLIRTargetAIEVecCpp
+  MLIRAIEVecDialect
   )
 
 mlir_check_all_link_libraries(aries-translate)

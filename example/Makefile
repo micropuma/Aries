@@ -119,26 +119,10 @@ clean_pass:
 clean_project:
 	rm -rf ${PROJECT_PATH}
 
-add:0_add.mlir
-0_add.mlir: add.mlir
-	aries-opt -o $@ $< \
-			-aries-tiling="tile-sizes=32" \
-			-aries-func-extract \
-			-aries-loop-simplify \
-			-aries-mem-subview \
-			-aries-mem-hoist \
-			-aries-mem-copy
-
 test: test_out.mlir
 test_out.mlir: test_in.mlir
 	aries-opt -o $@ $< \
 		-aries-adf-test
-
-convert: convert_out.mlir
-convert_out.mlir: 5_gemm.copymem.mlir
-	aries-opt -o $@ $< \
-			-aries-lower-to-adf \
-			-canonicalize -cse
 
 clean_gemm:
 	rm -rf *_gemm*.mlir

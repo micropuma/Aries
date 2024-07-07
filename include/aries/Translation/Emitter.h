@@ -13,6 +13,9 @@ void registerEmitADFCppTranslation();
 LogicalResult emitKernelHeader(ModuleOp module, llvm::raw_ostream &os);
 void registeremitKernelHeaderTranslation();
 
+LogicalResult emitKernelFunc(ModuleOp module, llvm::raw_ostream &os);
+void registeremitKernelFuncTranslation();
+
 /// Register all exporters.
 void registerAriesEmitters();
 
