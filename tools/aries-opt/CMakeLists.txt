@@ -9,6 +9,11 @@ set (LIBS
     MLIROptLib
     MLIRPass
     MLIRADF
+    AIE
+    AIETransforms
+    MLIRAIEVecDialect
+    MLIRAIEVecTransformOps
+    MLIRAIEVecTransforms
 )
 
 add_llvm_executable(aries-opt aries-opt.cpp)
