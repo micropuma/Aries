@@ -1,7 +1,5 @@
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "aries/Translation/Emitter.h"
-#include "aie/Targets/AIETargets.h"
-
 
 using namespace mlir;
 using namespace aries;
@@ -12,26 +10,23 @@ LogicalResult aries::emitKernelFunc(ModuleOp module, raw_ostream &os) {
     os << R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
 //
-// Automatically generated file for MLIR-AIE AIE kernel.
+// Automatically generated file for AIE kernel supported by Vitis Flow.
 //
 //===----------------------------------------------------------------------===//
 
-// #define __AIENGINE__ 1
-// #define NOCPP
-
-// #include <cardano.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-extern "C" {
+#include <aie_api/aie.hpp>
+#include <aie_api/aie_adf.hpp>
+#include <aie_api/utils.hpp>
+#include <adf/io_buffer/io_buffer.h>
+using namespace adf;
 
 )XXX";
 
-    if (failed(xilinx::aievec::translateAIEVecToCpp(func, false, os)))
+    if (failed(aries::emitAIEVecToCpp(func, false, os)))
       return failure();
-
-    os << "}\n";
   }
 
   return success();
