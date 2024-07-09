@@ -15,7 +15,7 @@ void registeremitKernelHeaderTranslation();
 
 /// Translates the AIE vector dialect MLIR to C++ code for Vitis Flow.
 LogicalResult emitAIEVecToCpp(mlir::Operation *op, bool aieml,
-                                   mlir::raw_ostream &os);
+                              bool vitis, mlir::raw_ostream &os);
 LogicalResult emitKernelFunc(ModuleOp module, llvm::raw_ostream &os);
 void registeremitKernelFuncTranslation();
 

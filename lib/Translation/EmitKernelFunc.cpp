@@ -7,6 +7,7 @@ using namespace func;
 
 LogicalResult aries::emitKernelFunc(ModuleOp module, raw_ostream &os) {
   for (auto func : module.getOps<FuncOp>()) {
+    if(func->getAttr("adf.kernel")){
     os << R"XXX(
 //===------------------------------------------------------------*- C++ -*-===//
 //
@@ -25,8 +26,9 @@ using namespace adf;
 
 )XXX";
 
-    if (failed(aries::emitAIEVecToCpp(func, false, os)))
-      return failure();
+      if (failed(aries::emitAIEVecToCpp(func, false, true, os)))
+        return failure();
+    }
   }
 
   return success();
