@@ -78,7 +78,7 @@ namespace {
 /// Emitter that uses dialect specific emitters to emit C++ code.
 struct CppEmitter {
   explicit CppEmitter(raw_ostream &os, bool declareVariablesAtTop, bool aieml,
-                      bool vitis);
+                      bool vitis, bool enres);
 
   /// Emits attribute or returns failure.
   LogicalResult emitAttribute(Location loc, Attribute attr);
@@ -91,12 +91,18 @@ struct CppEmitter {
   /// type is from stdint.h, and isAcc is true if we want to generate a name
   /// for a vector type that should be stored in an accumulator.
   std::optional<std::string> genCppTypeName(Type type, bool stdintType = true,
-                                            bool isAcc = false, bool vitis=false);
+                                            bool isAcc = false, 
+                                            bool vitis = false,
+                                            bool enres = true,
+                                            unsigned direction = 0);
 
   /// Emits type 'type' or returns failure. stdintType is true when the
   /// type is from stdint.h
   LogicalResult emitType(Location loc, Type type, bool stdintType = true,
-                         bool isAcc = false, bool vitis=false);
+                         bool isAcc = false, 
+                         bool vitis=false, 
+                         bool enres = true,
+                         unsigned direction = 0);
 
   /// Emits array of types as a std::tuple of the emitted types.
   /// - emits void for an empty array;
@@ -193,6 +199,7 @@ struct CppEmitter {
 
   bool aieml() { return aieml_; }
   bool vitis() { return vitis_; }
+  bool enres() { return enres_; }
 
 private:
   using ValueMapper = llvm::ScopedHashTable<Value, std::string>;
@@ -224,6 +231,7 @@ private:
 
   bool aieml_;
   bool vitis_;
+  bool enres_;
 };
 } // namespace
 
@@ -2548,6 +2556,8 @@ static LogicalResult printOperation(CppEmitter &emitter,
                                     func::ReturnOp returnOp) {
   raw_ostream &os = emitter.ostream();
   os << "return";
+  if(emitter.vitis())
+    return success();
   switch (returnOp.getNumOperands()) {
   case 0:
     return success();
@@ -2590,9 +2600,13 @@ static LogicalResult printOperation(CppEmitter &emitter,
     return failure();
 
   raw_indented_ostream &os = emitter.ostream();
-  if (failed(emitter.emitTypes(functionOp.getLoc(),
-                               functionOp.getFunctionType().getResults())))
-    return failure();
+  if(!emitter.vitis()){
+    if (failed(emitter.emitTypes(functionOp.getLoc(),
+                                 functionOp.getFunctionType().getResults())))
+      return failure();
+  }else{
+    os << "void";
+  }
   os << " " << functionOp.getName();
 
   os << "(";
@@ -2613,23 +2627,91 @@ static LogicalResult printOperation(CppEmitter &emitter,
     os << ");\n";
     return success();
   }
+  if(!emitter.vitis()){
+    if (failed(interleaveCommaWithError(
+            functionOp.getArguments(), os,
+            [&](BlockArgument arg) -> LogicalResult {
+              if (failed(emitter.emitType(functionOp.getLoc(), arg.getType())))
+                return failure();
+              os << " " << emitter.getOrCreateName(arg);
+              // If it is a memref argument, we need to check if it has dynamic
+              // shape. If so, the dimensions have to be printed out
+              if (failed(printMemRefDims(emitter, arg)))
+                return failure();
+              return success();
+            })))
+      return failure();
+    os << ") {\n";
+    os.indent();
+  }else{
+    //Define input arguments
+    unsigned in_index = 0;
+    unsigned out_index = 0;
+    for(auto arg : functionOp.getArguments()){
+      if (failed(emitter.emitType(functionOp.getLoc(), arg.getType(),
+                                  true, false, true, false, 0)))
+        return failure();
+      os << "in" << std::to_string(in_index++);
+      emitter.getOrCreateName(arg);
+      os << ", ";
+      if (failed(printMemRefDims(emitter, arg)))
+        return failure();
+    }
 
-  if (failed(interleaveCommaWithError(
-          functionOp.getArguments(), os,
-          [&](BlockArgument arg) -> LogicalResult {
-            if (failed(emitter.emitType(functionOp.getLoc(), arg.getType())))
-              return failure();
-            os << " " << emitter.getOrCreateName(arg);
-            // If it is a memref argument, we need to check if it has dynamic
-            // shape. If so, the dimensions have to be printed out
-            if (failed(printMemRefDims(emitter, arg)))
-              return failure();
-            return success();
-          })))
-    return failure();
+    //Get the output arguments
+    //TODO::Handle multiple blocks
+    auto num_blocks = functionOp.getBlocks().size();
+    if(num_blocks>1)
+      return failure();
+    Block &entryBlock = functionOp.getBody().front();
+    auto funcreturnOp = dyn_cast<func::ReturnOp>(entryBlock.getTerminator());
 
-  os << ") {\n";
-  os.indent();
+    if (failed(interleaveCommaWithError(
+            funcreturnOp.getOperands(), os,
+            [&](Value res) -> LogicalResult {
+              if (failed(emitter.emitType(functionOp.getLoc(), res.getType(),
+                                           true, false, true, false, 1)))
+                return failure();
+              os << "out" << std::to_string(out_index++);
+              emitter.getOrCreateName(res);
+              return success();
+            })))
+      return failure();
+
+    os << ") {\n";
+    os.indent();
+
+    // Get the pointer of the in/out buffers
+    in_index = 0;
+    out_index = 0;
+    for(auto arg : functionOp.getArguments()){
+      if (failed(emitter.emitType(functionOp.getLoc(), arg.getType(),
+                                  true, false, false, emitter.enres())))
+          return failure();
+      os << " " << emitter.getOrCreateName(arg);
+      os << " = (";
+      if (failed(emitter.emitType(functionOp.getLoc(), arg.getType(),
+                                  true, false, false, false)))
+        return failure();
+      os << ")";
+      os << "in" << std::to_string(in_index++);
+      os << ".data();\n";
+    }
+    for (auto res : funcreturnOp.getOperands()){
+      if (failed(emitter.emitType(functionOp.getLoc(), res.getType(),
+                                  true, false, false, emitter.enres())))
+          return failure();
+      os << " " << emitter.getOrCreateName(res);
+      os << " = (";
+      if (failed(emitter.emitType(functionOp.getLoc(), res.getType(),
+                                  true, false, false, false)))
+        return failure();
+      os << ")";
+      os << "out" << std::to_string(out_index++);
+      os << ".data();\n";
+    }
+  }
+
   if (emitter.shouldDeclareVariablesAtTop()) {
     // Declare all variables that hold op results including those from nested
     // regions.
@@ -2752,9 +2834,9 @@ static LogicalResult printOperation(CppEmitter &emitter,
 }
 
 CppEmitter::CppEmitter(raw_ostream &os, bool declareVariablesAtTop, 
-                       bool aieml, bool vitis)
+                       bool aieml, bool vitis, bool enres)
     : os(os), declareVariablesAtTop(declareVariablesAtTop), 
-    aieml_(aieml), vitis_(vitis) {
+    aieml_(aieml), vitis_(vitis), enres_(enres) {
   valueInScopeCount.push(0);
   labelInScopeCount.push(0);
 }
@@ -3128,8 +3210,8 @@ LogicalResult CppEmitter::emitVariableDeclaration(OpResult result,
   if (hasValueInScope(result))
     return result.getDefiningOp()->emitError(
         "result variable for the operation already declared");
-  if (failed(
-          emitType(result.getOwner()->getLoc(), result.getType(), true, isAcc, vitis)))
+  if (failed(emitType(result.getOwner()->getLoc(), result.getType(), 
+             true, isAcc, vitis)))
     return failure();
   os << " " << getOrCreateName(result);
   if (trailingSemicolon)
@@ -3260,7 +3342,8 @@ LogicalResult CppEmitter::emitOperation(Operation &op, bool trailingSemicolon) {
 }
 
 std::optional<std::string>
-CppEmitter::genCppTypeName(Type type, bool stdintType, bool isAcc, bool vitis) {
+CppEmitter::genCppTypeName(Type type, bool stdintType, bool isAcc, 
+                           bool vitis, bool enres, unsigned direction) {
   std::stringstream ss;
   if (auto iType = dyn_cast<IntegerType>(type)) {
     switch (iType.getWidth()) {
@@ -3341,11 +3424,29 @@ CppEmitter::genCppTypeName(Type type, bool stdintType, bool isAcc, bool vitis) {
   // Types added for AIE
   // MemRefType: printed as 'eltType'*
   if (auto tType = dyn_cast<MemRefType>(type)) {
-    auto elemTyStrOpt = genCppTypeName(tType.getElementType());
-    if (!elemTyStrOpt)
-      return {};
-    ss << *elemTyStrOpt << " * restrict";
-    return ss.str();
+    if(!vitis){
+      auto elemTyStrOpt = genCppTypeName(tType.getElementType());
+      if (!elemTyStrOpt)
+        return {};
+      if(enres)
+        ss << *elemTyStrOpt << " * restrict";
+      else
+        ss << *elemTyStrOpt << " *";
+      return ss.str();
+    }else{
+      auto elemTyStrOpt = genCppTypeName(tType.getElementType());
+      if (!elemTyStrOpt)
+        return {};
+      if(direction==0) //input
+        ss << "input_buffer<";
+      else if(direction==1)//output
+        ss << "output_buffer<";
+      else
+        return {};
+      ss << *elemTyStrOpt ;
+      ss << ", adf::extents<" << tType.getNumElements() << ">> &";
+      return ss.str();
+    }
   }
   // VectorType: printed as v'lane''eltType'
   if (auto tType = dyn_cast<VectorType>(type)) {
@@ -3434,8 +3535,10 @@ CppEmitter::genCppTypeName(Type type, bool stdintType, bool isAcc, bool vitis) {
 }
 
 LogicalResult CppEmitter::emitType(Location loc, Type type, bool stdintType,
-                                   bool isAcc, bool vitis) {
-  auto typeName = genCppTypeName(type, stdintType, isAcc, vitis);
+                                   bool isAcc, bool vitis, bool enres, 
+                                   unsigned direction) {
+  auto typeName = genCppTypeName(type, stdintType, isAcc, vitis, 
+                                 enres, direction);
   if (!typeName)
     return emitError(loc, "cannot emit type ") << type;
   os << *typeName;
@@ -3464,7 +3567,7 @@ LogicalResult CppEmitter::emitTupleType(Location loc, ArrayRef<Type> types) {
 }
 
 LogicalResult aries::emitAIEVecToCpp(Operation *op, bool aieml,
-                                     bool vitis, raw_ostream &os) {
-  CppEmitter emitter(os, false, aieml, vitis);
+                                     bool vitis, bool enres, raw_ostream &os) {
+  CppEmitter emitter(os, false, aieml, vitis, enres);
   return emitter.emitOperation(*op, /*trailingSemicolon=*/false);
 }

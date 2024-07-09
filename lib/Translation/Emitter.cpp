@@ -46,6 +46,7 @@ void aries::registeremitKernelFuncTranslation() {
       "emit-kenrel-func", "Emit ADF Kernel Func", emitKernelFunc,
       [&](DialectRegistry &registry) {
         registry.insert<
+          mlir::aries::adf::ADFDialect,
           mlir::func::FuncDialect,
           mlir::affine::AffineDialect,
           mlir::memref::MemRefDialect,

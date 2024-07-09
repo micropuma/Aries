@@ -26,7 +26,8 @@ using namespace adf;
 
 )XXX";
 
-      if (failed(aries::emitAIEVecToCpp(func, false, true, os)))
+      if (failed(aries::emitAIEVecToCpp(func,/*aieml=*/false,/*vitis=*/true, 
+                                        /*enres=*/false, os)))
         return failure();
     }
   }
