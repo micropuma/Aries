@@ -523,7 +523,7 @@ static StringRef getOperator(T binOp) {
 // Print the SCF dialect binary operation
 template <typename T>
 static LogicalResult printOperation(CppEmitter &emitter, T binOp) {
-  if (failed(emitter.emitAssignPrefix(*binOp)))
+  if (failed(emitter.emitAssignPrefix(*binOp, false, emitter.vitis())))
     return failure();
   raw_indented_ostream &os = emitter.ostream();
   auto lhs = binOp.getLhs();
@@ -542,7 +542,7 @@ static LogicalResult printOperation(CppEmitter &emitter, T binOp) {
 // Print the ternary operation
 static LogicalResult printOperation(CppEmitter &emitter,
                                     arith::SelectOp selectOp) {
-  if (failed(emitter.emitAssignPrefix(*selectOp)))
+  if (failed(emitter.emitAssignPrefix(*selectOp, false, emitter.vitis())))
     return failure();
 
   auto cond = selectOp.getCondition();
@@ -625,7 +625,8 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::UPDOp updOp) {
     // declaration
     if (!vector) {
       if (!emitter.shouldDeclareVariablesAtTop()) {
-        if (failed(emitter.emitVariableDeclaration(updOp->getResult(0), true)))
+        if (failed(emitter.emitVariableDeclaration(updOp->getResult(0), true, 
+                                                   false, emitter.vitis())))
           return failure();
       }
     } else {
@@ -699,7 +700,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::UPSOp upsOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the accumulator
-  if (failed(emitter.emitAssignPrefix(*upsOp, /*isAcc=*/true)))
+  if (failed(emitter.emitAssignPrefix(*upsOp, /*isAcc=*/true, emitter.vitis())))
     return failure();
 
   // The source vector should have already been emitted
@@ -759,7 +760,8 @@ static LogicalResult printOperation(CppEmitter &emitter,
   bool isResAcc = castOp.getIsResAcc();
 
   // Generate the initialization for the vector
-  if (failed(emitter.emitAssignPrefix(*castOp, /*isAcc=*/isResAcc)))
+  if (failed(emitter.emitAssignPrefix(*castOp, /*isAcc=*/isResAcc, 
+                                      emitter.vitis())))
     return failure();
 
   // Get the datatype of the source and result vector
@@ -804,7 +806,8 @@ static LogicalResult printOperation(CppEmitter &emitter,
     return failure();
 
   // Generate the initialization for the vector
-  if (failed(emitter.emitAssignPrefix(*unpackOp, /*isAcc=*/false)))
+  if (failed(emitter.emitAssignPrefix(*unpackOp, /*isAcc=*/false, 
+                                      emitter.vitis())))
     return failure();
 
   raw_indented_ostream &os = emitter.ostream();
@@ -829,7 +832,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::SRSOp srsOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the vector
-  if (failed(emitter.emitAssignPrefix(*srsOp)))
+  if (failed(emitter.emitAssignPrefix(*srsOp, false, emitter.vitis())))
     return failure();
 
   // The source accumulator should have already been emitted
@@ -894,7 +897,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the vector
-  if (failed(emitter.emitAssignPrefix(*broadcastOp)))
+  if (failed(emitter.emitAssignPrefix(*broadcastOp, false, emitter.vitis())))
     return failure();
 
   // The source vector should have already been emitted
@@ -922,7 +925,8 @@ printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the vector
-  if (failed(emitter.emitAssignPrefix(*broadcastScalarOp)))
+  if (failed(emitter.emitAssignPrefix(*broadcastScalarOp, false, 
+                                      emitter.vitis())))
     return failure();
 
   Type eltType = resType.getElementType();
@@ -947,7 +951,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::ExtOp extOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*extOp)))
+  if (failed(emitter.emitAssignPrefix(*extOp, false, emitter.vitis())))
     return failure();
 
   if (!emitter.hasValueInScope(source))
@@ -994,7 +998,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*concatOp)))
+  if (failed(emitter.emitAssignPrefix(*concatOp, false, emitter.vitis())))
     return failure();
 
   os << "concat";
@@ -1026,7 +1030,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*shiftOp, isAcc)))
+  if (failed(emitter.emitAssignPrefix(*shiftOp, isAcc, emitter.vitis())))
     return failure();
 
   os << "shift_bytes";
@@ -1056,7 +1060,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*shuffleOp)))
+  if (failed(emitter.emitAssignPrefix(*shuffleOp, false, emitter.vitis())))
     return failure();
 
   os << "shuffle";
@@ -1082,7 +1086,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*selectOp)))
+  if (failed(emitter.emitAssignPrefix(*selectOp, false, emitter.vitis())))
     return failure();
 
   // Determine if we want to geneate select32, or select16, or select8
@@ -1145,7 +1149,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*packOp)))
+  if (failed(emitter.emitAssignPrefix(*packOp, false, emitter.vitis())))
     return failure();
 
   // Determine the flavor of result
@@ -1341,7 +1345,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::MulOp mulOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the accumulator
-  if (failed(emitter.emitAssignPrefix(*mulOp)))
+  if (failed(emitter.emitAssignPrefix(*mulOp, false, emitter.vitis())))
     return failure();
 
   os << opname;
@@ -1391,7 +1395,8 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the accumulator
-  if (failed(emitter.emitAssignPrefix(*mulElemOp, true /*isAcc*/)))
+  if (failed(emitter.emitAssignPrefix(*mulElemOp, true /*isAcc*/, 
+                                      emitter.vitis())))
     return failure();
 
   os << opname;
@@ -1437,7 +1442,8 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the accumulator
-  if (failed(emitter.emitAssignPrefix(*mulConvOp, true /*isAcc*/)))
+  if (failed(emitter.emitAssignPrefix(*mulConvOp, true /*isAcc*/, 
+                                      emitter.vitis())))
     return failure();
 
   os << opname;
@@ -1467,7 +1473,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::AddOp addOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*addOp)))
+  if (failed(emitter.emitAssignPrefix(*addOp, false, emitter.vitis())))
     return failure();
 
   // Get the scalar type of result vector
@@ -1521,7 +1527,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::SubOp subOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*subOp)))
+  if (failed(emitter.emitAssignPrefix(*subOp, false, emitter.vitis())))
     return failure();
 
   // Get the scalar type of result vector
@@ -1575,7 +1581,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::MinOp minOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*minOp)))
+  if (failed(emitter.emitAssignPrefix(*minOp, false, emitter.vitis())))
     return failure();
 
   os << "min(";
@@ -1601,7 +1607,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::MaxOp maxOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*maxOp)))
+  if (failed(emitter.emitAssignPrefix(*maxOp, false, emitter.vitis())))
     return failure();
 
   os << "max(";
@@ -1626,7 +1632,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::NegOp negOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*negOp, true /*isAcc*/)))
+  if (failed(emitter.emitAssignPrefix(*negOp, true /*isAcc*/, emitter.vitis())))
     return failure();
 
   os << "neg(";
@@ -1648,7 +1654,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*bnegOp)))
+  if (failed(emitter.emitAssignPrefix(*bnegOp, false, emitter.vitis())))
     return failure();
 
   os << "bneg(";
@@ -1670,7 +1676,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::BxorOp xorOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*xorOp)))
+  if (failed(emitter.emitAssignPrefix(*xorOp, false, emitter.vitis())))
     return failure();
 
   os << "bxor(";
@@ -1694,7 +1700,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::BandOp andOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*andOp)))
+  if (failed(emitter.emitAssignPrefix(*andOp, false, emitter.vitis())))
     return failure();
 
   os << "band(";
@@ -1718,7 +1724,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::BorOp orOp) {
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*orOp)))
+  if (failed(emitter.emitAssignPrefix(*orOp, false, emitter.vitis())))
     return failure();
 
   os << "bor(";
@@ -1752,7 +1758,8 @@ static LogicalResult printOperation(CppEmitter &emitter,
   if (isa<FloatType>(resElemType) || resBitWidth * resLaneSize == 1024)
     isAcc = true;
 
-  if (failed(emitter.emitAssignPrefix(*addElemOp, /*isAcc=*/isAcc)))
+  if (failed(emitter.emitAssignPrefix(*addElemOp, /*isAcc=*/isAcc,
+                                      emitter.vitis())))
     return failure();
 
   os << "add(";
@@ -1790,7 +1797,8 @@ static LogicalResult printOperation(CppEmitter &emitter,
   if (isa<FloatType>(resElemType) || resBitWidth * resLaneSize == 1024)
     isAcc = true;
 
-  if (failed(emitter.emitAssignPrefix(*subElemOp, /*isAcc=*/isAcc)))
+  if (failed(emitter.emitAssignPrefix(*subElemOp, /*isAcc=*/isAcc,
+                                      emitter.vitis())))
     return failure();
 
   os << "sub(";
@@ -1979,7 +1987,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::CmpOp cmpOp) {
     return failure();
 
   // Generate the initialization for the vector
-  if (failed(emitter.emitAssignPrefix(*cmpOp)))
+  if (failed(emitter.emitAssignPrefix(*cmpOp, false, emitter.vitis())))
     return failure();
 
   raw_indented_ostream &os = emitter.ostream();
@@ -2041,7 +2049,7 @@ static LogicalResult printOperation(CppEmitter &emitter, aievec::SelOp selOp) {
     return failure();
 
   // Generate the initialization for the vector
-  if (failed(emitter.emitAssignPrefix(*selOp)))
+  if (failed(emitter.emitAssignPrefix(*selOp, false, emitter.vitis())))
     return failure();
 
   raw_indented_ostream &os = emitter.ostream();
@@ -2066,7 +2074,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_indented_ostream &os = emitter.ostream();
 
   // Generate the initialization for the result
-  if (failed(emitter.emitAssignPrefix(*extElemOp)))
+  if (failed(emitter.emitAssignPrefix(*extElemOp, false, emitter.vitis())))
     return failure();
 
   // source should have already been emitted
@@ -2164,7 +2172,7 @@ static LogicalResult printValueForwardOperation(CppEmitter &emitter, OpTy op) {
   if (!emitter.hasValueInScope(source))
     return failure();
 
-  if (failed(emitter.emitAssignPrefix(*op)))
+  if (failed(emitter.emitAssignPrefix(*op, false, emitter.vitis())))
     return failure();
 
   raw_indented_ostream &os = emitter.ostream();
@@ -2209,10 +2217,11 @@ static LogicalResult printConstantOp(CppEmitter &emitter, Operation *operation,
     if (oAttr.getValue().empty())
       // The semicolon gets printed by the emitOperation function.
       return emitter.emitVariableDeclaration(result,
-                                             /*trailingSemicolon=*/false);
+                                             /*trailingSemicolon=*/false,
+                                             false, emitter.vitis());
 
   // Emit a variable declaration.
-  if (failed(emitter.emitAssignPrefix(*operation)))
+  if (failed(emitter.emitAssignPrefix(*operation, false, emitter.vitis())))
     return failure();
   return emitter.emitAttribute(operation->getLoc(), value);
 }
@@ -2296,7 +2305,8 @@ static LogicalResult printOperation(CppEmitter &emitter,
 }
 
 static LogicalResult printOperation(CppEmitter &emitter, func::CallOp callOp) {
-  if (failed(emitter.emitAssignPrefix(*callOp.getOperation())))
+  if (failed(emitter.emitAssignPrefix(*callOp.getOperation(), false, 
+                                      emitter.vitis())))
     return failure();
 
   raw_ostream &os = emitter.ostream();
@@ -2319,9 +2329,10 @@ static LogicalResult printOperation(CppEmitter &emitter,
       callOp.getCallee() == "getSigmoidBf16" ||
       callOp.getCallee() == "getCeilBf16" ||
       callOp.getCallee() == "getFloorBf16") {
-    if (failed(emitter.emitAssignPrefix(op, /*isAcc*/ false)))
+    if (failed(emitter.emitAssignPrefix(op, /*isAcc*/ false, emitter.vitis())))
       return failure();
-  } else if (failed(emitter.emitAssignPrefix(op, /*isAcc*/ true)))
+  } else if (failed(emitter.emitAssignPrefix(op, /*isAcc*/ true,
+                                             emitter.vitis())))
     return failure();
 
   os << callOp.getCallee();
@@ -2371,7 +2382,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
   raw_ostream &os = emitter.ostream();
 
   if (Operation &op = *applyOp.getOperation();
-      failed(emitter.emitAssignPrefix(op)))
+      failed(emitter.emitAssignPrefix(op, false, emitter.vitis())))
     return failure();
   os << applyOp.getApplicableOperator();
   os << emitter.getOrCreateName(applyOp.getOperand());
@@ -2402,7 +2413,8 @@ static LogicalResult printOperation(CppEmitter &emitter, scf::ForOp forOp) {
   if (!emitter.shouldDeclareVariablesAtTop())
     for (OpResult result : results)
       if (failed(emitter.emitVariableDeclaration(result,
-                                                 /*trailingSemicolon=*/true)))
+                                                 /*trailingSemicolon=*/true,
+                                                 false, emitter.vitis())))
         return failure();
 
   for (auto pair : zip(iterArgs, operands)) {
@@ -2492,7 +2504,8 @@ static LogicalResult printOperation(CppEmitter &emitter, scf::IfOp ifOp) {
   if (!emitter.shouldDeclareVariablesAtTop())
     for (OpResult result : ifOp.getResults())
       if (failed(emitter.emitVariableDeclaration(result,
-                                                 /*trailingSemicolon=*/true)))
+                                                 /*trailingSemicolon=*/true,
+                                                 false, emitter.vitis())))
         return failure();
 
   os << "if (";
@@ -2719,7 +2732,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
         functionOp.walk<WalkOrder::PreOrder>([&](Operation *op) -> WalkResult {
           for (OpResult result : op->getResults()) {
             if (failed(emitter.emitVariableDeclaration(
-                    result, /*trailingSemicolon=*/true)))
+                    result, /*trailingSemicolon=*/true,false, emitter.vitis())))
               return {
                   op->emitError("unable to declare result variable for op")};
           }
@@ -3220,7 +3233,8 @@ LogicalResult CppEmitter::emitVariableDeclaration(OpResult result,
   return success();
 }
 
-LogicalResult CppEmitter::emitAssignPrefix(Operation &op, bool isAcc, bool vitis) {
+LogicalResult CppEmitter::emitAssignPrefix(Operation &op, 
+                                           bool isAcc, bool vitis) {
   switch (op.getNumResults()) {
   case 0:
     break;
@@ -3240,7 +3254,7 @@ LogicalResult CppEmitter::emitAssignPrefix(Operation &op, bool isAcc, bool vitis
   default:
     if (!shouldDeclareVariablesAtTop())
       for (OpResult result : op.getResults())
-        if (failed(emitVariableDeclaration(result, /*trailingSemicolon=*/true)))
+        if (failed(emitVariableDeclaration(result, true, isAcc, vitis)))
           return failure();
 
     os << "std::tie(";
