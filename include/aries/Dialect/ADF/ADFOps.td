@@ -146,7 +146,7 @@ def BufferOp : ADF_Op<"buffer.create", []> {
 
   let results = (outs AnyMemRef:$buffer);
   let assemblyFormat = " `(``)` attr-dict `:` type(results)";
-
+  let hasCanonicalizer = 1;
 }
 
 def StreamOp : ADF_Op<"stream.create", []> {

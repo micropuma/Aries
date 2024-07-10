@@ -42,11 +42,21 @@ private:
     return true;
   }
 
-  //Check if the argument has been touched or not
-  bool copyBack(FuncOp calleeFuncOp, unsigned index){
+  //Check if the argument has been write or not
+  bool isWrite(FuncOp calleeFuncOp, unsigned index){
     auto arg = calleeFuncOp.getArgument(index);
     for (auto user : arg.getUsers()){
       if (dyn_cast<AffineStoreOp>(user))
+        return true;
+    }
+    return false;
+  }
+
+  //Check if the argument has been write or not
+  bool isRead(FuncOp calleeFuncOp, unsigned index){
+    auto arg = calleeFuncOp.getArgument(index);
+    for (auto user : arg.getUsers()){
+      if (dyn_cast<AffineLoadOp>(user))
         return true;
     }
     return false;
@@ -72,10 +82,11 @@ private:
         //Allocate, copy & deallocate new memref before & after the function call
         builder.setInsertionPoint(caller);
         auto allocOp = builder.create<AllocOp>(loc,MemRefType::get(type.getShape(),type.getElementType(),AffineMap(),(int)mlir::aries::adf::MemorySpace::L1));
-        builder.create<CopyOp>(loc, argOperand, allocOp);
+        if (isRead(calleeFuncOp,index))
+          builder.create<CopyOp>(loc, argOperand, allocOp);
         builder.setInsertionPointAfter(caller);
         //Copy the allocation back if it is touched in the callee
-        if (copyBack(calleeFuncOp,index))
+        if (isWrite(calleeFuncOp,index))
           builder.create<CopyOp>(loc, allocOp, argOperand);
         builder.create<DeallocOp>(loc, allocOp);
 

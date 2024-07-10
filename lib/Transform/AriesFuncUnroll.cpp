@@ -55,7 +55,7 @@ private:
     }
 
     SmallVector<AffineForOp, 6> bands;
-    getLoopBands(cellOp, bands);
+    getLoopBands(cellOp, bands, true);
     
     //Start from the innermost band loop
     for (auto band: bands) {

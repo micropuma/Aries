@@ -109,6 +109,11 @@ def AriesADFCellCreate : Pass<"aries-adf-cell-create"> {
   let constructor = "mlir::aries::createAriesADFCellCreatePass()";
 }
 
+def AriesKernelSplit : Pass<"aries-kernel-split"> {
+  let summary = "Split adf.kernel to another file";
+  let constructor = "mlir::aries::createAriesKernelSplitPass()";
+}
+
 def AriesADFTest : Pass<"aries-adf-test"> {
   let summary = "Test ADF Dialect Ops";
   let constructor = "mlir::aries::createAriesADFTestPass()";

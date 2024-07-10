@@ -1,80 +1,19 @@
-gemm: adfgraph
-
-tile:0_gemm.tiled.mlir
-0_gemm.tiled.mlir: gemm.mlir
-	aries-opt -o $@ $< \
-			-aries-tiling="tile-sizes=32,32,32"
-
-exfunc: 1_gemm.exfunc.mlir
-1_gemm.exfunc.mlir: 0_gemm.tiled.mlir
-	aries-opt -o $@ $< \
-			-aries-func-extract
-
-loopsim: 2_gemm.loopsim.mlir
-2_gemm.loopsim.mlir: 1_gemm.exfunc.mlir
-	aries-opt -o $@ $< \
-			-aries-loop-simplify
-
-mem: 3_gemm.memsubview.mlir
-3_gemm.memsubview.mlir: 2_gemm.loopsim.mlir
-	aries-opt -o $@ $< \
-			-aries-mem-subview \
-			-canonicalize -cse
-
-hoistmem: 4_gemm.hoistmem.mlir
-4_gemm.hoistmem.mlir: 3_gemm.memsubview.mlir
-	aries-opt -o $@ $< \
-			-aries-mem-hoist
-
-copymem: 5_gemm.copymem.mlir
-5_gemm.copymem.mlir: 4_gemm.hoistmem.mlir
-	aries-opt -o $@ $< \
-			-aries-mem-copy
-
-toadf: 6_gemm.adf.mlir
-6_gemm.adf.mlir: 5_gemm.copymem.mlir
-	aries-opt -o $@ $< \
-			-aries-lower-to-adf \
-			-canonicalize -cse
-
-flow: 7_gemm.flow.mlir
-7_gemm.flow.mlir: 6_gemm.adf.mlir
-	aries-opt -o $@ $< \
-			-aries-dependency-extract
-
-kernelio: 8_gemm.kernelio.mlir
-8_gemm.kernelio.mlir: 7_gemm.flow.mlir
-	aries-opt -o $@ $< \
-			-aries-kernel-interface-create
-
-unrollfunc: 9_gemm.unrollfunc.mlir
-9_gemm.unrollfunc.mlir: 8_gemm.kernelio.mlir
-	aries-opt -o $@ $< \
-			-aries-func-unroll
-
-dataforward: 10_gemm.dataforward.mlir
-10_gemm.dataforward.mlir: 9_gemm.unrollfunc.mlir
-	aries-opt -o $@ $< \
-			-aries-local-data-forward
-
-dmaio: 11_gemm.dmaio.mlir
-11_gemm.dmaio.mlir: 10_gemm.dataforward.mlir
-	aries-opt -o $@ $< \
-			-aries-dma-to-io="port-type=PLIO port-width=128" \
-			-canonicalize -cse
-
-adfgraph: 12_gemm.adfgraph.mlir
-12_gemm.adfgraph.mlir: 11_gemm.dmaio.mlir
-	aries-opt -o $@ $< \
-			-aries-adf-cell-create
-
-PROJECT_NAME=adf_graph
+FUNC:=gemm
+PROJECT_NAME:=adf_graph_${FUNC}
+KERNEL_NAME:=kernel_${FUNC}
 PROJECT_PATH=./${PROJECT_NAME}
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
-KERNEL_NAME=kernel
 
-pass:${PROJECT_PATH}/0_gemm.adf.mlir
-${PROJECT_PATH}/0_gemm.adf.mlir: gemm.mlir
+all: fileCreate copyFile pass translate
+
+fileCreate:
+	mkdir -p ${PROJECT_AIE_PATH}
+
+copyFile:
+	cp -r Makefile_VCK190 ${PROJECT_PATH}/Makefile
+
+pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
+${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
 			-aries-tiling="tile-sizes=32,32,32" \
 			-aries-func-extract \
@@ -91,47 +30,48 @@ ${PROJECT_PATH}/0_gemm.adf.mlir: gemm.mlir
 			-canonicalize -cse \
 			-aries-adf-cell-create
 
-project: fileCreate copyFile translate
-
-fileCreate:
-	mkdir -p ${PROJECT_AIE_PATH}
-
-copyFile:
-	cp -r Makefile_VCK190 ${PROJECT_PATH}/Makefile
-
-translate: adf_graph kernel_header
-adf_graph: ${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp
-${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp: ${PROJECT_PATH}/0_gemm.adf.mlir
+translate: adf_graph kernel_header kernel_cc
+adf_graph: ${PROJECT_AIE_PATH}/adf_graph.cpp
+${PROJECT_AIE_PATH}/adf_graph.cpp: ${PROJECT_PATH}/${FUNC}.adf.mlir
 	aries-translate -o $@ $< \
 		-emit-aie-adf
 
-kernel_header: ${PROJECT_AIE_PATH}/${KERNEL_NAME}.h
-${PROJECT_AIE_PATH}/${KERNEL_NAME}.h: ${PROJECT_PATH}/0_gemm.adf.mlir
+kernel_split: ${PROJECT_PATH}/${KERNEL_NAME}.mlir
+${PROJECT_PATH}/${KERNEL_NAME}.mlir: ${PROJECT_PATH}/${FUNC}.adf.mlir
+	aries-opt -o $@ $< \
+		-aries-kernel-split
+
+kernel_vec: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir
+${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir: ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir
+	aries-opt -o $@ $< \
+		--aie-vectorize \
+		-unaligned-loads-check=false
+${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir: ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir
+	aries-opt -o $@ $< \
+		--affine-super-vectorize="virtual-vector-size=8 vectorize-reductions" \
+		--canonicalize
+${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir: ${PROJECT_PATH}/${KERNEL_NAME}.mlir
+	aries-opt -o $@ $< \
+		--affine-loop-unroll="unroll-full unroll-full-threshold=3" \
+		--canonicalize
+
+kernel_header: ${PROJECT_AIE_PATH}/kernel.h
+${PROJECT_AIE_PATH}/kernel.h: ${PROJECT_PATH}/${KERNEL_NAME}.mlir
 	aries-translate -o $@ $< \
 		-emit-kenrel-header
 
+kernel_cc: ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc
+${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir
+	aries-translate -o $@ $< \
+		-emit-kenrel-func
+
+
+
 clean_translate:
-	rm -rf ${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp ${PROJECT_AIE_PATH}/${KERNEL_NAME}.h
+	rm -rf ${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp ${PROJECT_AIE_PATH}/kernel.h ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc
 
 clean_pass:
-	rm -rf ${PROJECT_PATH}/0_gemm.adf.mlir
+	rm -rf ${PROJECT_PATH}/${FUNC}.adf.mlir
 
-clean_project:
+clean:
 	rm -rf ${PROJECT_PATH}
-
-test: test_out.mlir
-test_out.mlir: test_in.mlir
-	aries-opt -o $@ $< \
-		-aries-adf-test
-
-clean_gemm:
-	rm -rf *_gemm*.mlir
-
-clean_add:
-	rm -rf *_add*.mlir
-
-clean_test:
-	rm -rf test_out.mlir
-
-clean_convert:
-	rm -rf convert_out.mlir
