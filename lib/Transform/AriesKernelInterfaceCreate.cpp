@@ -42,7 +42,10 @@ private:
       auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
       auto &entryBlock = calleeFuncOp.getBody().front();
       auto returnOpOld = dyn_cast<ReturnOp>(entryBlock.getTerminator());
-      auto inTypes =calleeFuncOp.getArgumentTypes();
+      auto inTypes = SmallVector<Type,8>(calleeFuncOp.getArgumentTypes().begin(),
+                                         calleeFuncOp.getArgumentTypes().end());
+      SmallVector<Type,8> inTypesNew;
+      SmallVector<Value,8> inCallerNew;
       auto outTypes =SmallVector<Type,8>(calleeFuncOp.getResultTypes().begin(),
                                          calleeFuncOp.getResultTypes().end());
       SmallVector<Value, 4> returnOperands(returnOpOld.getOperands().begin(), 
@@ -50,50 +53,93 @@ private:
       
       // check if the callee memref type arguments have been touched or not 
       unsigned index = 0;
-      SmallVector<unsigned, 4> ArgIndeices;
+      SmallVector<unsigned, 4> OutargIndeices;
+      SmallVector<unsigned, 4> InargIndeices;
+      SmallVector<unsigned, 4> MoveargIndeices;
       for (auto arg : calleeFuncOp.getArguments()) {
         if(auto type = dyn_cast<MemRefType>(arg.getType())){
+          bool isWrite = false;
+          bool isRead = false;
           for (auto user : arg.getUsers()){
-            if (dyn_cast<AffineStoreOp>(user)){
-              //If touched, then alloc and copy to a new buffer and return it
-              builder.setInsertionPoint(returnOpOld);
-              auto buffer = builder.create<AllocOp>(loc,MemRefType::get(type.getShape(),type.getElementType(),AffineMap(),type.getMemorySpaceAsInt()));
-              builder.setInsertionPointAfter(buffer);
-              
-              //Create nested for loops
-              SmallVector<Value, 4> ivs;
-              for (int i = 0, e = type.getRank(); i < e; ++i) {
-                auto ub = type.getDimSize(i);
-                auto loop = builder.create<AffineForOp>(loc, 0, ub);
-                ivs.push_back(loop.getInductionVar());
-                builder.setInsertionPointToStart(loop.getBody());
-              }
-
-              // Load from source and store to destination
-              auto value = builder.create<AffineLoadOp>(loc, arg, ivs);
-              builder.create<AffineStoreOp>(loc, value, buffer, ivs);
-              outTypes.push_back(type);
-              returnOperands.push_back(buffer);
-              ArgIndeices.push_back(index);
+            if (dyn_cast<AffineStoreOp>(user))
+              isWrite=true;
+            if (dyn_cast<AffineLoadOp>(user))
+              isRead=true;
+          }
+          //If the mem has been read and written
+          //then alloc and copy to a new buffer and return it
+          if(isWrite && isRead){
+            builder.setInsertionPoint(returnOpOld);
+            auto buffer = builder.create<AllocOp>(loc,MemRefType::get(type.getShape(),type.getElementType(),AffineMap(),type.getMemorySpaceAsInt()));
+            builder.setInsertionPointAfter(buffer);
+            
+            //Create nested for loops
+            SmallVector<Value, 4> ivs;
+            for (int i = 0, e = type.getRank(); i < e; ++i) {
+              auto ub = type.getDimSize(i);
+              auto loop = builder.create<AffineForOp>(loc, 0, ub);
+              ivs.push_back(loop.getInductionVar());
+              builder.setInsertionPointToStart(loop.getBody());
             }
+
+            // Load from source and store to destination
+            auto value = builder.create<AffineLoadOp>(loc, arg, ivs);
+            builder.create<AffineStoreOp>(loc, value, buffer, ivs);
+            outTypes.push_back(type);
+            returnOperands.push_back(buffer);
+            InargIndeices.push_back(index);
+            OutargIndeices.push_back(index++);
+          }else if(isWrite){
+            //If it has only been written 
+            //then move it from Argument list to return value
+            builder.setInsertionPointToStart(&entryBlock);
+            auto buffer = builder.create<AllocOp>(loc,MemRefType::get(type.getShape(),type.getElementType(),AffineMap(),type.getMemorySpaceAsInt()));
+            outTypes.push_back(type);
+            returnOperands.push_back(buffer);
+            OutargIndeices.push_back(index);
+            MoveargIndeices.push_back(index++);
+          }else{
+            InargIndeices.push_back(index++);
           }
         }
-        index++;
+      }
+
+      //////////Handle callee
+      // Update the new inTypes for callee
+      for(auto i: InargIndeices){
+        inTypesNew.push_back(inTypes[i]);
+        inCallerNew.push_back(caller.getOperand(i));
       }
 
       //Update the callee function type and erase the old returnOp
-      auto newFuncType = FunctionType::get(calleeFuncOp.getContext(), inTypes, outTypes);
+      auto newFuncType = FunctionType::get(calleeFuncOp.getContext(), inTypesNew, outTypes);
       calleeFuncOp.setType(newFuncType);
+
+      //Update the use of the callee arguments need to be removed
+      index = 0;
+      for (auto i:MoveargIndeices){
+        auto arg = calleeFuncOp.getArgument(i);
+        arg.replaceAllUsesWith(returnOperands[index++]);
+      }
+
+      //Erase the unsed block arguments in the callee
+      BitVector bv(calleeFuncOp.getArguments().size());
+      for (auto i:MoveargIndeices)
+        bv.set(i);
+      entryBlock.eraseArguments(bv);
+
+      //Update the return values
       builder.setInsertionPoint(returnOpOld);
       builder.create<ReturnOp>(loc, returnOperands);
       returnOpOld.erase();
 
+      //////////Handle caller
       OpBuilder builder(caller);
-      auto newCallOp = builder.create<func::CallOp>(caller.getLoc(), SymbolRefAttr::get(calleeFuncOp), outTypes, caller.getOperands());
+      auto newCallOp = builder.create<func::CallOp>(caller.getLoc(), SymbolRefAttr::get(calleeFuncOp), outTypes, inCallerNew);
 
       // Update the uses of the old call results to use the new call results
       index = 0;
-      for (auto argIndex : ArgIndeices) {
+      for (auto argIndex : OutargIndeices) {
         auto arg = caller.getArgOperands()[argIndex];
         //Replace the touched memref by the return value if it appears after 
         // the new caller function
