@@ -117,6 +117,11 @@ void CreateGraphIOOp::getCanonicalizationPatterns(RewritePatternSet &results,
   results.add<DeadElim<CreateGraphIOOp>>(context);
 }
 
+void BufferOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                           MLIRContext *context) {
+  results.add<DeadElim<BufferOp>>(context);
+}
+
 void IOPushOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                            MLIRContext *context) {
   results.add<IOPushElim>(context);
