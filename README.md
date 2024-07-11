@@ -29,7 +29,7 @@ source utils/build-llvm.sh
 ```
 
 ### 4. Build MLIR-AIE Project 
-#### Need to specify using local cmake instead of Vitis cmake
+#### Need to specify using local cmake instead of Vitis cmake inside "utils/build-mlir-aie.sh"
 ```sh
 source /tools/Xilinx/Vitis/2023.1/settings64.sh
 source utils/build-mlir-aie.sh
