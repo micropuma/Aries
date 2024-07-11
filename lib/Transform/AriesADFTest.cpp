@@ -37,7 +37,7 @@ private:
     //Create source memref
     mlir::Type elementType = builder.getF32Type();
     mlir::MemRefType memrefType = mlir::MemRefType::get({64,64}, elementType);
-    auto bufferOp = builder.create<BufferOp>(builder.getUnknownLoc(), memrefType);
+    builder.create<BufferOp>(builder.getUnknownLoc(), memrefType);
     return true;
   }
 
@@ -45,8 +45,8 @@ private:
     auto builder = OpBuilder(mod);
     builder.setInsertionPointToStart(mod.getBody());
     auto plioOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), PortDir::In), GraphIOName::PLIO);
-    auto gmioOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),GMIOType::get(builder.getContext(), PortDir::In), GraphIOName::GMIO);
-    auto portOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PortType::get(builder.getContext(), PortDir::In), GraphIOName::PORT);
+    builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),GMIOType::get(builder.getContext(), PortDir::In), GraphIOName::GMIO);
+    builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PortType::get(builder.getContext(), PortDir::In), GraphIOName::PORT);
     builder.create<SetIOWidthOp>(builder.getUnknownLoc(), plioOp, PortWidth::Width128);
     return true;
   }
@@ -54,8 +54,8 @@ private:
   bool KernelIOCreate(ModuleOp mod){
     auto builder = OpBuilder(mod);
     builder.setInsertionPointToStart(mod.getBody());
-    auto streamOp = builder.create<CreateKernelIOOp>(builder.getUnknownLoc(),StreamType::get(builder.getContext()), KernelIOName::Stream);
-    auto cascadeOp = builder.create<CreateKernelIOOp>(builder.getUnknownLoc(),CascadeType::get(builder.getContext()), KernelIOName::Cascade);
+    builder.create<CreateKernelIOOp>(builder.getUnknownLoc(),StreamType::get(builder.getContext()), KernelIOName::Stream);
+    builder.create<CreateKernelIOOp>(builder.getUnknownLoc(),CascadeType::get(builder.getContext()), KernelIOName::Cascade);
     return true;
   }
 
@@ -97,7 +97,7 @@ private:
     dst.push_back(plioOp0.getResult());
     dst.push_back(plioOp1.getResult());
     builder.setInsertionPointAfter(plioOp1);
-    auto ioPushOp = builder.create<IOPushOp>(builder.getUnknownLoc(),src,src_offsets,src_sizes,src_strides,dst);
+    builder.create<IOPushOp>(builder.getUnknownLoc(),src,src_offsets,src_sizes,src_strides,dst);
     return true;
   }
 
@@ -105,7 +105,7 @@ private:
     auto builder = OpBuilder(mod);
     builder.setInsertionPointToStart(mod.getBody());
     SmallVector<Value> GraphIOs;
-    auto graphOp = builder.create<GraphOp>(builder.getUnknownLoc(),GraphIOs);
+    builder.create<GraphOp>(builder.getUnknownLoc(),GraphIOs);
     return true;
   }
 
