@@ -38,6 +38,7 @@ source utils/build-mlir-aie.sh
 ### 5. Build Aries Project
 ```sh
 source utils/build-aries.sh
+export PATH=$PATH:$PWD/build/bin
 ```
 
 
@@ -46,10 +47,14 @@ source utils/build-aries.sh
 ```sh
 cd example
 make all FUNC=add
+cd adf_graph_add
+make aie
 ```
 
 ### 2. GEMM
 ```sh
 cd example
 make all FUNC=gemm
+cd adf_graph_gemm
+make aie
 ```
