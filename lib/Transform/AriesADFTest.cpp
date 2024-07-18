@@ -47,7 +47,7 @@ private:
     auto plioOp = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), PortDir::In), GraphIOName::PLIO);
     builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),GMIOType::get(builder.getContext(), PortDir::In), GraphIOName::GMIO);
     builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PortType::get(builder.getContext(), PortDir::In), GraphIOName::PORT);
-    builder.create<SetIOWidthOp>(builder.getUnknownLoc(), plioOp, PortWidth::Width128);
+    builder.create<ConfigPLIOOp>(builder.getUnknownLoc(), plioOp, PortWidth::Width128,250);
     return true;
   }
 

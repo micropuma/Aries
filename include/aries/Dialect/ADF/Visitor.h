@@ -27,7 +27,7 @@ public:
         .template Case<
             // ADF dialect operations.
             GraphOp, GraphReturnOp, CellOp, EndCellOp, KernelOp, CreateGraphIOOp,
-            SetIOWidthOp, BufferOp, StreamOp, CascadeOp, CreateKernelIOOp, 
+            ConfigPLIOOp, BufferOp, StreamOp, CascadeOp, CreateKernelIOOp, 
             DmaOp, ConnectOp, IOPushOp, IOPopOp,
 
             // Function operations.
@@ -104,7 +104,7 @@ public:
   HANDLE(EndCellOp);
   HANDLE(KernelOp);
   HANDLE(CreateGraphIOOp);
-  HANDLE(SetIOWidthOp);
+  HANDLE(ConfigPLIOOp);
   HANDLE(BufferOp);
   HANDLE(StreamOp);
   HANDLE(CascadeOp);

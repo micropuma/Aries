@@ -231,7 +231,7 @@ public:
   
   /// ADFGrpah emitters
   void emitADFBuffer(adf::BufferOp op);
-  void emitADFIOWidth(adf::SetIOWidthOp op);
+  void emitADFIOWidth(adf::ConfigPLIOOp op);
   void emitADFConnect(adf::ConnectOp op);
 
   /// Top-level MLIR module emitter.
@@ -351,7 +351,7 @@ public:
   bool visitOp(adf::EndCellOp op) { return true; };
   bool visitOp(adf::KernelOp op) { return true; };
   bool visitOp(adf::CreateGraphIOOp op) { return true; };
-  bool visitOp(adf::SetIOWidthOp op) { return emitter.emitADFIOWidth(op), true; };
+  bool visitOp(adf::ConfigPLIOOp op) { return emitter.emitADFIOWidth(op), true; };
   bool visitOp(adf::BufferOp op) { return emitter.emitADFBuffer(op), true; };
   bool visitOp(adf::StreamOp op) { return true; };
   bool visitOp(adf::CascadeOp op) { return true; };
@@ -560,22 +560,23 @@ void ModuleEmitter::emitADFBuffer(adf::BufferOp op) {
   }
 }
 
-void ModuleEmitter::emitADFIOWidth(adf::SetIOWidthOp op){
-  auto graphIO = op.getGraphio();
-  auto IOType = getTypeName(graphIO);
+void ModuleEmitter::emitADFIOWidth(adf::ConfigPLIOOp op){
+  auto plio = op.getPlio();
+  auto IOType = getTypeName(plio);
   auto width = (int)op.getWidth();
-  auto VName = getName(graphIO);
+  auto freq = op.getFrequency();
+  auto VName = getName(plio);
   std::string portName ="";
-  if(auto portTpe = dyn_cast<PLIOType>(graphIO.getType()))
+  if(auto portTpe = dyn_cast<PLIOType>(plio.getType()))
     portName = portTpe.getMnemonic().str();
-  else if(auto portTpe = dyn_cast<GMIOType>(graphIO.getType()))
+  else if(auto portTpe = dyn_cast<GMIOType>(plio.getType()))
     portName = portTpe.getMnemonic().str();
   else
     assert("Wrong IO type or it doesn't support width");
   indent();
   std::string portSetting = portName + "_" + std::to_string(width) + "_bits";
   os << VName << " = " << IOType << "::create(\"" << VName << "\", " << 
-  portSetting << ", \"data/" << VName << ".txt\");\n" ;
+  portSetting << ", \"data/" << VName << ".txt\", " << freq <<");\n" ;
 }
 
 void ModuleEmitter::emitADFConnect(adf::ConnectOp op) {

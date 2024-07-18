@@ -127,7 +127,7 @@ void IOPushOp::getCanonicalizationPatterns(RewritePatternSet &results,
   results.add<IOPushElim>(context);
 }
 
-void SetIOWidthOp::getCanonicalizationPatterns(RewritePatternSet &results,
+void ConfigPLIOOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                            MLIRContext *context) {
-  results.add<DuplicateElim<SetIOWidthOp>>(context);
+  results.add<DuplicateElim<ConfigPLIOOp>>(context);
 }

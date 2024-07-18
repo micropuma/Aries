@@ -15,8 +15,11 @@ using namespace mlir::func;
 struct DmaConvert : public OpConversionPattern<DmaOp> {
     std::string portType;
     int64_t portWidth;
-    DmaConvert(MLIRContext *context, std::string portType, int64_t portWidth)
-        : OpConversionPattern<DmaOp>(context), portType(portType), portWidth(portWidth){}
+    int64_t pliofreq;
+    DmaConvert(MLIRContext *context, std::string portType, 
+               int64_t portWidth, int64_t pliofreq)
+        : OpConversionPattern<DmaOp>(context), portType(portType),
+                                     portWidth(portWidth), pliofreq(pliofreq){}
     LogicalResult matchAndRewrite(
         DmaOp op, OpAdaptor adaptor,
         ConversionPatternRewriter &rewriter) const override {
@@ -71,7 +74,7 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         rewriter.setInsertionPoint(op);
         auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portIn,portName);
         rewriter.setInsertionPointAfter(port);
-        rewriter.create<SetIOWidthOp>(port->getLoc(), port, portwid);
+        rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
         SmallVector<Value> dst;
         dst.push_back(port.getResult());
         SmallVector<Value> src_offsets=op.getSrcOffsets();
@@ -89,7 +92,7 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         rewriter.setInsertionPoint(op);
         auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portOut,portName);
         rewriter.setInsertionPointAfter(port);
-        rewriter.create<SetIOWidthOp>(port->getLoc(), port, portwid);
+        rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
         SmallVector<Value> dst_offsets=op.getDstOffsets();
         SmallVector<Value> dst_sizes=op.getDstSizes();
         SmallVector<Value> dst_strides=op.getDstStrides();
@@ -117,6 +120,7 @@ public:
   AriesDMAToIO(const AriesOptions &opts) {
     PortType=opts.OptPortType;
     PortWidth=opts.OptPortWidth;
+    PLIOFreq=opts.OptPLIOFreq;
   }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
@@ -142,7 +146,7 @@ private:
 
     ConversionTarget target(context);
     target.addIllegalOp<DmaOp>();
-    patterns.add<DmaConvert>(patterns.getContext(),PortType,PortWidth);
+    patterns.add<DmaConvert>(patterns.getContext(),PortType,PortWidth,PLIOFreq);
     target.addLegalOp<CreateGraphIOOp>();
     target.addLegalOp<IOPushOp>();
     target.addLegalOp<IOPopOp>();

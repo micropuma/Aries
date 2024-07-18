@@ -26,7 +26,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-kernel-interface-create \
 			-aries-func-unroll \
 			-aries-local-data-forward \
-			-aries-dma-to-io="port-type=PLIO port-width=128" \
+			-aries-dma-to-io="port-type=PLIO port-width=128 plio-freq=250" \
 			-canonicalize -cse \
 			-aries-adf-cell-create
 
