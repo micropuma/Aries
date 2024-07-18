@@ -13,7 +13,7 @@ AMD Vitis 2023.1
 
 ### 1. Download Aries & Submodules
 ```sh
-$ git clone --recursive https://github.com/JinmingZhuang/Aries.git
+$ git clone --recursive https://github.com/arc-research-lab/Aries.git
 $ cd Aries
 ```
 
