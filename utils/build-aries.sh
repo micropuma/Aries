@@ -1,6 +1,6 @@
 PRO_PATH=$PWD
-LLVM_DIR=$PWD/externals/llvm-project
-AIE_DIR=$PWD/externals/mlir-aie
+LLVM_DIR=`realpath ${1:-"$PWD/externals/llvm-project"}`
+AIE_DIR=`realpath ${2:-"$PWD/externals/mlir-aie"}`
 
 mkdir -p ${PRO_PATH}/build && cd ${PRO_PATH}/build
 

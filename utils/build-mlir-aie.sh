@@ -1,6 +1,6 @@
-LLVM_DIR=$PWD/externals/llvm-project
-AIE_DIR=$PWD/externals/mlir-aie
-CMAKEMODULES_DIR=$PWD/externals/mlir-aie/cmake/modulesXilinx
+LLVM_DIR=`realpath ${1:-"$PWD/externals/llvm-project"}`
+AIE_DIR=`realpath ${2:-"$PWD/externals/mlir-aie"}`
+CMAKEMODULES_DIR=`realpath ${3:-"$PWD/externals/mlir-aie/cmake/modulesXilinx"}`
 
 BUILD_DIR=build
 INSTALL_DIR=install

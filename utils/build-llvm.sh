@@ -1,4 +1,4 @@
-LLVM_DIR=$PWD/externals/llvm-project
+LLVM_DIR=`realpath ${1:-"$PWD/externals/llvm-project"}`
 BUILD_DIR=build
 INSTALL_DIR=install
 
