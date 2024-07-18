@@ -112,7 +112,7 @@ def CreateGraphIOOp : ADF_Op<"graph.io", []> {
   let hasCanonicalizer = 1;
 }
 
-def ConfigPLIOOp : ADF_Op<"adf.config.plio", []> {
+def ConfigPLIOOp : ADF_Op<"config.plio", []> {
   let summary = "Set PLIO width and frequency";
   let description = [{
     This operation set the port width(32,64,128 bits) and frequency(MHz) of PLIO 
@@ -131,6 +131,24 @@ def ConfigPLIOOp : ADF_Op<"adf.config.plio", []> {
   let hasCanonicalizer = 1;
 }
 
+def ConfigGMIOOp : ADF_Op<"config.gmio", []> {
+  let summary = "GMIO burst size and bandwidth";
+  let description = [{
+    This operation set the burst size(64,128,256) in bytes and required 
+    bandwidth(MB/s) of GMIO in the ADF Graph.
+
+    ```mlir
+      %gmio0 = adf.graph.io(GMIO) : !adf.gmio<In>
+      adf.config.gmio(%gmio0,256,1000)
+    ```
+  }];
+
+  let arguments = (ins GMIOType:$gmio, PortBurst:$burst, I32Attr:$bandwidth);
+  let assemblyFormat = [{
+    `(` $gmio `,` $burst `,` $bandwidth `)` attr-dict `:` type($gmio)
+  }];
+  let hasCanonicalizer = 1;
+}
 
 // -------------
 // Operations to create KernelIOType

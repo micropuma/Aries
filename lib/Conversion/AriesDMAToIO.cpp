@@ -16,10 +16,14 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
     std::string portType;
     int64_t portWidth;
     int64_t pliofreq;
+    int64_t portBurst;
+    int64_t gmiobw;
     DmaConvert(MLIRContext *context, std::string portType, 
-               int64_t portWidth, int64_t pliofreq)
+               int64_t portWidth, int64_t pliofreq, 
+               int64_t portBurst, int64_t gmiobw)
         : OpConversionPattern<DmaOp>(context), portType(portType),
-                                     portWidth(portWidth), pliofreq(pliofreq){}
+                                     portWidth(portWidth), pliofreq(pliofreq),
+                                     portBurst(portBurst), gmiobw(gmiobw){}
     LogicalResult matchAndRewrite(
         DmaOp op, OpAdaptor adaptor,
         ConversionPatternRewriter &rewriter) const override {
@@ -34,14 +38,18 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
       GraphIOName portName;
       Type portIn,portOut;
       PortWidth portwid;
+      PortBurst portburst;
+      unsigned flag_config=0;
       if (portType=="PLIO" || portType=="plio"){
         portName = GraphIOName::PLIO;
         portIn = PLIOType::get(rewriter.getContext(), PortDir::In);
         portOut = PLIOType::get(rewriter.getContext(), PortDir::Out);
+        flag_config=1;
       }else if(portType=="GMIO" || portType=="gmio"){
         portName = GraphIOName::GMIO;
         portIn = GMIOType::get(rewriter.getContext(), PortDir::In);
         portOut = GMIOType::get(rewriter.getContext(), PortDir::Out);
+        flag_config=2;
       }else if(portType=="PORT" || portType=="port"){
         portName = GraphIOName::PORT;
         portIn = PortType::get(rewriter.getContext(), PortDir::In);
@@ -67,6 +75,23 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
           portwid = PortWidth::Width128;
       }
 
+      switch(portBurst) {
+        case 0:
+          portburst = PortBurst::BurstNULL;
+          break;
+        case 64:
+          portburst = PortBurst::Burst64;
+          break;
+        case 128:
+          portburst = PortBurst::Burst128;
+          break;
+        case 256:
+          portburst = PortBurst::Burst256;
+          break;
+        default:
+          portburst = PortBurst::Burst64;
+      }
+
 
         
       //if the DmaOp is copied to L1 mem
@@ -74,7 +99,10 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         rewriter.setInsertionPoint(op);
         auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portIn,portName);
         rewriter.setInsertionPointAfter(port);
-        rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
+        if(flag_config==1)
+          rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
+        else if(flag_config==2)
+          rewriter.create<ConfigGMIOOp>(port->getLoc(), port, portburst,gmiobw);
         SmallVector<Value> dst;
         dst.push_back(port.getResult());
         SmallVector<Value> src_offsets=op.getSrcOffsets();
@@ -92,7 +120,10 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         rewriter.setInsertionPoint(op);
         auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portOut,portName);
         rewriter.setInsertionPointAfter(port);
-        rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
+        if(flag_config==1)
+          rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
+        else if(flag_config==2)
+          rewriter.create<ConfigGMIOOp>(port->getLoc(), port, portburst,gmiobw);
         SmallVector<Value> dst_offsets=op.getDstOffsets();
         SmallVector<Value> dst_sizes=op.getDstSizes();
         SmallVector<Value> dst_strides=op.getDstStrides();
@@ -121,6 +152,8 @@ public:
     PortType=opts.OptPortType;
     PortWidth=opts.OptPortWidth;
     PLIOFreq=opts.OptPLIOFreq;
+    PortBurst=opts.OptPortBurst;
+    GMIOBW=opts.OptGMIOBW;
   }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
@@ -146,7 +179,8 @@ private:
 
     ConversionTarget target(context);
     target.addIllegalOp<DmaOp>();
-    patterns.add<DmaConvert>(patterns.getContext(),PortType,PortWidth,PLIOFreq);
+    patterns.add<DmaConvert>(patterns.getContext(), PortType,
+                             PortWidth, PLIOFreq, PortBurst, GMIOBW);
     target.addLegalOp<CreateGraphIOOp>();
     target.addLegalOp<IOPushOp>();
     target.addLegalOp<IOPopOp>();

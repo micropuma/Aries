@@ -32,13 +32,23 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
 
   /// Configure the DMAToIO pass.
   Option<int64_t> OptPortWidth{
-      *this, "port-width", llvm::cl::init(128),
-      llvm::cl::desc("Specify the plio width of a port (32,64,128)")};
+      *this, "plio-width", llvm::cl::init(128),
+      llvm::cl::desc("Specify the plio width of a port in bits (32,64,128)")};
   
   /// Configure the DMAToIO pass.
   Option<int64_t> OptPLIOFreq{
       *this, "plio-freq", llvm::cl::init(250),
       llvm::cl::desc("Specify the plio frequency in MHz")};
+  
+  /// Configure the DMAToIO pass.
+  Option<int64_t> OptPortBurst{
+      *this, "gmio-burst", llvm::cl::init(64),
+      llvm::cl::desc("Specify the gmio burst in bytes (64,128,256)")};
+  
+  /// Configure the DMAToIO pass.
+  Option<int64_t> OptGMIOBW{
+      *this, "gmio-bw", llvm::cl::init(1000),
+      llvm::cl::desc("Specify the required gmio bandwidth in MB/s")};
 };
 
 std::unique_ptr<Pass> createAriesTilingPass();

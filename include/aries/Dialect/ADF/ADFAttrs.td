@@ -11,6 +11,10 @@ def Width128:  I32EnumAttrCase<"Width128", 128>;
 def Width64:   I32EnumAttrCase<"Width64" , 64>;
 def Width32:   I32EnumAttrCase<"Width32" , 32>;
 def WidthNULL: I32EnumAttrCase<"WidthNULL" ,0>;
+def Burst256:  I32EnumAttrCase<"Burst256", 256>;
+def Burst128:   I32EnumAttrCase<"Burst128", 128>;
+def Burst64:   I32EnumAttrCase<"Burst64", 64>;
+def BurstNULL: I32EnumAttrCase<"BurstNULL", 0>;
 def PLIO:      I32EnumAttrCase<"PLIO", 0>;
 def GMIO:      I32EnumAttrCase<"GMIO", 1>;
 def PORT:      I32EnumAttrCase<"PORT", 2>;
@@ -31,6 +35,12 @@ def PortDirParam: EnumParameter<PortDir>;
 
 def PortWidth: I32EnumAttr<"PortWidth", "Width of the ports",
   [Width128, Width64, Width32, WidthNULL]> {
+  let underlyingType = "int32_t";
+  let cppNamespace = "::mlir::aries::adf";
+}
+
+def PortBurst: I32EnumAttr<"PortBurst", "Burst length GMIO port in bytes",
+  [Burst256, Burst128, Burst64, BurstNULL]> {
   let underlyingType = "int32_t";
   let cppNamespace = "::mlir::aries::adf";
 }

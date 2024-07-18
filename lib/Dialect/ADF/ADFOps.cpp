@@ -131,3 +131,8 @@ void ConfigPLIOOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                            MLIRContext *context) {
   results.add<DuplicateElim<ConfigPLIOOp>>(context);
 }
+
+void ConfigGMIOOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                           MLIRContext *context) {
+  results.add<DuplicateElim<ConfigGMIOOp>>(context);
+}
