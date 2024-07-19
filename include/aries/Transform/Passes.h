@@ -65,6 +65,7 @@ std::unique_ptr<Pass> createAriesLocalDataForwardPass();
 std::unique_ptr<Pass> createAriesADFCellCreatePass();
 std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesADFTestPass();
+std::unique_ptr<Pass> createAriesIOMaterializePass();
 
 void registerAriesPasses();
 void registerAriesPassPipeline();
