@@ -92,8 +92,6 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
           portburst = PortBurst::Burst64;
       }
 
-
-        
       //if the DmaOp is copied to L1 mem
       if(SrcSpace !=(int)MemorySpace::L1 && DstSpace == (int)MemorySpace::L1){
         rewriter.setInsertionPoint(op);
@@ -170,12 +168,18 @@ private:
     MLIRContext &context = getContext();
     RewritePatternSet patterns(&context);
 
+    auto builder = OpBuilder(mod);
     FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
       return false;
     }
 
+    auto attr = builder.getBoolAttr(false);
+    if(PortType=="GMIO" || PortType=="gmio"){
+      attr = builder.getBoolAttr(true);
+    }
+    topFunc->setAttr("gmio",attr);
 
     ConversionTarget target(context);
     target.addIllegalOp<DmaOp>();
