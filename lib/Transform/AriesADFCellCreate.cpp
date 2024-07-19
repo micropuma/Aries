@@ -112,6 +112,7 @@ private:
 
     builder.setInsertionPoint(topreturnOp);
     auto callop = builder.create<CallOp>(topreturnOp.getLoc(), newfunc, ValueRange(ArgIns));
+    callop->setAttr("adf.cell",builder.getUnitAttr());
 
     builder.setInsertionPoint(topreturnOp);
     for (auto op : IOPopOps) {
