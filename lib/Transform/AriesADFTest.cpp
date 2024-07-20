@@ -90,13 +90,10 @@ private:
     src_strides.push_back(oneValue);
 
     // Create dst plios
-    SmallVector<Value> dst;
     builder.setInsertionPointAfter(cons32Value);
     auto plioOp0 = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), PortDir::In), GraphIOName::PLIO);
-    auto plioOp1 = builder.create<CreateGraphIOOp>(builder.getUnknownLoc(),PLIOType::get(builder.getContext(), PortDir::In), GraphIOName::PLIO);
-    dst.push_back(plioOp0.getResult());
-    dst.push_back(plioOp1.getResult());
-    builder.setInsertionPointAfter(plioOp1);
+    auto dst = plioOp0.getResult();
+    builder.setInsertionPointAfter(plioOp0);
     builder.create<IOPushOp>(builder.getUnknownLoc(),src,src_offsets,src_sizes,src_strides,dst);
     return true;
   }

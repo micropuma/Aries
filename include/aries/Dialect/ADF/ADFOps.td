@@ -268,16 +268,13 @@ def IOPushOp: ADF_Op<"io.push", [AttrSizedOperandSegments]> {
     It creates an operation to connect the externel memory 
     (out of aie) with the graph io.
 
-    It pushes an N-dimension of data in one memref to multiple ADF IOs.
-    This could be used for broadcast in the DMA side (Note that broadcast in the
-    ADF graph side is implictly handled). 
+    It pushes an N-dimension of data in one memref to an ADF IO.
 
     ```mlir
       %mem0 = memref.alloc() : memref<64x64xf32>
       %plio0 = adf.graph.io(PLIO) : !adf.plio<In>
-      %plio1 = adf.graph.io(PLIO) : !adf.plio<In>  
-      adf.io.push(%mem0[0, 0][32, 32][1, 1], %plio0, %plio1) 
-      : (memref<64x64xf32>, : !adf.plio<In>, !adf.plio<In>)
+      adf.io.push(%mem0[0, 0][32, 32][1, 1], %plio0) 
+      : (memref<64x64xf32>, : !adf.plio<In>)
     ```
   }];
   let arguments = (
@@ -285,7 +282,7 @@ def IOPushOp: ADF_Op<"io.push", [AttrSizedOperandSegments]> {
         Variadic<Index>:$src_offsets,
         Variadic<Index>:$src_sizes,
         Variadic<Index>:$src_strides,
-        Variadic<GraphIOType>:$dst
+        GraphIOType:$dst
   );
   let assemblyFormat = [{
     `(` $src `[` ($src_offsets^)? `]``[` ($src_sizes^)? `]``[` ($src_strides^)? `]` `,`

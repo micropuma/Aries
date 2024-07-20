@@ -101,8 +101,7 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
           rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
         else if(flag_config==2)
           rewriter.create<ConfigGMIOOp>(port->getLoc(), port, portburst,gmiobw);
-        SmallVector<Value> dst;
-        dst.push_back(port.getResult());
+        auto dst = port.getResult();
         SmallVector<Value> src_offsets=op.getSrcOffsets();
         SmallVector<Value> src_sizes=op.getSrcSizes();
         SmallVector<Value> src_strides=op.getSrcStrides();

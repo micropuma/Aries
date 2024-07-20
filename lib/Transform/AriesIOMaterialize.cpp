@@ -42,7 +42,7 @@ private:
     SmallVector<Value> src_offsets;
     SmallVector<Value> src_sizes;
     SmallVector<Value> src_strides;
-    SmallVector<Value> dst;
+    Value dst;
     SmallVector<Value> dst_offsets;
     SmallVector<Value> dst_sizes;
     SmallVector<Value> dst_strides;
@@ -81,21 +81,21 @@ private:
     builder.setInsertionPointToStart(&entryBlock);
     topFunc.walk([&](IOPopOp op){
       src = op.getSrc();
-      auto dst1   = op.getDst();
+      dst   = op.getDst();
       dst_offsets = op.getDstOffsets();
       dst_sizes   = op.getDstSizes();
       dst_strides = op.getDstStrides();
       SmallVector<int64_t, 4> sizes;
       for (auto size : dst_sizes)
         sizes.push_back(dyn_cast<IntegerAttr>(size.getDefiningOp<arith::ConstantOp>().getValue()).getInt());
-      auto memRefType = MemRefType::get(sizes,dyn_cast<MemRefType>(dst1.getType()).getElementType());
+      auto memRefType = MemRefType::get(sizes,dyn_cast<MemRefType>(dst.getType()).getElementType());
       auto newMem = builder.create<AllocOp>(loc,memRefType);
       builder.setInsertionPoint(topreturnOp);
       builder.create<DeallocOp>(loc,newMem);
       builder.setInsertionPoint(first_dealloc);
       builder.create<DmaOp>(
                           loc, newMem, ValueRange(), ValueRange(), ValueRange(),
-                          dst1, dst_offsets, dst_sizes, dst_strides);
+                          dst, dst_offsets, dst_sizes, dst_strides);
       builder.setInsertionPoint(op);
       builder.create<IOPopOp>(loc, src, newMem, ValueRange(), ValueRange(), ValueRange());             
       builder.setInsertionPointToStart(&entryBlock);
