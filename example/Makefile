@@ -26,9 +26,10 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-kernel-interface-create \
 			-aries-func-unroll \
 			-aries-local-data-forward \
-			-aries-dma-to-io="port-type=PLIO port-width=128 plio-freq=250" \
+			-aries-dma-to-io="port-type=GMIO plio-width=128 plio-freq=250" \
 			-canonicalize -cse \
-			-aries-adf-cell-create
+			-aries-adf-cell-create \
+			-aries-io-materialize
 
 translate: adf_graph kernel_header kernel_cc
 adf_graph: ${PROJECT_AIE_PATH}/adf_graph.cpp
@@ -68,7 +69,7 @@ ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.m
 
 
 clean_translate:
-	rm -rf ${PROJECT_AIE_PATH}/${PROJECT_NAME}.cpp ${PROJECT_AIE_PATH}/kernel.h ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc
+	rm -rf ${PROJECT_AIE_PATH}/adf_graph.cpp ${PROJECT_AIE_PATH}/kernel.h ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc
 
 clean_pass:
 	rm -rf ${PROJECT_PATH}/${FUNC}.adf.mlir
