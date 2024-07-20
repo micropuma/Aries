@@ -112,23 +112,43 @@ def CreateGraphIOOp : ADF_Op<"graph.io", []> {
   let hasCanonicalizer = 1;
 }
 
-//This may replace the seperated operations above PORTOp, PLIOOp, GMIOOp
-def SetIOWidthOp : ADF_Op<"adf.io.width", []> {
-  let summary = "graph input/output creation";
+def ConfigPLIOOp : ADF_Op<"config.plio", []> {
+  let summary = "Set PLIO width and frequency";
   let description = [{
-    This operation set the port width of PLIO and GMIO in the ADF Graph.
+    This operation set the port width(32,64,128 bits) and frequency(MHz) of PLIO 
+    in the ADF Graph.
 
     ```mlir
       %plio0 = adf.graph.io(PLIO) : !adf.plio<In>
-      adf.io.width(%plio0,128)
+      adf.config.plio(%plio0,128,250)
     ```
   }];
 
-  let arguments = (ins GraphIOType:$graphio, PortWidth:$width);
-  let assemblyFormat = " `(` $graphio `,` $width `)` attr-dict `:` type($graphio)";
+  let arguments = (ins PLIOType:$plio, PortWidth:$width, I32Attr:$frequency);
+  let assemblyFormat = [{ 
+    `(` $plio `,` $width `,` $frequency `)` attr-dict `:` type($plio)
+  }];
   let hasCanonicalizer = 1;
 }
 
+def ConfigGMIOOp : ADF_Op<"config.gmio", []> {
+  let summary = "GMIO burst size and bandwidth";
+  let description = [{
+    This operation set the burst size(64,128,256) in bytes and required 
+    bandwidth(MB/s) of GMIO in the ADF Graph.
+
+    ```mlir
+      %gmio0 = adf.graph.io(GMIO) : !adf.gmio<In>
+      adf.config.gmio(%gmio0,256,1000)
+    ```
+  }];
+
+  let arguments = (ins GMIOType:$gmio, PortBurst:$burst, I32Attr:$bandwidth);
+  let assemblyFormat = [{
+    `(` $gmio `,` $burst `,` $bandwidth `)` attr-dict `:` type($gmio)
+  }];
+  let hasCanonicalizer = 1;
+}
 
 // -------------
 // Operations to create KernelIOType
@@ -232,9 +252,9 @@ def ConnectOp : ADF_Op<"connect", []> {
     arguments. This should be translate to the connect api in adf C/C++.
 
     ```mlir
-      %plio = adf.plio.create() : !adf.plio<In, 128>
+      %plio = adf.plio.create() : !adf.plio<In>
       %buffer0 = adf.buffer.create() : memref<32x32xi32>
-      adf.connect(%plio, %buffer0) : (!adf.plio<In, 128>, memref<32x32xi32>)
+      adf.connect(%plio, %buffer0) : (!adf.plio<In>, memref<32x32xi32>)
     ```
   }];
   let arguments = (ins ConnectType:$src, ConnectType:$dst);
@@ -248,16 +268,13 @@ def IOPushOp: ADF_Op<"io.push", [AttrSizedOperandSegments]> {
     It creates an operation to connect the externel memory 
     (out of aie) with the graph io.
 
-    It pushes an N-dimension of data in one memref to multiple ADF IOs.
-    This could be used for broadcast in the DMA side (Note that broadcast in the
-    ADF graph side is implictly handled). 
+    It pushes an N-dimension of data in one memref to an ADF IO.
 
     ```mlir
       %mem0 = memref.alloc() : memref<64x64xf32>
-      %plio0 = adf.graph.io(PLIO) : !adf.plio<In,128>
-      %plio1 = adf.graph.io(PLIO) : !adf.plio<In,128>  
-      adf.io.push(%mem0[0, 0][32, 32][1, 1], %plio0, %plio1) 
-      : (memref<64x64xf32>, : !adf.plio<In,128>, !adf.plio<In,128>)
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In>
+      adf.io.push(%mem0[0, 0][32, 32][1, 1], %plio0) 
+      : (memref<64x64xf32>, : !adf.plio<In>)
     ```
   }];
   let arguments = (
@@ -265,7 +282,7 @@ def IOPushOp: ADF_Op<"io.push", [AttrSizedOperandSegments]> {
         Variadic<Index>:$src_offsets,
         Variadic<Index>:$src_sizes,
         Variadic<Index>:$src_strides,
-        Variadic<GraphIOType>:$dst
+        GraphIOType:$dst
   );
   let assemblyFormat = [{
     `(` $src `[` ($src_offsets^)? `]``[` ($src_sizes^)? `]``[` ($src_strides^)? `]` `,`
@@ -284,9 +301,9 @@ def IOPopOp: ADF_Op<"io.pop", [AttrSizedOperandSegments]> {
 
     ```mlir
       %mem0 = memref.alloc() : memref<64x64xf32>
-      %plio0 = adf.graph.io(PLIO) : !adf.plio<In,128> 
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In> 
       adf.io.pop(%plio0,%mem0[0, 0][32, 32][1, 1]) 
-      : (!adf.plio<In,128> : memref<64x64xf32>)
+      : (!adf.plio<In> : memref<64x64xf32>)
     ```
   }];
   let arguments = (

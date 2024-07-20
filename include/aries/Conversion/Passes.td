@@ -28,8 +28,14 @@ def AriesDMAToIO : Pass<"aries-dma-to-io"> {
   let options = [
     Option<"PortType", "port-type", "std::string",
            /*default=*/"\"PLIO\"", "Specify the type of the ports(PORT,GMIO,PLIO)">,
-    Option<"PortWidth", "port-width", "int64_t", /*default=*/"128",
-           "Specify the port width of a port (32,64,128)">
+    Option<"PortWidth", "plio-width", "int64_t", /*default=*/"128",
+           "Specify the plio width of a port in bits (32,64,128)">,
+    Option<"PLIOFreq", "plio-freq", "int64_t", /*default=*/"250",
+           "Specify the plio frequency in MHz">,
+    Option<"PortBurst", "gmio-burst", "int64_t", /*default=*/"64",
+           "Specify the gmio burst in bytes (64,128,256)">,
+    Option<"GMIOBW", "gmio-bw", "int64_t", /*default=*/"1000",
+           "Specify the required gmio bandwidth in MB/s">
   ];
 }
 

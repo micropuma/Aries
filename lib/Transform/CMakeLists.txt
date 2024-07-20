@@ -11,6 +11,7 @@ add_mlir_library(MLIRAriesPasses
     AriesLocalDataForward.cpp
     AriesADFCellCreate.cpp
     AriesKernelSplit.cpp
+    AriesIOMaterialize.cpp
     AriesADFTest.cpp
     Passes.cpp
     Utils.cpp

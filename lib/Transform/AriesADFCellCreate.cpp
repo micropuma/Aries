@@ -32,7 +32,8 @@ private:
                  SmallVector<Value> &ArgOuts){
     cellop.walk([&](Operation *op){
       if( dyn_cast<BufferOp>(op) || dyn_cast<ConnectOp>(op) || 
-          dyn_cast<CallOp>(op)   || dyn_cast<SetIOWidthOp>(op)){
+          dyn_cast<CallOp>(op)   || dyn_cast<ConfigPLIOOp>(op) ||
+          dyn_cast<ConfigGMIOOp>(op)){
             GraphOps.push_back(op);
       }else if(auto graphio = dyn_cast<CreateGraphIOOp>(op)){
         PortDir portDir = PortDir::In;
@@ -111,6 +112,7 @@ private:
 
     builder.setInsertionPoint(topreturnOp);
     auto callop = builder.create<CallOp>(topreturnOp.getLoc(), newfunc, ValueRange(ArgIns));
+    callop->setAttr("adf.cell",builder.getUnitAttr());
 
     builder.setInsertionPoint(topreturnOp);
     for (auto op : IOPopOps) {

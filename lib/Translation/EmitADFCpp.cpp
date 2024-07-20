@@ -231,7 +231,8 @@ public:
   
   /// ADFGrpah emitters
   void emitADFBuffer(adf::BufferOp op);
-  void emitADFIOWidth(adf::SetIOWidthOp op);
+  void emitADFPLIOConf(adf::ConfigPLIOOp op);
+  void emitADFGMIOConf(adf::ConfigGMIOOp op);
   void emitADFConnect(adf::ConnectOp op);
 
   /// Top-level MLIR module emitter.
@@ -351,7 +352,8 @@ public:
   bool visitOp(adf::EndCellOp op) { return true; };
   bool visitOp(adf::KernelOp op) { return true; };
   bool visitOp(adf::CreateGraphIOOp op) { return true; };
-  bool visitOp(adf::SetIOWidthOp op) { return emitter.emitADFIOWidth(op), true; };
+  bool visitOp(adf::ConfigPLIOOp op) { return emitter.emitADFPLIOConf(op), true; };
+  bool visitOp(adf::ConfigGMIOOp op) { return emitter.emitADFGMIOConf(op), true; };
   bool visitOp(adf::BufferOp op) { return emitter.emitADFBuffer(op), true; };
   bool visitOp(adf::StreamOp op) { return true; };
   bool visitOp(adf::CascadeOp op) { return true; };
@@ -560,22 +562,30 @@ void ModuleEmitter::emitADFBuffer(adf::BufferOp op) {
   }
 }
 
-void ModuleEmitter::emitADFIOWidth(adf::SetIOWidthOp op){
-  auto graphIO = op.getGraphio();
-  auto IOType = getTypeName(graphIO);
+void ModuleEmitter::emitADFPLIOConf(adf::ConfigPLIOOp op){
+  auto plio = op.getPlio();
+  auto IOType = getTypeName(plio);
   auto width = (int)op.getWidth();
-  auto VName = getName(graphIO);
+  auto freq = op.getFrequency();
+  auto VName = getName(plio);
   std::string portName ="";
-  if(auto portTpe = dyn_cast<PLIOType>(graphIO.getType()))
-    portName = portTpe.getMnemonic().str();
-  else if(auto portTpe = dyn_cast<GMIOType>(graphIO.getType()))
-    portName = portTpe.getMnemonic().str();
-  else
-    assert("Wrong IO type or it doesn't support width");
+  portName = plio.getType().getMnemonic().str();
   indent();
   std::string portSetting = portName + "_" + std::to_string(width) + "_bits";
   os << VName << " = " << IOType << "::create(\"" << VName << "\", " << 
-  portSetting << ", \"data/" << VName << ".txt\");\n" ;
+  portSetting << ", \"data/" << VName << ".txt\", " << freq <<");\n" ;
+}
+
+void ModuleEmitter::emitADFGMIOConf(adf::ConfigGMIOOp op){
+  auto gmio = op.getGmio();
+  auto IOType = getTypeName(gmio);
+  auto burst = (int)op.getBurst();
+  auto bandwith = op.getBandwidth();
+  auto VName = getName(gmio);
+  std::string portName ="";
+  indent();
+  os << VName << " = " << IOType << "::create(\"" << VName << "\", " 
+  << burst << ", " << bandwith <<");\n" ;
 }
 
 void ModuleEmitter::emitADFConnect(adf::ConnectOp op) {

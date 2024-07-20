@@ -41,18 +41,16 @@ struct DuplicateElim : public OpRewritePattern<OpType> {
 
 
 bool IsdstTouched (IOPushOp op){
-  for (unsigned i = 0; i< op.getDst().size(); i++){
-    auto dst = op.getDst()[i];
-    for(auto user : dst.getUsers()){
-      if(auto connectOp0 = dyn_cast<ConnectOp>(user)){
-        auto connectDst0 = connectOp0.getDst();
-        for(auto connectDstUser0 : connectDst0.getUsers()){
-          if(auto connectOp1 = dyn_cast<ConnectOp>(connectDstUser0)){
-            auto connectDst1 = connectOp1.getDst();
-            for(auto connectDstUser1 : connectDst1.getUsers()){
-              if(dyn_cast<IOPopOp>(connectDstUser1)){
-                return true;
-              }
+  auto dst = op.getDst();
+  for(auto user : dst.getUsers()){
+    if(auto connectOp0 = dyn_cast<ConnectOp>(user)){
+      auto connectDst0 = connectOp0.getDst();
+      for(auto connectDstUser0 : connectDst0.getUsers()){
+        if(auto connectOp1 = dyn_cast<ConnectOp>(connectDstUser0)){
+          auto connectDst1 = connectOp1.getDst();
+          for(auto connectDstUser1 : connectDst1.getUsers()){
+            if(dyn_cast<IOPopOp>(connectDstUser1)){
+              return true;
             }
           }
         }
@@ -78,8 +76,7 @@ struct IOPushElim : public OpRewritePattern<IOPushOp> {
         if (op.getSrc() == otherOp.getSrc() &&
             op.getSrcOffsets() == otherOp.getSrcOffsets() &&
             op.getSrcSizes() == otherOp.getSrcSizes() &&
-            op.getSrcStrides() == otherOp.getSrcStrides() &&
-            op.getDst().size() == otherOp.getDst().size()){
+            op.getSrcStrides() == otherOp.getSrcStrides()){
             if (!firstUser || otherOp->isBeforeInBlock(firstUser)) {
               firstUser = otherOp;
             }
@@ -95,11 +92,9 @@ struct IOPushElim : public OpRewritePattern<IOPushOp> {
         if(IsdstTouched(iopushOp)){
           continue;
         }else{
-          for (unsigned i = 0; i< iopushOp.getDst().size(); i++){
-            auto dst = iopushOp.getDst()[i];
-            auto dstOther = firstUser.getDst()[i];
-            dst.replaceAllUsesWith(dstOther);
-          }
+          auto dst = iopushOp.getDst();
+          auto dstOther = firstUser.getDst();
+          dst.replaceAllUsesWith(dstOther);
           iopushOp.erase();
           flag = true;
         }
@@ -127,7 +122,12 @@ void IOPushOp::getCanonicalizationPatterns(RewritePatternSet &results,
   results.add<IOPushElim>(context);
 }
 
-void SetIOWidthOp::getCanonicalizationPatterns(RewritePatternSet &results,
+void ConfigPLIOOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                            MLIRContext *context) {
-  results.add<DuplicateElim<SetIOWidthOp>>(context);
+  results.add<DuplicateElim<ConfigPLIOOp>>(context);
+}
+
+void ConfigGMIOOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                           MLIRContext *context) {
+  results.add<DuplicateElim<ConfigGMIOOp>>(context);
 }

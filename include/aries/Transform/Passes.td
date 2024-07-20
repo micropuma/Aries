@@ -114,6 +114,17 @@ def AriesKernelSplit : Pass<"aries-kernel-split"> {
   let constructor = "mlir::aries::createAriesKernelSplitPass()";
 }
 
+def AriesIOMaterialize : Pass<"aries-io-materialize"> {
+  let summary = "Materialize IOPush/IOPop Ops with specific DMA";
+  let description = [{
+    This pass materialize the IOPush/IOPop Ops with specific DMA. For example,
+    the GMIO in AIE1 can only do 1d slicing. Thus another DMA is needed in the 
+    host memory to do slicing. Similar transform is needed for PLIO in AIE1
+    whereas the extra DMA could happen in on-chip buffer.
+  }];
+  let constructor = "mlir::aries::createAriesIOMaterializePass()";
+}
+
 def AriesADFTest : Pass<"aries-adf-test"> {
   let summary = "Test ADF Dialect Ops";
   let constructor = "mlir::aries::createAriesADFTestPass()";
