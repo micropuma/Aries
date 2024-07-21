@@ -29,7 +29,7 @@ public:
             GraphOp, GraphReturnOp, CellOp, EndCellOp, LauchCellOp, 
             EndLauchCellOp, KernelOp, CreateGraphIOOp, ConfigPLIOOp, 
             ConfigGMIOOp, BufferOp, StreamOp, CascadeOp, CreateKernelIOOp, 
-            DmaOp, ConnectOp, IOPushOp, IOPopOp,
+            DmaOp, ConnectOp, IOPushOp, IOPopOp, IOWaitOp,
 
             // Function operations.
             func::CallOp, func::ReturnOp,
@@ -117,6 +117,7 @@ public:
   HANDLE(ConnectOp);
   HANDLE(IOPushOp);
   HANDLE(IOPopOp);
+  HANDLE(IOWaitOp);
 
   // Control flow operations.
   HANDLE(func::CallOp);
