@@ -335,5 +335,15 @@ def IOPopOp: ADF_Op<"io.pop", [AttrSizedOperandSegments]> {
   }];
 }
 
+def IOWaitOp: ADF_Op<"io.wait", []> {
+  let summary = "Barrier operation for IOPop op";
+  let arguments = (
+    ins GraphIOType:$graphio
+  );
+  let assemblyFormat = [{
+    `(` $graphio `)`  attr-dict `:` type($graphio)
+  }];
+}
+
 
 #endif  // ARIES_DIALECT_ARIES_ADF_OPS_TD

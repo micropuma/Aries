@@ -36,9 +36,6 @@ private:
       return false;
     }
     
-    Block &topentryBlock = topFunc.getBody().front();
-    auto topreturnOp = dyn_cast<ReturnOp>(topentryBlock.getTerminator());
-
     // TODO:: Need to deal with multiple parallel launch cells
     topFunc.walk([&](LauchCellOp lauchcell){
       Value src;
@@ -49,6 +46,12 @@ private:
       SmallVector<Value> dst_offsets;
       SmallVector<Value> dst_sizes;
       SmallVector<Value> dst_strides;
+
+
+      // Need to consider the insertion point of deallocOp and dma for PopOp
+      // Now set before adf.cell.launch.end
+      Block &entryBlock = lauchcell.getBody().front();
+      auto endlaunchcell = dyn_cast<EndLauchCellOp>(entryBlock.getTerminator());
 
       builder.setInsertionPoint(lauchcell);
       // Materialize Push/Pop of GMIO 
@@ -65,8 +68,9 @@ private:
         auto memRefType = MemRefType::get(sizes,dyn_cast<MemRefType>(src.getType()).getElementType());
         auto newMem = builder.create<AllocOp>(loc,memRefType);
         newMem->setAttr("gmio",builder.getUnitAttr());
-        builder.setInsertionPoint(topreturnOp);
-        builder.create<DeallocOp>(loc,newMem);
+        builder.setInsertionPoint(endlaunchcell);
+        auto dealloc = builder.create<DeallocOp>(loc,newMem);
+        dealloc->setAttr("gmio",builder.getUnitAttr());
         builder.setInsertionPointAfter(newMem);
         auto dmaOp = builder.create<DmaOp>(
                               loc, src, src_offsets, src_sizes, src_strides,
@@ -91,13 +95,14 @@ private:
         auto memRefType = MemRefType::get(sizes,dyn_cast<MemRefType>(dst.getType()).getElementType());
         auto newMem = builder.create<AllocOp>(loc,memRefType);
         newMem->setAttr("gmio",builder.getUnitAttr());
-        builder.setInsertionPoint(topreturnOp);
-        builder.create<DeallocOp>(loc,newMem);
-        builder.setInsertionPointAfter(lauchcell);
+        builder.setInsertionPoint(endlaunchcell);
         auto dmaOp = builder.create<DmaOp>(
                             loc, newMem, ValueRange(), ValueRange(), ValueRange(),
                             dst, dst_offsets, dst_sizes, dst_strides);
-        dmaOp->setAttr("out",builder.getUnitAttr());                    
+        dmaOp->setAttr("out",builder.getUnitAttr());
+        builder.setInsertionPoint(endlaunchcell);
+        auto dealloc = builder.create<DeallocOp>(loc,newMem);
+        dealloc->setAttr("gmio",builder.getUnitAttr()); 
         builder.setInsertionPoint(op);
         builder.create<IOPopOp>(loc, src, newMem, ValueRange(), ValueRange(), ValueRange());             
         builder.setInsertionPoint(lauchcell);

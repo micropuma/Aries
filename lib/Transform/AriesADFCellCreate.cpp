@@ -99,7 +99,7 @@ private:
     //Move GraphOps into adf_cell
     builder.setInsertionPoint(returnOp);
     for (Operation *op : GraphOps) {
-        op->moveBefore(returnOp);
+      op->moveBefore(returnOp);
     }
 
     // Create the function CallOp
@@ -110,20 +110,25 @@ private:
     auto cellLaunchop = builder.create<LauchCellOp>(loc);
     Block *cellLaunchBlock = builder.createBlock(&cellLaunchop.getRegion());
     builder.setInsertionPointToEnd(cellLaunchBlock);
-    auto endCellOp = builder.create<EndLauchCellOp>(loc);
+    auto endLaunchCell = builder.create<EndLauchCellOp>(loc);
 
-    builder.setInsertionPoint(endCellOp);
+    builder.setInsertionPoint(endLaunchCell);
     for (auto op : TopOps) {
-        op->moveBefore(endCellOp);
+      op->moveBefore(endLaunchCell);
     }
 
-    builder.setInsertionPoint(endCellOp);
+    builder.setInsertionPoint(endLaunchCell);
     auto callop = builder.create<CallOp>(loc, newfunc, ValueRange(ArgIns));
     callop->setAttr("adf.cell",builder.getUnitAttr());
 
-    builder.setInsertionPoint(endCellOp);
+    builder.setInsertionPoint(endLaunchCell);
     for (auto op : IOPopOps) {
-        op->moveBefore(endCellOp);
+      op->moveBefore(endLaunchCell);
+    }
+
+    for (auto op : IOPopOps) {
+      builder.setInsertionPoint(endLaunchCell);
+      builder.create<IOWaitOp>(loc, op.getSrc());
     }
 
     // Update the references in the newfunc after move
