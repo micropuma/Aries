@@ -26,9 +26,10 @@ public:
     return TypeSwitch<Operation *, ResultType>(op)
         .template Case<
             // ADF dialect operations.
-            GraphOp, GraphReturnOp, CellOp, EndCellOp, KernelOp, CreateGraphIOOp,
-            ConfigPLIOOp, ConfigGMIOOp, BufferOp, StreamOp, CascadeOp, CreateKernelIOOp, 
-            DmaOp, ConnectOp, IOPushOp, IOPopOp,
+            GraphOp, GraphReturnOp, CellOp, EndCellOp, LauchCellOp, 
+            EndLauchCellOp, KernelOp, CreateGraphIOOp, ConfigPLIOOp, 
+            ConfigGMIOOp, BufferOp, StreamOp, CascadeOp, CreateKernelIOOp, 
+            DmaOp, ConnectOp, IOPushOp, IOPopOp, IOWaitOp,
 
             // Function operations.
             func::CallOp, func::ReturnOp,
@@ -49,7 +50,7 @@ public:
 
             // Memref statements.
             memref::AllocOp, memref::AllocaOp, memref::LoadOp, memref::StoreOp,
-            memref::DeallocOp, memref::CopyOp,
+            memref::DeallocOp, memref::CopyOp, memref::SubViewOp,
 
             // Unary expressions.
             math::AbsIOp, math::AbsFOp, math::CeilOp, math::CosOp, math::SinOp,
@@ -102,6 +103,8 @@ public:
   HANDLE(GraphReturnOp);
   HANDLE(CellOp);
   HANDLE(EndCellOp);
+  HANDLE(LauchCellOp);
+  HANDLE(EndLauchCellOp);
   HANDLE(KernelOp);
   HANDLE(CreateGraphIOOp);
   HANDLE(ConfigPLIOOp);
@@ -114,6 +117,7 @@ public:
   HANDLE(ConnectOp);
   HANDLE(IOPushOp);
   HANDLE(IOPopOp);
+  HANDLE(IOWaitOp);
 
   // Control flow operations.
   HANDLE(func::CallOp);
@@ -155,6 +159,7 @@ public:
   HANDLE(memref::StoreOp);
   HANDLE(memref::DeallocOp);
   HANDLE(memref::CopyOp);
+  HANDLE(memref::SubViewOp);
 
   // Unary expressions.
   HANDLE(math::AbsIOp);

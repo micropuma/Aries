@@ -46,7 +46,7 @@ def GraphReturnOp : ADF_Op<"return", [HasParent<"GraphOp">, Pure, Terminator]>{
 }
 
 def CellOp : ADF_Op<"cell", [SingleBlock]> {
-  let summary = "An operation annotate the adf cell region";
+  let summary = "An operation identify the adf cell region";
   let arguments = (ins FlatSymbolRefAttr:$cell_name);
   let regions = (region SizedRegion<1>:$body);
   let assemblyFormat = [{
@@ -55,11 +55,25 @@ def CellOp : ADF_Op<"cell", [SingleBlock]> {
 }
 
 def EndCellOp : ADF_Op<"cell.end", [HasParent<"CellOp">, Pure, Terminator]>{
-  let summary = "Terminator for adf cell regions.";
-  let description = [{
-    This is a terminator op for the adf.cell region.
-  }];
+  let summary = "Terminator for adf cell region.";
+  let assemblyFormat = "attr-dict";
+}
 
+def LauchCellOp : ADF_Op<"cell.launch", [SingleBlock]> {
+  let summary = "An operation to identify the accelerator part";
+  let description = [{
+    This op is currently used to identify the part run on the accelerator. It
+    could be useful for to generate the buffer.sync barriers in the host code.
+  }];
+  let regions = (region SizedRegion<1>:$body);
+  let assemblyFormat = [{
+      regions attr-dict
+    }];
+}
+
+def EndLauchCellOp : ADF_Op<"cell.launch.end", [HasParent<"LauchCellOp">, 
+                            Pure, Terminator]>{
+  let summary = "Terminator for adf.cell.launch region.";
   let assemblyFormat = "attr-dict";
 }
 
@@ -243,6 +257,7 @@ def DmaOp: ADF_Op<"dma", [AttrSizedOperandSegments]> {
         $dst `[` ($dst_offsets^)? `]``[` ($dst_sizes^)? `]``[` ($dst_strides^)? `]` `)`  attr-dict `:`
     `(` type($src) `,` type($dst) `)`
   }];
+  let hasVerifier = 1;
 }
 
 def ConnectOp : ADF_Op<"connect", []> {
@@ -317,6 +332,16 @@ def IOPopOp: ADF_Op<"io.pop", [AttrSizedOperandSegments]> {
     `(` $src `,` 
     $dst `[` ($dst_offsets^)? `]``[` ($dst_sizes^)? `]``[` ($dst_strides^)? `]`
      `)`  attr-dict `:` `(` type($src) `,` type($dst) `)`
+  }];
+}
+
+def IOWaitOp: ADF_Op<"io.wait", []> {
+  let summary = "Barrier operation for IOPop op";
+  let arguments = (
+    ins GraphIOType:$graphio
+  );
+  let assemblyFormat = [{
+    `(` $graphio `)`  attr-dict `:` type($graphio)
   }];
 }
 

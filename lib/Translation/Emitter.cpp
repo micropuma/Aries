@@ -23,7 +23,8 @@ void aries::registerEmitADFCppTranslation() {
           mlir::aries::adf::ADFDialect,
           mlir::func::FuncDialect,
           mlir::affine::AffineDialect,
-          mlir::memref::MemRefDialect
+          mlir::memref::MemRefDialect,
+          mlir::arith::ArithDialect
         >();
       });
 }
@@ -36,7 +37,8 @@ void aries::registeremitKernelHeaderTranslation() {
           mlir::aries::adf::ADFDialect,
           mlir::func::FuncDialect,
           mlir::affine::AffineDialect,
-          mlir::memref::MemRefDialect
+          mlir::memref::MemRefDialect,
+          mlir::arith::ArithDialect
         >();
       });
 }
