@@ -237,12 +237,14 @@ public:
   template <typename CastOpType> void emitCast(CastOpType op);
   
   /// ADFGrpah emitters
+  void emitADFLaunchCell(adf::LauchCellOp op);
   void emitADFPLIOConf(adf::ConfigPLIOOp op);
   void emitADFGMIOConf(adf::ConfigGMIOOp op);
   void emitADFBuffer(adf::BufferOp op);
   void emitADFDma(adf::DmaOp op);
   void emitADFConnect(adf::ConnectOp op);
   void emitADFIOPush(adf::IOPushOp op);
+  void emitADFIOPop(adf::IOPopOp op);
 
   /// Top-level MLIR module emitter.
   void emitModule(ModuleOp module);
@@ -361,6 +363,8 @@ public:
   bool visitOp(adf::GraphReturnOp op) { return true; };
   bool visitOp(adf::CellOp op) { return true; };
   bool visitOp(adf::EndCellOp op) { return true; };
+  bool visitOp(adf::LauchCellOp op) { return emitter.emitADFLaunchCell(op), true; };
+  bool visitOp(adf::EndLauchCellOp op) { return true; };
   bool visitOp(adf::KernelOp op) { return true; };
   bool visitOp(adf::CreateGraphIOOp op) { return true; };
   bool visitOp(adf::ConfigPLIOOp op) { return emitter.emitADFPLIOConf(op), true; };
@@ -372,7 +376,7 @@ public:
   bool visitOp(adf::DmaOp op) { return emitter.emitADFDma(op), true; };
   bool visitOp(adf::ConnectOp op) { return emitter.emitADFConnect(op), true; };
   bool visitOp(adf::IOPushOp op) { return emitter.emitADFIOPush(op), true; };
-  bool visitOp(adf::IOPopOp op) { return true; };
+  bool visitOp(adf::IOPopOp op) { return emitter.emitADFIOPop(op), true; };
 
   /// Function operations.
   bool visitOp(func::CallOp op) { return emitter.emitCall(op), true; }
@@ -553,6 +557,16 @@ bool ExprVisitor::visitOp(arith::CmpIOp op) {
 // ModuleEmitter Class Definition
 //===----------------------------------------------------------------------===//
 
+void ModuleEmitter::emitADFLaunchCell(adf::LauchCellOp op){
+  indent();
+  op.walk([&](CallOp call){
+    if(call->getAttr("adf.cell")){
+      os << getCall(call) << ".init();\n";
+    }
+  });
+  emitBlock(op.getBody().front());
+}
+
 void ModuleEmitter::emitADFPLIOConf(adf::ConfigPLIOOp op){
   auto plio = op.getPlio();
   auto IOType = getTypeName(plio);
@@ -604,35 +618,44 @@ static SmallString<16> getDMAAccess(adf::DmaOp op, unsigned rank, bool isSrc, bo
   SmallVector<Value> offsets;
   SmallVector<Value> sizes  ;
   SmallVector<Value> strides;
+  MemRefType var;
   if(isSrc){
     offsets=op.getSrcOffsets();
     sizes  =op.getSrcSizes();
     strides=op.getSrcStrides(); 
+    var = dyn_cast<MemRefType>(op.getSrc().getType());
   }else{
     offsets=op.getDstOffsets();
     sizes  =op.getDstSizes();
     strides=op.getDstStrides();
+    var = dyn_cast<MemRefType>(op.getDst().getType());
   }
 
   std::string access;
   //if is the src of a input gmio or the dst of a output gmio
   if((isSrc&&dir)||((!isSrc)&&(!dir))){
     for(unsigned i=0; i< rank; i++){
-      unsigned offset = dyn_cast<IntegerAttr>(
-                        offsets[i].getDefiningOp<arith::ConstantOp>()
-                        .getValue()).getInt();
-      unsigned stride = dyn_cast<IntegerAttr>(
-                        strides[i].getDefiningOp<arith::ConstantOp>()
-                        .getValue()).getInt();
+      unsigned offset = 0;
+      unsigned stride = 1;
+      if(sizes.size()){
+        offset = dyn_cast<IntegerAttr>(
+                 offsets[i].getDefiningOp<arith::ConstantOp>()
+                 .getValue()).getInt();
+        stride = dyn_cast<IntegerAttr>(
+                 strides[i].getDefiningOp<arith::ConstantOp>()
+                 .getValue()).getInt();
+      }
       access += "[" + std::to_string(offset) + " + iv" + std::to_string(i) 
                  + " * " + std::to_string(stride) + "]"; 
     }
   }else{
     access = "[iv0";
     for(unsigned i=1; i< rank; i++){
-      unsigned ub = dyn_cast<IntegerAttr>(
-                    sizes[i].getDefiningOp<arith::ConstantOp>()
-                    .getValue()).getInt();
+      unsigned ub = var.getDimSize(i-1);
+      if(sizes.size())
+        ub = dyn_cast<IntegerAttr>(
+             sizes[i-1].getDefiningOp<arith::ConstantOp>()
+             .getValue()).getInt();
       access += " + iv" + std::to_string(i) + " * " + std::to_string(ub); 
     }
     access += "]";
@@ -642,22 +665,21 @@ static SmallString<16> getDMAAccess(adf::DmaOp op, unsigned rank, bool isSrc, bo
 }
 
 void ModuleEmitter::emitADFDma(adf::DmaOp op) {
-  indent();
   auto src = dyn_cast<MemRefType>(op.getSrc().getType());
   auto dst = dyn_cast<MemRefType>(op.getDst().getType());
   auto dst_rank = dst.getRank();
 
   for (unsigned i=0; i<dst_rank; i++){
+    indent();
+    addIndent();
     auto iterVar = "iv" + std::to_string(i);
     auto ubSrc = src.getDimSize(i);
     auto ubDst = dst.getDimSize(i);
     auto ub = std::min(ubSrc,ubDst);
     os << "for (unsigned " << iterVar << "=0; " << iterVar << "<" << ub 
-       << "; "  << iterVar << "++){";
-    addIndent();
-    indent();
+       << "; "  << iterVar << "++){\n";
+    
   }
-  os << "\n";
 
   SmallString<16> src_access;
   SmallString<16> dst_access;
@@ -672,8 +694,8 @@ void ModuleEmitter::emitADFDma(adf::DmaOp op) {
     op->emitError("Unsupport to emit: DMA op without direction.");
   }
   indent();
-  os << getName(op.getSrc()) << src_access << " = "
-     << getName(op.getDst()) << dst_access << ";\n";
+  os << getName(op.getDst()) << dst_access << " = "
+     << getName(op.getSrc()) << src_access << ";\n";
 
   for (unsigned i=0; i<dst_rank; i++){
     reduceIndent();
@@ -700,7 +722,64 @@ void ModuleEmitter::emitADFConnect(adf::ConnectOp op) {
 }
 
 void ModuleEmitter::emitADFIOPush(adf::IOPushOp op) {
+  indent();
+  auto src = op.getSrc();
+  auto dst = op.getDst();
+  CallOp call;
+  unsigned index_final;
+  for(auto use : dst.getUsers()){
+    if(auto callop = dyn_cast<CallOp>(use)){
+      call = callop;
+      unsigned index=0;
+      for(auto arg: call.getArgOperands()){
+        if(arg == dst){
+          index_final = index;
+          break;
+        }
+        index++;
+      }
+      break;
+    }else{
+      op->emitError("The dst of the IOPush is not used by adf.cell");
+    }
+  }
+  auto mod = call->getParentOfType<ModuleOp>();
+  auto calleeFuncOp = mod.lookupSymbol<FuncOp>(call.getCallee());
+  auto memref = dyn_cast<MemRefType>(src.getType());
+  auto gmio = calleeFuncOp.getArgument(index_final);
+  os << getCall(call) << "." << getName(gmio) << ".gm2aie_nb(" 
+  << getName(src) << ", " << memref.getNumElements() << "*sizeof(" 
+  << getTypeName(memref) << "));\n";
+}
 
+void ModuleEmitter::emitADFIOPop(adf::IOPopOp op) {
+  indent();
+  auto src = op.getSrc();
+  auto dst = op.getDst();
+  
+  unsigned index_final = 0;
+  auto call = dyn_cast<CallOp>(src.getDefiningOp());
+  if(call){
+    unsigned index=0;
+    for(auto res: call.getResults()){
+      if(res == src){
+        index_final = index;
+        break;
+      }
+      index++;
+    }
+  }else{
+    op->emitError("The src of the IOPop is not used by adf.cell");
+  }
+  auto mod = call->getParentOfType<ModuleOp>();
+  auto calleeFuncOp = mod.lookupSymbol<FuncOp>(call.getCallee());
+  Block &entryBlock = calleeFuncOp.getBody().front();
+  auto returnOp = dyn_cast<ReturnOp>(entryBlock.getTerminator()); 
+  auto memref = dyn_cast<MemRefType>(dst.getType());
+  auto gmio = returnOp.getOperand(index_final);
+  os << getCall(call) << "." << getName(gmio) << ".aie2gm_nb(" 
+  << getName(dst) << ", " << memref.getNumElements() << "*sizeof(" 
+  << getTypeName(memref) << "));\n";
 }
 
 void ModuleEmitter::emitCall(func::CallOp op) {
