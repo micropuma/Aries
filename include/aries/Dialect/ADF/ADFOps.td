@@ -243,6 +243,7 @@ def DmaOp: ADF_Op<"dma", [AttrSizedOperandSegments]> {
         $dst `[` ($dst_offsets^)? `]``[` ($dst_sizes^)? `]``[` ($dst_strides^)? `]` `)`  attr-dict `:`
     `(` type($src) `,` type($dst) `)`
   }];
+  let hasVerifier = 1;
 }
 
 def ConnectOp : ADF_Op<"connect", []> {

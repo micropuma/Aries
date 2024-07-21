@@ -131,3 +131,18 @@ void ConfigGMIOOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                            MLIRContext *context) {
   results.add<DuplicateElim<ConfigGMIOOp>>(context);
 }
+
+LogicalResult DmaOp::verify(){
+  auto src = dyn_cast<MemRefType>(getSrc().getType());
+  auto dst = dyn_cast<MemRefType>(getDst().getType());
+  auto src_rank = src.getRank();
+  auto dst_rank = dst.getRank();
+
+  if(src_rank!=dst_rank)
+    return emitOpError()<<"the ranks of src and dst in DmaOp are not the same";
+  if(src_rank<1)
+    return emitOpError()<<"the rank of src in DmaOp is less than 1";
+  if(dst_rank<1)
+    return emitOpError()<<"the rank of dst in DmaOp is less than 1";
+  return success();
+}
