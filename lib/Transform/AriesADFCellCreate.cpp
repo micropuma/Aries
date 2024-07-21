@@ -62,6 +62,7 @@ private:
 
   bool ADFCellCreate (ModuleOp mod, StringRef topFuncName) {
     auto builder = OpBuilder(mod);
+    auto loc = builder.getUnknownLoc();
     FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
@@ -89,11 +90,11 @@ private:
     builder.setInsertionPoint(topFunc);
     auto funcName = "adf_" + cellOp.getCellName().str();
     auto funcType = builder.getFunctionType(ValueRange(ArgIns), ValueRange(ArgOuts));
-    auto newfunc = builder.create<FuncOp>(builder.getUnknownLoc(), funcName, funcType);
+    auto newfunc = builder.create<FuncOp>(loc, funcName, funcType);
     newfunc->setAttr("adf.cell",builder.getUnitAttr());
     auto destBlock = newfunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
-    auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc(),ValueRange(ArgOuts));
+    auto returnOp = builder.create<ReturnOp>(loc,ValueRange(ArgOuts));
 
     //Move GraphOps into adf_cell
     builder.setInsertionPoint(returnOp);
@@ -106,17 +107,23 @@ private:
     auto topreturnOp = dyn_cast<ReturnOp>(entryBlock.getTerminator());
 
     builder.setInsertionPoint(topreturnOp);
+    auto cellLaunchop = builder.create<LauchCellOp>(loc);
+    Block *cellLaunchBlock = builder.createBlock(&cellLaunchop.getRegion());
+    builder.setInsertionPointToEnd(cellLaunchBlock);
+    auto endCellOp = builder.create<EndLauchCellOp>(loc);
+
+    builder.setInsertionPoint(endCellOp);
     for (auto op : TopOps) {
-        op->moveBefore(topreturnOp);
+        op->moveBefore(endCellOp);
     }
 
-    builder.setInsertionPoint(topreturnOp);
-    auto callop = builder.create<CallOp>(topreturnOp.getLoc(), newfunc, ValueRange(ArgIns));
+    builder.setInsertionPoint(endCellOp);
+    auto callop = builder.create<CallOp>(loc, newfunc, ValueRange(ArgIns));
     callop->setAttr("adf.cell",builder.getUnitAttr());
 
-    builder.setInsertionPoint(topreturnOp);
+    builder.setInsertionPoint(endCellOp);
     for (auto op : IOPopOps) {
-        op->moveBefore(topreturnOp);
+        op->moveBefore(endCellOp);
     }
 
     // Update the references in the newfunc after move
@@ -128,17 +135,23 @@ private:
         });
     }
 
-    // Update the returned value in the topFunc
+    // Update the returned value in the cellLaunch region
     for (unsigned i = 0, num_res = callop.getNumResults(); i < num_res; ++i) {
         auto sourceArg = ArgOuts[i];
         auto destArg = callop.getResult(i);
         sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
-            return topFunc->isProperAncestor(use.getOwner());
+            return cellLaunchop->isProperAncestor(use.getOwner());
         });
     }
 
     //Erase cellop after func with adf.cell attributes has been created 
     cellOp.erase();
+
+    //Move the constantOp to the top_func
+    builder.setInsertionPointToStart(&entryBlock);
+    cellLaunchop.walk([&](arith::ConstantOp op){
+        op->moveBefore(&entryBlock, entryBlock.begin());
+    });
 
     return true;
   }
