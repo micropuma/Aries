@@ -62,6 +62,7 @@ private:
         sizes.push_back(dyn_cast<IntegerAttr>(size.getDefiningOp<arith::ConstantOp>().getValue()).getInt());
       auto memRefType = MemRefType::get(sizes,dyn_cast<MemRefType>(src.getType()).getElementType());
       auto newMem = builder.create<AllocOp>(loc,memRefType);
+      newMem->setAttr("gmio",builder.getUnitAttr());
       builder.setInsertionPoint(topreturnOp);
       auto deallocOp = builder.create<DeallocOp>(loc,newMem);
       if(flag){
@@ -72,6 +73,7 @@ private:
       auto dmaOp = builder.create<DmaOp>(
                             loc, src, src_offsets, src_sizes, src_strides,
                               newMem, ValueRange(), ValueRange(), ValueRange());
+      dmaOp->setAttr("in",builder.getUnitAttr());
       builder.setInsertionPoint(op);
       builder.create<IOPushOp>(loc, newMem, ValueRange(), ValueRange(), ValueRange(), dst);             
       builder.setInsertionPoint(dmaOp);
@@ -90,12 +92,14 @@ private:
         sizes.push_back(dyn_cast<IntegerAttr>(size.getDefiningOp<arith::ConstantOp>().getValue()).getInt());
       auto memRefType = MemRefType::get(sizes,dyn_cast<MemRefType>(dst.getType()).getElementType());
       auto newMem = builder.create<AllocOp>(loc,memRefType);
+      newMem->setAttr("gmio",builder.getUnitAttr());
       builder.setInsertionPoint(topreturnOp);
       builder.create<DeallocOp>(loc,newMem);
       builder.setInsertionPoint(first_dealloc);
-      builder.create<DmaOp>(
+      auto dmaOp = builder.create<DmaOp>(
                           loc, newMem, ValueRange(), ValueRange(), ValueRange(),
                           dst, dst_offsets, dst_sizes, dst_strides);
+      dmaOp->setAttr("out",builder.getUnitAttr());                    
       builder.setInsertionPoint(op);
       builder.create<IOPopOp>(loc, src, newMem, ValueRange(), ValueRange(), ValueRange());             
       builder.setInsertionPointToStart(&entryBlock);

@@ -57,7 +57,12 @@ SmallString<8> ADFEmitterBase::addCall(CallOp call, std::string name) {
       callName += name;
     }
   } else {
-    callName += StringRef("k" + std::to_string(state.callTable.size()));
+    if(call->getAttr("adf.kernel"))
+      callName += StringRef("k" + std::to_string(state.callTable.size()));
+    else if(call->getAttr("adf.cell"))
+      callName += StringRef("gr" + std::to_string(state.callTable.size()));
+    else
+      callName += StringRef("var" + std::to_string(state.callTable.size()));
   }
   state.callTable[call] = callName;
 
@@ -164,6 +169,8 @@ static SmallString<16> getTypeName(Type valType) {
 static SmallString<16> getTypeName(CallOp call) {
   if(call->getAttr("adf.kernel")){
     return SmallString<16>("adf::kernel");
+  }else if(call->getAttr("adf.cell")){
+    return call.getCallee();
   }else{
     assert("Dectect type not supported.");
   }
@@ -230,10 +237,12 @@ public:
   template <typename CastOpType> void emitCast(CastOpType op);
   
   /// ADFGrpah emitters
-  void emitADFBuffer(adf::BufferOp op);
   void emitADFPLIOConf(adf::ConfigPLIOOp op);
   void emitADFGMIOConf(adf::ConfigGMIOOp op);
+  void emitADFBuffer(adf::BufferOp op);
+  void emitADFDma(adf::DmaOp op);
   void emitADFConnect(adf::ConnectOp op);
+  void emitADFIOPush(adf::IOPushOp op);
 
   /// Top-level MLIR module emitter.
   void emitModule(ModuleOp module);
@@ -252,7 +261,9 @@ private:
   void emitKernelDef(FuncOp func);
   void emitIODef(FuncOp func);
   void emitKernelCreate(FuncOp func);
-  void emitADFMain(llvm::StringRef GraphName);
+  void emitCellDef(FuncOp func);
+  void emitCellArg(FuncOp func);
+  void emitADFMain(FuncOp func);
 };
 }
 
@@ -358,9 +369,9 @@ public:
   bool visitOp(adf::StreamOp op) { return true; };
   bool visitOp(adf::CascadeOp op) { return true; };
   bool visitOp(adf::CreateKernelIOOp op) { return true; };
-  bool visitOp(adf::DmaOp op) { return true; };
+  bool visitOp(adf::DmaOp op) { return emitter.emitADFDma(op), true; };
   bool visitOp(adf::ConnectOp op) { return emitter.emitADFConnect(op), true; };
-  bool visitOp(adf::IOPushOp op) { return true; };
+  bool visitOp(adf::IOPushOp op) { return emitter.emitADFIOPush(op), true; };
   bool visitOp(adf::IOPopOp op) { return true; };
 
   /// Function operations.
@@ -542,26 +553,6 @@ bool ExprVisitor::visitOp(arith::CmpIOp op) {
 // ModuleEmitter Class Definition
 //===----------------------------------------------------------------------===//
 
-void ModuleEmitter::emitADFBuffer(adf::BufferOp op) {
-  auto buffer = op.getResult();
-  if(!isDeclared(buffer)){
-    for (auto user: buffer.getUsers()){
-      if(auto call = dyn_cast<func::CallOp>(user)){
-        if(call->getAttr("adf.kernel")){
-          auto KName = getCall(call).str().str();
-          for(unsigned i=0; i<call.getNumOperands(); i++){
-            if(buffer == call.getOperand(i)){
-              auto VName = KName + std::string(".in[") + std::to_string(i) + std::string("]");
-              addName(buffer, false, VName);
-              return;
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
 void ModuleEmitter::emitADFPLIOConf(adf::ConfigPLIOOp op){
   auto plio = op.getPlio();
   auto IOType = getTypeName(plio);
@@ -588,6 +579,109 @@ void ModuleEmitter::emitADFGMIOConf(adf::ConfigGMIOOp op){
   << burst << ", " << bandwith <<");\n" ;
 }
 
+void ModuleEmitter::emitADFBuffer(adf::BufferOp op) {
+  auto buffer = op.getResult();
+  if(!isDeclared(buffer)){
+    for (auto user: buffer.getUsers()){
+      if(auto call = dyn_cast<func::CallOp>(user)){
+        if(call->getAttr("adf.kernel")){
+          auto KName = getCall(call).str().str();
+          for(unsigned i=0; i<call.getNumOperands(); i++){
+            if(buffer == call.getOperand(i)){
+              auto VName = KName + std::string(".in[") + std::to_string(i) + std::string("]");
+              addName(buffer, false, VName);
+              return;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+static SmallString<16> getDMAAccess(adf::DmaOp op, unsigned rank, bool isSrc, bool dir){
+  
+  SmallVector<Value> offsets;
+  SmallVector<Value> sizes  ;
+  SmallVector<Value> strides;
+  if(isSrc){
+    offsets=op.getSrcOffsets();
+    sizes  =op.getSrcSizes();
+    strides=op.getSrcStrides(); 
+  }else{
+    offsets=op.getDstOffsets();
+    sizes  =op.getDstSizes();
+    strides=op.getDstStrides();
+  }
+
+  std::string access;
+  //if is the src of a input gmio or the dst of a output gmio
+  if((isSrc&&dir)||((!isSrc)&&(!dir))){
+    for(unsigned i=0; i< rank; i++){
+      unsigned offset = dyn_cast<IntegerAttr>(
+                        offsets[i].getDefiningOp<arith::ConstantOp>()
+                        .getValue()).getInt();
+      unsigned stride = dyn_cast<IntegerAttr>(
+                        strides[i].getDefiningOp<arith::ConstantOp>()
+                        .getValue()).getInt();
+      access += "[" + std::to_string(offset) + " + iv" + std::to_string(i) 
+                 + " * " + std::to_string(stride) + "]"; 
+    }
+  }else{
+    access = "[iv0";
+    for(unsigned i=1; i< rank; i++){
+      unsigned ub = dyn_cast<IntegerAttr>(
+                    sizes[i].getDefiningOp<arith::ConstantOp>()
+                    .getValue()).getInt();
+      access += " + iv" + std::to_string(i) + " * " + std::to_string(ub); 
+    }
+    access += "]";
+  }
+
+  return SmallString<16>(access);
+}
+
+void ModuleEmitter::emitADFDma(adf::DmaOp op) {
+  indent();
+  auto src = dyn_cast<MemRefType>(op.getSrc().getType());
+  auto dst = dyn_cast<MemRefType>(op.getDst().getType());
+  auto dst_rank = dst.getRank();
+
+  for (unsigned i=0; i<dst_rank; i++){
+    auto iterVar = "iv" + std::to_string(i);
+    auto ubSrc = src.getDimSize(i);
+    auto ubDst = dst.getDimSize(i);
+    auto ub = std::min(ubSrc,ubDst);
+    os << "for (unsigned " << iterVar << "=0; " << iterVar << "<" << ub 
+       << "; "  << iterVar << "++){";
+    addIndent();
+    indent();
+  }
+  os << "\n";
+
+  SmallString<16> src_access;
+  SmallString<16> dst_access;
+
+  if(op->hasAttr("in")){
+    src_access = getDMAAccess(op, dst_rank, true, true);
+    dst_access = getDMAAccess(op, dst_rank, false, true);
+  }else if(op->hasAttr("out")){
+    src_access = getDMAAccess(op, dst_rank, true, false);
+    dst_access = getDMAAccess(op, dst_rank, false, false);
+  }else{
+    op->emitError("Unsupport to emit: DMA op without direction.");
+  }
+  indent();
+  os << getName(op.getSrc()) << src_access << " = "
+     << getName(op.getDst()) << dst_access << ";\n";
+
+  for (unsigned i=0; i<dst_rank; i++){
+    reduceIndent();
+    indent();
+    os << "}\n";
+  }
+}
+
 void ModuleEmitter::emitADFConnect(adf::ConnectOp op) {
   indent();
   auto src = op.getSrc();
@@ -605,8 +699,12 @@ void ModuleEmitter::emitADFConnect(adf::ConnectOp op) {
   os << "adf::connect<>(" << srcName << ", " << dstName << ");\n";
 }
 
+void ModuleEmitter::emitADFIOPush(adf::IOPushOp op) {
+
+}
+
 void ModuleEmitter::emitCall(func::CallOp op) {
-  if(op->getAttr("adf.kernel"))
+  if(op->getAttr("adf.kernel")||op->getAttr("adf.cell"))
     return;
   // Handle returned value by the callee.
   for (auto result : op.getResults()) {
@@ -1120,6 +1218,17 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
   if (!op.getType().hasStaticShape())
     op->emitError("is unranked or has dynamic shape.");
 
+  //If this a memory in the GMIO space
+  if (op->hasAttr("gmio")) {
+    indent();
+    auto result = op.getResult(); // memref
+    os << getTypeName(result) << "* ";
+    os << addName(result) << "=(" << getTypeName(result) << "*) GMIO::malloc(";
+    auto memref = dyn_cast<MemRefType>(result.getType());
+    os << memref.getNumElements() << ");\n";
+    return;
+  }
+
   std::string name;
   if (op->hasAttr("name")) {
     auto attr = op->getAttr("name").template cast<StringAttr>();
@@ -1455,6 +1564,7 @@ void ModuleEmitter::emitBlock(Block &block) {
 }
 
 void ModuleEmitter::emitKernelDef(FuncOp func) {
+  state.callTable.clear();
   addIndent();
   unsigned index = 0;
   func.walk([&](CallOp call){
@@ -1511,21 +1621,61 @@ void ModuleEmitter::emitIODef(FuncOp func) {
   os << "\n";
 }
 
-void ModuleEmitter::emitADFMain(llvm::StringRef GraphName){
-  os << GraphName << " MyGraph;\n";
+void ModuleEmitter::emitCellDef(FuncOp func) {
+  state.callTable.clear();
+  func.walk([&](CallOp call){
+    os << getTypeName(call) << " ";
+    os << addCall(call) << ";\n";
+  });
+  os << "\n";
+}
 
-  std::string adf_main = R"XXX(
+void ModuleEmitter::emitCellArg(FuncOp func) {
+  addIndent();
+  for(auto arg: func.getArguments()){
+    indent();
+    if (arg.getType().isa<ShapedType>())
+      emitArrayDecl(arg);
+    else
+      emitValue(arg);
+    os << ";\n";
+  }
+  os << "\n";
+}
+
+void ModuleEmitter::emitADFMain(FuncOp func){
+  emitCellDef(func);
+
+  std::string adf_main_head = R"XXX(
 #if defined(__AIESIM__) || defined(__X86SIM__)
 int main(int argc, char ** argv) {
-  MyGraph.init();
-  MyGraph.run(4);
-  MyGraph.end();
+)XXX";
+  os << adf_main_head << "\n";
+  emitCellArg(func);
+  auto boolAttr = func->getAttrOfType<BoolAttr>("gmio");
+  if(boolAttr && boolAttr.getValue()==true){
+    emitBlock(func.getBody().front());
+  }else{
+    func.walk([&](CallOp call){
+      indent();
+      os << getCall(call) << ".init();\n";
+    });
+    func.walk([&](CallOp call){
+      indent();
+      os << getCall(call) << ".run(4);\n";
+    });
+    func.walk([&](CallOp call){
+      indent();
+      os << getCall(call) << ".end();\n";
+    });
+  }
+
+  std::string adf_main_tail = R"XXX(
   return 0;
 }
 #endif
 )XXX";
-
-  os << adf_main;
+  os << adf_main_tail;
 }
 
 void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
@@ -1553,11 +1703,10 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
 
   reduceIndent();
   indent();
+  reduceIndent();
   os << "}\n";
 
   os << "};\n\n";
-
-  emitADFMain(GraphName);
 }
 
 void ModuleEmitter::emitModule(ModuleOp module) {
@@ -1582,8 +1731,11 @@ using namespace adf;
       if (op->getAttr("adf.cell")){
         os << adf_header;
         emitADFGraphFunction(op);
+      }else if(op->getAttr("top_func")){
+        emitADFMain(op);
         os << "//#endif //__GRAPH_H__\n";
-      } 
+      }
+      
   }
 
 }
