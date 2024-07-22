@@ -33,6 +33,7 @@ void mlir::aries::registerAriesPassPipeline() {
     pm.addPass(createAriesKernelSplitPass());
     pm.addPass(createAriesIOMaterializePass());
     pm.addPass(createAriesADFTestPass());
+    pm.addPass(createAriesFileSplitPass(opts));
   });
 }
 
