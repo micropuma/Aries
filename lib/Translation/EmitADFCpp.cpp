@@ -1829,14 +1829,15 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
 }
 
 void ModuleEmitter::emitModule(ModuleOp module) {
-  std::string adf_header = R"XXX(
+  std::string adfh_header = R"XXX(
+//_aries_split_//adf_graph.h//_aries_split_//
 //===----------------------------------------------------------------------===//
 //
-// Automatically generated file for adf graph
+// Automatically generated file for adf_graph.h
 //
 //===----------------------------------------------------------------------===//
-//#ifndef __GRAPH_H__
-//#define __GRAPH_H__
+#ifndef __GRAPH_H__
+#define __GRAPH_H__
 
 #include <adf.h>
 #include <stdio.h>
@@ -1847,13 +1848,28 @@ using namespace adf;
 
 )XXX";
 
+  std::string adfcpp_header = R"XXX(
+//_aries_split_//adf_graph.cpp//_aries_split_//
+//===----------------------------------------------------------------------===//
+//
+// Automatically generated file for adf_graph.cpp
+//
+//===----------------------------------------------------------------------===//
+#include <adf.h>
+#include <stdio.h>
+#include <iostream>
+#include "adf_graph.h"
+
+)XXX";
+
   for (auto op : module.getOps<FuncOp>()) {
       if (op->getAttr("adf.cell")){
-        os << adf_header;
+        os << adfh_header;
         emitADFGraphFunction(op);
+        os << "#endif //__GRAPH_H__\n";
       }else if(op->getAttr("top_func")){
+        os << adfcpp_header;
         emitADFMain(op);
-        os << "//#endif //__GRAPH_H__\n";
       }
       
   }
