@@ -49,6 +49,16 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
   Option<int64_t> OptGMIOBW{
       *this, "gmio-bw", llvm::cl::init(1000),
       llvm::cl::desc("Specify the required gmio bandwidth in MB/s")};
+
+  /// Configure the split file pass.
+  Option<std::string> OptFileName{
+      *this, "inputfile-name", llvm::cl::init("adf_graph_temp.cpp"),
+      llvm::cl::desc("Specify the temp file name")};
+  
+  /// Configure the split file pass.
+  Option<std::string> OptPathName{
+      *this, "path-name", llvm::cl::init("adf_graph_add"),
+      llvm::cl::desc("Specify the path name")};
 };
 
 std::unique_ptr<Pass> createAriesTilingPass();
@@ -64,8 +74,10 @@ std::unique_ptr<Pass> createAriesKernelInterfaceCreatePass();
 std::unique_ptr<Pass> createAriesLocalDataForwardPass();
 std::unique_ptr<Pass> createAriesADFCellCreatePass();
 std::unique_ptr<Pass> createAriesKernelSplitPass();
-std::unique_ptr<Pass> createAriesADFTestPass();
 std::unique_ptr<Pass> createAriesIOMaterializePass();
+std::unique_ptr<Pass> createAriesADFTestPass();
+std::unique_ptr<Pass> createAriesFileSplitPass();
+std::unique_ptr<Pass> createAriesFileSplitPass(const AriesOptions &opts);
 
 void registerAriesPasses();
 void registerAriesPassPipeline();

@@ -131,4 +131,17 @@ def AriesADFTest : Pass<"aries-adf-test"> {
   let dependentDialects = ["mlir::aries::adf::ADFDialect"];
 }
 
+// This is just a helper function for translation
+// may need to be moved to other places
+def AriesFileSplit : Pass<"aries-file-split"> {
+  let summary = "Split the adf_graph source and header files";
+  let constructor = "mlir::aries::createAriesFileSplitPass()";
+  let options = [
+    Option<"inputfileName", "inputfile-name", "std::string",
+           /*default=*/"\"adf_graph_temp.cpp\"", "Specify the temp file name">,
+    Option<"pathName", "path-name", "std::string",
+           /*default=*/"\"adf_graph_add\"", "Specify the path name">,
+  ];
+}
+
 #endif  // ARIES_TRANSFORM_PASSES_TD

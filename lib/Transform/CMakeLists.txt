@@ -13,6 +13,7 @@ add_mlir_library(MLIRAriesPasses
     AriesKernelSplit.cpp
     AriesIOMaterialize.cpp
     AriesADFTest.cpp
+    AriesFileSplit.cpp
     Passes.cpp
     Utils.cpp
 

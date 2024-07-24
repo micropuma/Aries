@@ -1766,8 +1766,16 @@ void ModuleEmitter::emitADFMain(FuncOp func){
   emitCellDef(func);
 
   std::string adf_main_head = R"XXX(
-#if defined(__AIESIM__) || defined(__X86SIM__)
 int main(int argc, char ** argv) {
+#if !defined(__AIESIM__) && !defined(__X86SIM__) && !defined(__ADF_FRONTEND__)
+  // Create XRT device handle for ADF API
+  char* xclbinFilename = argv[1];
+  auto dhdl = xrtDeviceOpen(0);//device index=0
+  xrtDeviceLoadXclbinFile(dhdl,xclbinFilename);
+  xuid_t uuid;
+  xrtDeviceGetXclbinUUID(dhdl, uuid);
+  adf::registerXRT(dhdl, uuid);
+#endif
 )XXX";
   os << adf_main_head << "\n";
   emitCellArg(func);
@@ -1790,9 +1798,11 @@ int main(int argc, char ** argv) {
   }
 
   std::string adf_main_tail = R"XXX(
+#if !defined(__AIESIM__) && !defined(__X86SIM__) && !defined(__ADF_FRONTEND__)
+  xrtDeviceClose(dhdl);
+#endif
   return 0;
 }
-#endif
 )XXX";
   os << adf_main_tail;
 }
@@ -1829,14 +1839,15 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
 }
 
 void ModuleEmitter::emitModule(ModuleOp module) {
-  std::string adf_header = R"XXX(
+  std::string adfh_header = R"XXX(
+//_aries_split_//adf_graph.h//_aries_split_//
 //===----------------------------------------------------------------------===//
 //
-// Automatically generated file for adf graph
+// Automatically generated file for adf_graph.h
 //
 //===----------------------------------------------------------------------===//
-//#ifndef __GRAPH_H__
-//#define __GRAPH_H__
+#ifndef __GRAPH_H__
+#define __GRAPH_H__
 
 #include <adf.h>
 #include <stdio.h>
@@ -1847,13 +1858,32 @@ using namespace adf;
 
 )XXX";
 
+  std::string adfcpp_header = R"XXX(
+//_aries_split_//adf_graph.cpp//_aries_split_//
+//===----------------------------------------------------------------------===//
+//
+// Automatically generated file for adf_graph.cpp
+//
+//===----------------------------------------------------------------------===//
+#include <adf.h>
+#include <stdio.h>
+#include <iostream>
+#include "adf_graph.h"
+#if !defined(__AIESIM__) && !defined(__X86SIM__) && !defined(__ADF_FRONTEND__)
+    #include "adf/adf_api/XRTConfig.h"
+    #include "experimental/xrt_kernel.h"
+#endif
+
+)XXX";
+
   for (auto op : module.getOps<FuncOp>()) {
       if (op->getAttr("adf.cell")){
-        os << adf_header;
+        os << adfh_header;
         emitADFGraphFunction(op);
+        os << "#endif //__GRAPH_H__\n";
       }else if(op->getAttr("top_func")){
+        os << adfcpp_header;
         emitADFMain(op);
-        os << "//#endif //__GRAPH_H__\n";
       }
       
   }

@@ -10,7 +10,8 @@ fileCreate:
 	mkdir -p ${PROJECT_AIE_PATH}
 
 copyFile:
-	cp -r Makefile_VCK190 ${PROJECT_PATH}/Makefile
+	cp -r template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
+	cp -r template_files/system.cfg ${PROJECT_PATH}
 
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
@@ -32,8 +33,12 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-io-materialize
 
 translate: adf_graph kernel_header kernel_cc
-adf_graph: ${PROJECT_AIE_PATH}/adf_graph.cpp
-${PROJECT_AIE_PATH}/adf_graph.cpp: ${PROJECT_PATH}/${FUNC}.adf.mlir
+adf_graph: adf_graph_temp
+	aries-opt <${FUNC}.mlir \
+		-aries-file-split="inputfile-name=adf_graph_temp.cpp path-name=${PROJECT_AIE_PATH}/" \
+		>/dev/null
+adf_graph_temp: ${PROJECT_AIE_PATH}/adf_graph_temp.cpp
+${PROJECT_AIE_PATH}/adf_graph_temp.cpp: ${PROJECT_PATH}/${FUNC}.adf.mlir
 	aries-translate -o $@ $< \
 		-emit-aie-adf
 
