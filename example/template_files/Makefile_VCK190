@@ -26,7 +26,7 @@ HOST_SRCS := ./host/host.cpp
 SYSROOT_PATH = /opt/petalinux/2023.1
 SYSROOT = ${SYSROOT_PATH}/sysroots/cortexa72-cortexa53-xilinx-linux
 SDKTARGETSYSROOT = ${SYSROOT}
-EDGE_COMMON_SW_PATH = /home/jinming/project/Versal_VCK190
+EDGE_COMMON_SW_PATH = ./
 EDGE_COMMON_SW= ${EDGE_COMMON_SW_PATH}/xilinx-versal-common-v2023.1
 ROOTFS=${EDGE_COMMON_SW}/rootfs.ext4
 IMAGE=${EDGE_COMMON_SW}/Image
@@ -197,6 +197,6 @@ cleansim:
 cleantemp:
 	-$(RMDIR) ${TEMP_DIR}
 cleanhost:
-	-$(RMDIR) hostexe aie_control_xrt.o main.o
+	-$(RMDIR) ${HOST_EXE} ${AIE_O} $(GRAPH_O) main.o
 cleanpac:
-	-$(RMDIR) ${FINAL_XCLBIN} mm_${TARGET}.xclbin.package_summary package.${TARGET}
+	-$(RMDIR) mm_${TARGET}.xclbin.package_summary package.${TARGET}
