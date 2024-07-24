@@ -15,7 +15,7 @@ mkfile_dir := $(dir $(mkfile_path))
 TARGET   = hw
 MODE	 = linux
 HOST_ARCH = aarch64
-PRE_BUILT = 0
+EN_PL = 0
 PLATFORM_REPO_PATHS = /tools/Xilinx/Vitis/2023.1/base_platforms/
 PLATFORM = ${PLATFORM_REPO_PATHS}/xilinx_vck190_base_202310_1/xilinx_vck190_base_202310_1.xpfm
 XCLBIN   = vck190_aie_base_graph_${TARGET}.xclbin
@@ -23,30 +23,24 @@ XSA	 = vck190_aie_base_graph_${TARGET}.xsa
 XPFM	 = vck190_xpfm
 HOST_EXE = hostexe
 HOST_SRCS := ./host/host.cpp
-SYSROOT_PATH = ./
+SYSROOT_PATH = /opt/petalinux/2023.1
 SYSROOT = ${SYSROOT_PATH}/sysroots/cortexa72-cortexa53-xilinx-linux
 SDKTARGETSYSROOT = ${SYSROOT}
-EDGE_COMMON_SW_PATH = ./
+EDGE_COMMON_SW_PATH = /home/jinming/project/Versal_VCK190
 EDGE_COMMON_SW= ${EDGE_COMMON_SW_PATH}/xilinx-versal-common-v2023.1
 ROOTFS=${EDGE_COMMON_SW}/rootfs.ext4
 IMAGE=${EDGE_COMMON_SW}/Image
-
-FINAL_XCLBIN=mm_${TARGET}.xclbin
 TEMP_DIR := ./_x.$(TARGET).xilinx_vck190_base_202310_1
 BUILD_DIR := ./build_dir.$(TARGET).xilinx_vck190_base_202310_1
-KERNEL_XO :=$(TEMP_DIR)/dma0.xo 
+KERNEL_XO :=$(TEMP_DIR)/dma0.xo
 GRAPH   := aie/adf_graph.cpp
 LIBADF  = libadf.a
 AIE_CMPL_CMD = aiecompiler -platform=${PLATFORM} --target=hw --stacksize=1024 --pl-register-threshold=250 --pl-freq=230  -include="./aie" -include="./aie/layer0" --disable-transform-broadcast-split=false -workdir=./Work ${GRAPH}
 AIE_SIM_CMD = aiesimulator --pkg-dir=./Work --dump-vcd foo --profile
-AIE_HOSTEXE = aie_control_xrt.o
-ifeq ($(PRE_BUILT),1)
-	AIE_HOSTEXE := pre_built/aie_control_xrt.o
-endif
+AIE_O = aie_control_xrt.o
+GRAPH_O = adf_graph.o
 EMU_CMD = ./launch_hw_emu.sh
 PACKAGE_OUT = ./package.$(TARGET)
-PRE_BUILT_XCLBIN = ./pre_built/${XCLBIN}
-PRE_BUILT_LIBADF = ./pre_built/${LIBADF}
 RM = rm -f
 RMDIR = rm -rf
 ##########################################################################################################################################################
@@ -55,8 +49,8 @@ RMDIR = rm -rf
 
 CUR_DIR := $(patsubst %/,%,$(dir $(MK_PATH)))
 
-BINARY_CONTAINERS += $(BUILD_DIR)/${XCLBIN}
 VCC      = v++
+VPP_SPEC = system.cfg
 VPP_XO_FLAGS += -c --platform $(PLATFORM) --save-temps --optimize 2 -g
 VPP_XO_FLAGS += --hls.jobs 8
 VPP_XO_FLAGS += -I$(CUR_DIR)/kernel
@@ -72,13 +66,13 @@ GCC_INCLUDES := -I$(SYSROOT)/usr/include/xrt \
 				-I${XILINX_VITIS}/aietools/include \
 				-I${XILINX_VITIS}/include \
 				-I./aie
-				#-I$(SYSROOT)/usr/include \
 
 
-GCC_LIB := -lxaiengine -ladf_api_xrt -lxrt_core -lxrt_coreutil \
-		   -L$(SYSROOT)/usr/lib \
-		   --sysroot=$(SYSROOT) \
-		   -L${XILINX_VITIS}/aietools/lib/aarch64.o
+GCC_LIB := -ladf_api_xrt -lgcc -lc -lxrt_coreutil \
+					 -lxilinxopencl -lpthread -lrt -ldl -lcrypt -lstdc++ \
+		   		 -L$(SYSROOT)/usr/lib \
+		   		 --sysroot=$(SYSROOT) \
+		   		 -L${XILINX_VITIS}/aietools/lib/aarch64.o
 
 
 CXX := $(XILINX_VITIS)/gnu/aarch64/lin/aarch64-linux/bin/aarch64-linux-gnu-g++
@@ -89,7 +83,7 @@ ifneq ($(TARGET), hw)
 	CLFLAGS += -g
 endif
 CLFLAGS += --hls.jobs 8
-CLFLAGS += --config ./conn.cfg
+CLFLAGS += --config $(VPP_SPEC)
 CLFLAGS += --clock.defaultFreqHz 220000000
 
 LDCLFLAGS := --vivado.synth.jobs 8 --vivado.impl.jobs 8
@@ -137,48 +131,40 @@ aiesim: ${LIBADF}
 	${AIE_SIM_CMD}
 	@echo "COMPLETE: aiesim success."
 
+build: $(XSA)
+ifeq ($(EN_PL),1)
 kernels:$(KERNEL_XO)
 $(TEMP_DIR)/dma0.xo: kernel0/dma0.cpp kernel0/dma0.hpp
 	mkdir -p $(TEMP_DIR)
 	$(VCC) $(VPP_XO_FLAGS) -k dma0 --hls.clock 300000000:dma0 $< -o $@ | tee $(TEMP_DIR)/dma0.log
 	@echo "### ***** dma0 compilation done! *****"
-build: $(BINARY_CONTAINERS)
-$(BUILD_DIR)/${XCLBIN}: ${KERNEL_XO} ${LIBADF}
+$(XSA): ${KERNEL_XO} ${LIBADF}
 	mkdir -p $(BUILD_DIR)
-	v++ -l $(CLFLAGS) --temp_dir $(BUILD_DIR) $(LDCLFLAGS) -o'$@' $(+) | tee $(BUILD_DIR)/hpc_xclbin.log
-
-
-aiehost: $(AIE_HOSTEXE)
-ifneq ($(PRE_BUILT),1)
-$(AIE_HOSTEXE):
-	$(CXX) $(GCC_FLAGS) $(GCC_INCLUDES) ./Work/ps/c_rts/aie_control_xrt.cpp -o'$@'
+	$(VCC) -l $(CLFLAGS) --temp_dir $(BUILD_DIR) $(LDCLFLAGS) -o'$@' $(+) | tee $(BUILD_DIR)/hpc_xclbin.log
+else
+${XSA}: ${LIBADF}
+	${VCC} -g -l $(CLFLAGS) $< -o $@
 endif
 
-host: guard-CXX guard-SDKTARGETSYSROOT ${HOST_EXE} 
-${HOST_EXE}: ${AIE_HOSTEXE}
-	$(CXX) $(HOST_SRCS) $(GCC_FLAGS) $(GCC_INCLUDES) -o main.o
-	$(CXX) $(AIE_HOSTEXE) main.o $(GCC_LIB) -o $(HOST_EXE)
-	@echo "COMPLETE: Host application created."
 
-ECHO:= @echo
+$(AIE_O): ./Work/ps/c_rts/aie_control_xrt.cpp
+	$(CXX) $(GCC_FLAGS) $(GCC_INCLUDES) $@ $<
+$(GRAPH_O): $(GRAPH) 
+	$(CXX) $(GCC_FLAGS) $(GCC_INCLUDES) $@ $<
+
+host: guard-CXX guard-SDKTARGETSYSROOT ${HOST_EXE}
+ifeq ($(EN_PL),1)
+${HOST_EXE}: ${AIE_O} $(GRAPH_O)
+	$(CXX) $(HOST_SRCS) $(GCC_FLAGS) $(GCC_INCLUDES) -o main.o
+	$(CXX) $(AIE_O) $(GRAPH_O) main.o $(GCC_LIB) -o $(HOST_EXE)
+	@echo "COMPLETE: Host application created."
+else
+${HOST_EXE}: ${AIE_O} $(GRAPH_O)
+	$(CXX) -o $@ $^ ${GCC_LIB}
+endif
 
 package: guard-ROOTFS guard-IMAGE guard-PLATFORM_REPO_PATHS package_${TARGET} 
-ifeq ($(PRE_BUILT),1)	
-unzip:
-	rm -rf ./pre_built/libadf.a
-	tar -xf ./pre_built/libadf.tar.gz -C ./pre_built
-package_${TARGET}: unzip ${PRE_BUILT_LIBADF} ${PRE_BUILT_XCLBIN} host
-	${VCC} -p -t ${TARGET} -f ${PLATFORM} \
-		--package.out_dir $(PACKAGE_OUT) \
-		--package.rootfs ${ROOTFS} \
-		--package.kernel_image ${IMAGE} \
-		--package.boot_mode=sd \
-		--package.image_format=ext4 \
-		--package.sd_file ${HOST_EXE} \
-		${PRE_BUILT_LIBADF} ${PRE_BUILT_XCLBIN} -o ${FINAL_XCLBIN}
-	@echo "COMPLETE: Package created."
-else
-package_${TARGET}: ${LIBADF} ${BINARY_CONTAINERS} host
+package_${TARGET}: ${LIBADF} ${XSA} ${HOST_EXE}
 	${VCC} -p -t ${TARGET} -f ${PLATFORM} \
 		--package.out_dir $(PACKAGE_OUT) \
 		--package.rootfs ${ROOTFS} \
@@ -186,10 +172,8 @@ package_${TARGET}: ${LIBADF} ${BINARY_CONTAINERS} host
 		--package.boot_mode=sd \
 		--package.image_format=ext4 \
 		--package.defer_aie_run \
-		--package.sd_file ${HOST_EXE} \
-		${LIBADF} ${BINARY_CONTAINERS} -o ${FINAL_XCLBIN}
+		--package.sd_file ${HOST_EXE} ${LIBADF} ${XSA}
 	@echo "COMPLETE: Package created."
-endif
 
 run_hw_emu: launch_hw_emu.sh
 launch_hw_emu.sh: package_hw_emu
@@ -215,4 +199,4 @@ cleantemp:
 cleanhost:
 	-$(RMDIR) hostexe aie_control_xrt.o main.o
 cleanpac:
-	-$(RMDIR) ${FINAL_XCLBIN} mm_${TARGET}.xclbin.package_summary package.${TARGET} ./pre_built/libadf.a
+	-$(RMDIR) ${FINAL_XCLBIN} mm_${TARGET}.xclbin.package_summary package.${TARGET}

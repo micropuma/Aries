@@ -10,7 +10,8 @@ fileCreate:
 	mkdir -p ${PROJECT_AIE_PATH}
 
 copyFile:
-	cp -r Makefile_VCK190 ${PROJECT_PATH}/Makefile
+	cp -r template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
+	cp -r template_files/system.cfg ${PROJECT_PATH}
 
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
