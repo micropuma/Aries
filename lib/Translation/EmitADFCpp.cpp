@@ -1766,8 +1766,16 @@ void ModuleEmitter::emitADFMain(FuncOp func){
   emitCellDef(func);
 
   std::string adf_main_head = R"XXX(
-#if defined(__AIESIM__) || defined(__X86SIM__)
 int main(int argc, char ** argv) {
+#if !defined(__AIESIM__) && !defined(__X86SIM__) && !defined(__ADF_FRONTEND__)
+  // Create XRT device handle for ADF API
+  char* xclbinFilename = argv[1];
+  auto dhdl = xrtDeviceOpen(0);//device index=0
+  xrtDeviceLoadXclbinFile(dhdl,xclbinFilename);
+  xuid_t uuid;
+  xrtDeviceGetXclbinUUID(dhdl, uuid);
+  adf::registerXRT(dhdl, uuid);
+#endif
 )XXX";
   os << adf_main_head << "\n";
   emitCellArg(func);
@@ -1790,9 +1798,11 @@ int main(int argc, char ** argv) {
   }
 
   std::string adf_main_tail = R"XXX(
+#if !defined(__AIESIM__) && !defined(__X86SIM__) && !defined(__ADF_FRONTEND__)
+  xrtDeviceClose(dhdl);
+#endif
   return 0;
 }
-#endif
 )XXX";
   os << adf_main_tail;
 }
@@ -1859,6 +1869,10 @@ using namespace adf;
 #include <stdio.h>
 #include <iostream>
 #include "adf_graph.h"
+#if !defined(__AIESIM__) && !defined(__X86SIM__) && !defined(__ADF_FRONTEND__)
+    #include "adf/adf_api/XRTConfig.h"
+    #include "experimental/xrt_kernel.h"
+#endif
 
 )XXX";
 
