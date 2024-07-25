@@ -9,10 +9,36 @@ using namespace mlir::affine;
 using namespace aries;
 using namespace func;
 
-namespace mlir {
-namespace aries {
+namespace {
 
+struct AriesTiling : public AriesTilingBase<AriesTiling> {
+public:
+  AriesTiling() = default;
+  AriesTiling(const AriesOptions &opts) {
+    for (unsigned i = 0; i < opts.TileSize.size(); ++i) {
+      TileSizes=opts.TileSize[i];
+    }
+  }
+  
+  void runOnOperation() override {
+      auto mod = dyn_cast<ModuleOp>(getOperation());
+      unsigned defaultTileSizes = 32;
+      
+      // Receive Specified Tiling Factors
+      SmallVector<unsigned,6> optTileSizes;
+      optTileSizes.clear();
+      if (TileSizes.size() > 0) {
+          // Initialize tile sizes from the command line.
+          for (unsigned i = 0; i < TileSizes.size(); ++i) {
+            optTileSizes.push_back(TileSizes[i]);
+          }
+      }
 
+      if(!applyLoopTiling(mod, defaultTileSizes,optTileSizes))
+        return signalPassFailure();
+  }
+
+private:
   bool applyLoopTiling(ModuleOp mod, unsigned defaultTileSizes,SmallVector<unsigned,6> &optTileSizes){
     auto b = OpBuilder(mod);
     auto loc = b.getUnknownLoc();
@@ -70,40 +96,9 @@ namespace aries {
         }
       }
     }
-
     return true;
   }
 
-} // namespace aries
-} // namespace mlir
-
-namespace {
-
-struct AriesTiling : public AriesTilingBase<AriesTiling> {
-    AriesTiling() = default;
-    AriesTiling(const AriesOptions &opts) {
-      for (unsigned i = 0; i < opts.TileSize.size(); ++i) {
-        TileSizes=opts.TileSize[i];
-      }
-    }
-    
-    void runOnOperation() override {
-        auto mod = dyn_cast<ModuleOp>(getOperation());
-        unsigned defaultTileSizes = 32;
-        
-        // Receive Specified Tiling Factors
-        SmallVector<unsigned,6> optTileSizes;
-        optTileSizes.clear();
-        if (TileSizes.size() > 0) {
-            // Initialize tile sizes from the command line.
-            for (unsigned i = 0; i < TileSizes.size(); ++i) {
-              optTileSizes.push_back(TileSizes[i]);
-            }
-        }
-
-        if(!applyLoopTiling(mod, defaultTileSizes,optTileSizes))
-          return signalPassFailure();
-    }
 };
 } // namespace
 
