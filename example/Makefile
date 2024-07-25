@@ -16,7 +16,7 @@ copyFile:
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="tile-sizes=32,32,32" \
+			-aries-tiling="l1-tile-sizes=32,32,32" \
 			-aries-func-extract \
 			-aries-loop-simplify \
 			-aries-mem-subview \

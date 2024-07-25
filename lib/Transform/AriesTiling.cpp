@@ -15,8 +15,8 @@ struct AriesTiling : public AriesTilingBase<AriesTiling> {
 public:
   AriesTiling() = default;
   AriesTiling(const AriesOptions &opts) {
-    for (unsigned i = 0; i < opts.TileSize.size(); ++i) {
-      TileSizes=opts.TileSize[i];
+    for (unsigned i = 0; i < opts.OptL1TileSize.size(); ++i) {
+      L1TileSizes=opts.OptL1TileSize[i];
     }
   }
   
@@ -27,10 +27,10 @@ public:
       // Receive Specified Tiling Factors
       SmallVector<unsigned,6> optTileSizes;
       optTileSizes.clear();
-      if (TileSizes.size() > 0) {
+      if (L1TileSizes.size() > 0) {
           // Initialize tile sizes from the command line.
-          for (unsigned i = 0; i < TileSizes.size(); ++i) {
-            optTileSizes.push_back(TileSizes[i]);
+          for (unsigned i = 0; i < L1TileSizes.size(); ++i) {
+            optTileSizes.push_back(L1TileSizes[i]);
           }
       }
 

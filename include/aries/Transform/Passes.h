@@ -21,9 +21,9 @@ namespace aries {
 
 struct AriesOptions : public PassPipelineOptions<AriesOptions> {
   /// Configure the tiling pass.
-  ListOption<unsigned> TileSize{
-      *this, "tile-sizes", llvm::cl::ZeroOrMore,
-      llvm::cl::desc("Specify a list of loop tile sizes")};
+  ListOption<unsigned> OptL1TileSize{
+      *this, "l1-tile-sizes", llvm::cl::ZeroOrMore,
+      llvm::cl::desc("Specify a list of L1 loop tile sizes")};
   
   /// Configure the DMAToIO pass.
   Option<std::string> OptPortType{
