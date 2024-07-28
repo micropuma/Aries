@@ -56,7 +56,17 @@ private:
 
       auto innerLoop = band[band.size()-1];
       for (auto forOp: band){
-        auto step = forOp.getStep().getLimitedValue();
+        //Check if the loops has constant trip count
+        //TODO: This should work for recutangular loop nests, 
+        //      but may need to extend
+        SmallVector<Value, 4> operands;
+        AffineMap map;
+        getTripCountMapAndOperands(forOp, &map, &operands);
+        if (!map.isSingleConstant()){
+          llvm::dbgs() << "Involve loops with non-consant trip count!\n";
+          return WalkResult::interrupt();
+        }
+
         auto lowerBound = forOp.getLowerBound();
         auto lowerBoundMp = lowerBound.getMap();
         auto lowerBoundOperands = lowerBound.getOperands();
@@ -64,7 +74,8 @@ private:
         // Current only support For loops with single arguments
         auto blockArgs = forOp.getBody()->getArguments();
         if (blockArgs.size()!=1){
-          llvm::dbgs() << "The number of block arguments of the forOp doesn't euqal 1!\n" ;
+          llvm::dbgs() << "The number of block arguments of the forOp" 
+                       << " doesn't euqal to 1!\n" ;
           return WalkResult::interrupt();
         }
         auto blockArg = blockArgs[0];
@@ -75,7 +86,7 @@ private:
         builder.setInsertionPointToStart(innerLoop.getBody());
         AffineExpr newDim = getAffineDimExpr(lowerBoundMp.getNumDims(), context);
         //TODO May need to deal with lowerBoundMp with multi-results
-        AffineExpr newExpr = lowerBoundMp.getResult(0) + newDim * step;
+        AffineExpr newExpr = lowerBoundMp.getResult(0) + newDim;
         unsigned int dimCount = lowerBoundMp.getNumDims() + 1;
 
         AffineMap newMap = AffineMap::get(dimCount, 0, newExpr, context);
@@ -83,25 +94,12 @@ private:
         for (auto lbOperand : lowerBoundOperands)
           ApplyOperands.push_back(lbOperand);
         ApplyOperands.push_back(blockArg);
-        auto applyOp = builder.create<AffineApplyOp>(builder.getUnknownLoc(),newMap,ApplyOperands);
-        blockArg.replaceUsesWithIf(applyOp, [&](OpOperand &use) {
-          if (dyn_cast<AffineLoadOp>(use.getOwner()) ||
-              dyn_cast<AffineStoreOp>(use.getOwner()))
-              return true;
-          else
-              return false;
-        });
+        auto applyOp = builder.create<AffineApplyOp>(builder.getUnknownLoc(),
+                                                     newMap,ApplyOperands);
+        
+        blockArg.replaceAllUsesExcept(applyOp,applyOp);
 
-        //Check if the loops has constant trip count
-        //And replace the loop bound with constant value
-        //TODO: This should work for recutangular loop nests, but may need to extend
-        SmallVector<Value, 4> operands;
-        AffineMap map;
-        getTripCountMapAndOperands(forOp, &map, &operands);
-        if (!map.isSingleConstant()){
-          llvm::dbgs() << "Involve loops with non-consant trip count!\n";
-          return WalkResult::interrupt();
-        }
+        //Replace the loop bound with constant value
         auto tripCount = map.getSingleConstantResult();
         forOp.setConstantLowerBound(0);
         forOp.setConstantUpperBound(tripCount);
