@@ -67,6 +67,7 @@ private:
           return WalkResult::interrupt();
         }
 
+        auto step = forOp.getStepAsInt();
         auto lowerBound = forOp.getLowerBound();
         auto lowerBoundMp = lowerBound.getMap();
         auto lowerBoundOperands = lowerBound.getOperands();
@@ -101,8 +102,9 @@ private:
 
         //Replace the loop bound with constant value
         auto tripCount = map.getSingleConstantResult();
+        auto upperbound = tripCount * step;
         forOp.setConstantLowerBound(0);
-        forOp.setConstantUpperBound(tripCount);
+        forOp.setConstantUpperBound(upperbound);
 
       }
       return WalkResult::advance();
