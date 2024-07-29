@@ -37,9 +37,9 @@ private:
     // Find the affineParallelOp
     // TODO: Handle Multiple affineParallelOps
     AffineParallelOp parallelOp;
-    for (auto affineParallelOp : topFunc.getOps<AffineParallelOp>()) {
-      parallelOp = affineParallelOp;
-    }
+    topFunc.walk([&](AffineParallelOp op){
+      parallelOp = op;
+    });
 
     SmallVector<AffineForOp, 6> band;
     getLoopBands(parallelOp, band);
@@ -52,8 +52,6 @@ private:
       return false;
     }
 
-    
-
     // Find the outermost point loop
     auto outerPointLoop = band[0];
 
@@ -62,7 +60,7 @@ private:
 
     //Detect all the arguments used in the AffineParallelOp
     ArguDetect(parallelOp, inputs);
-
+    
     CallFuncCreation(builder, topFunc, outerPointLoop, inputs);
       
     return true;
@@ -75,21 +73,24 @@ private:
     //Check each liveinVal in the block
     for (auto liveinVal: liveness.getLiveIn(parallelOp.getBody())){
       //Check if the liveinVal is defined in the AffineParallelOp 
-      if (!parallelOp->isProperAncestor(liveinVal.getParentBlock()->getParentOp())){
+      if (!parallelOp->isProperAncestor(
+                            liveinVal.getParentBlock()->getParentOp())){
         inputs.push_back(liveinVal);
       }
     }
 
   }
 
-  void CallFuncCreation(OpBuilder builder, FuncOp topFunc, AffineForOp outerPointLoop, SmallVectorImpl<Value>& inputs){
+  void CallFuncCreation(OpBuilder builder, FuncOp topFunc, 
+                    AffineForOp outerPointLoop, SmallVectorImpl<Value>& inputs){
     builder.setInsertionPoint(topFunc);
     
     // Define the KNL function with the detected inputs as arguments
     auto symbol = topFunc.getSymName();
     auto funcName = "kernel_" + symbol.str();
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
-    auto newfunc = builder.create<FuncOp>(builder.getUnknownLoc(), funcName, funcType);
+    auto newfunc = builder.create<FuncOp>(
+                                  builder.getUnknownLoc(), funcName, funcType);
     newfunc->setAttr("adf.kernel",builder.getUnitAttr());
     auto destBlock = newfunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
@@ -104,7 +105,8 @@ private:
     outerPointLoop->moveBefore(returnOp);
 
     // Update the references in the newfunc after move
-    for (unsigned i = 0, num_arg = destBlock->getNumArguments(); i < num_arg; ++i) {
+    for (unsigned i = 0, num_arg = destBlock->getNumArguments(); 
+         i < num_arg; ++i) {
         auto sourceArg = inputs[i];
         auto destArg = destBlock->getArgument(i);
         sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
