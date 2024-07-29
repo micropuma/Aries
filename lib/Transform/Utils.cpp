@@ -19,8 +19,10 @@ namespace mlir {
 namespace aries {
 
 /// Unrolls this loop completely.
-LogicalResult loopUnrollFull(AffineForOp forOp, function_ref<void(unsigned, Operation *, OpBuilder)> annotateFn) {
-  std::optional<uint64_t> mayBeConstantTripCount = mlir::affine::getConstantTripCount(forOp);
+LogicalResult loopUnrollFull(AffineForOp forOp, 
+              function_ref<void(unsigned, Operation *, OpBuilder)> annotateFn) {
+  std::optional<uint64_t> mayBeConstantTripCount 
+                                    = mlir::affine::getConstantTripCount(forOp);
   if (mayBeConstantTripCount.has_value()) {
     uint64_t tripCount = *mayBeConstantTripCount;
     if (tripCount == 0)
@@ -42,8 +44,10 @@ void getLoopBands(FuncOp f, SmallVector<AffineForOp, 6> &band, bool reverse) {
     std::reverse(band.begin(), band.end());
 }
 
-// Get all the affine.for loops within the AffineParallelOp and return them in the band
-void getLoopBands(AffineParallelOp op, SmallVector<AffineForOp, 6> &band, bool reverse) {
+// Get all the affine.for loops within the AffineParallelOp 
+// and return them in the band
+void getLoopBands(AffineParallelOp op, 
+                  SmallVector<AffineForOp, 6> &band, bool reverse) {
   for (AffineForOp forOp : op.getOps<AffineForOp>()) {
     getPerfectlyNestedLoops(band, forOp);
   }
@@ -51,8 +55,10 @@ void getLoopBands(AffineParallelOp op, SmallVector<AffineForOp, 6> &band, bool r
     std::reverse(band.begin(), band.end());
 }
 
-// Get all the affine.for loops within the AffineParallelOp and return them in the band
-void getLoopBands(adf::CellOp op, SmallVector<AffineForOp, 6> &band, bool reverse) {
+// Get all the affine.for loops within the adf::CellOp 
+// and return them in the band
+void getLoopBands(adf::CellOp op, 
+                  SmallVector<AffineForOp, 6> &band, bool reverse) {
   for (AffineForOp forOp : op.getOps<AffineForOp>()) {
     getPerfectlyNestedLoops(band, forOp);
   }

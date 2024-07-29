@@ -15,16 +15,20 @@ namespace mlir {
 namespace aries {
 
 // Modified UnrollFull: Use function_ref to anotote operations during unroll.
-LogicalResult loopUnrollFull(AffineForOp forOp, function_ref<void(unsigned, Operation *, OpBuilder)> annotateFn);
+LogicalResult loopUnrollFull(AffineForOp forOp, 
+              function_ref<void(unsigned, Operation *, OpBuilder)> annotateFn);
 
 // Get all the affine.for loops within the FuncOp and return them in the band
-void getLoopBands(FuncOp f, SmallVector<AffineForOp, 6> &band, bool reverse = false);
+void getLoopBands(
+    FuncOp f, SmallVector<AffineForOp, 6> &band, bool reverse = false);
 
 // Get all the affine.for loops within the FuncOp and return them in the band
-void getLoopBands(AffineParallelOp op, SmallVector<AffineForOp, 6> &band, bool reverse = false);
+void getLoopBands(
+  AffineParallelOp op, SmallVector<AffineForOp, 6> &band, bool reverse = false);
 
 // Get all the affine.for loops within the FuncOp and return them in the band
-void getLoopBands(adf::CellOp op, SmallVector<AffineForOp, 6> &band, bool reverse = false);
+void getLoopBands(
+    adf::CellOp op, SmallVector<AffineForOp, 6> &band, bool reverse = false);
 
 /// Built-in Function: Checks whether a loop nest is hyper-rectangular or not.
 LogicalResult checkIfHyperRectangular(MutableArrayRef<AffineForOp> input);
