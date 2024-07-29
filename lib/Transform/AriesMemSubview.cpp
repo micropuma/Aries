@@ -85,6 +85,9 @@ private:
           auto mapResult = applyOperandsMap.getResult(0);
           auto binaryExpr = dyn_cast<AffineBinaryOpExpr>(mapResult);
 
+
+          //TODO:: Need to handle more complexed expressions
+          //Now assume the map is in form <(d0, d1) -> (d0 + d1*step)>
           //Collect the step info which is in the left most of the AffineExpr
           auto RHS = binaryExpr.getRHS();
           if (auto binaryExpr1 = dyn_cast<AffineBinaryOpExpr>(RHS)){

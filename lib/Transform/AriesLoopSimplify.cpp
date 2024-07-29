@@ -87,7 +87,7 @@ private:
         builder.setInsertionPointToStart(innerLoop.getBody());
         AffineExpr newDim = getAffineDimExpr(lowerBoundMp.getNumDims(), context);
         //TODO May need to deal with lowerBoundMp with multi-results
-        AffineExpr newExpr = lowerBoundMp.getResult(0) + newDim;
+        AffineExpr newExpr = lowerBoundMp.getResult(0) + newDim * step;
         unsigned int dimCount = lowerBoundMp.getNumDims() + 1;
 
         AffineMap newMap = AffineMap::get(dimCount, 0, newExpr, context);
@@ -102,9 +102,9 @@ private:
 
         //Replace the loop bound with constant value
         auto tripCount = map.getSingleConstantResult();
-        auto upperbound = tripCount * step;
         forOp.setConstantLowerBound(0);
-        forOp.setConstantUpperBound(upperbound);
+        forOp.setStep(1);
+        forOp.setConstantUpperBound(tripCount);
 
       }
       return WalkResult::advance();
