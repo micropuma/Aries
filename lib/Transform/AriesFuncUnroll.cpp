@@ -50,9 +50,9 @@ private:
     // Find the CellOp
     // TODO: Handle Multiple CellOps
     CellOp cellOp;
-    for (auto op : topFunc.getOps<CellOp>()) {
+    topFunc.walk([&](CellOp op){
       cellOp = op;
-    }
+    });
 
     SmallVector<AffineForOp, 6> bands;
     getLoopBands(cellOp, bands, true);
@@ -63,10 +63,10 @@ private:
         auto annotateFn = [](unsigned i, Operation *op, OpBuilder builder) {
           if (auto dmaop = dyn_cast<DmaOp>(op)){
             if(auto attr = dmaop->getAttr("write")){
-              auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), i);
+              auto valueAttr = builder.getIntegerAttr(builder.getIndexType(),i);
               dmaop->setAttr("write", valueAttr);
             }else if(auto attr = dmaop->getAttr("read")){
-              auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), i);
+              auto valueAttr = builder.getIntegerAttr(builder.getIndexType(),i);
               dmaop->setAttr("read", valueAttr);
             }
           }
@@ -87,7 +87,8 @@ private:
       for (auto &entry : calleeCounts) {
         if (entry.first == calleeName) {
           entry.second++;
-          auto valueAttr = builder.getIntegerAttr(builder.getIndexType(), entry.second);
+          auto valueAttr 
+               = builder.getIntegerAttr(builder.getIndexType(), entry.second);
           call->setAttr(calleeName,valueAttr);
           call->setAttr("adf.kernel",builder.getUnitAttr());
           found = true;

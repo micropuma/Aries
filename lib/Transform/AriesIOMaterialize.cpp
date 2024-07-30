@@ -63,9 +63,15 @@ private:
         src_sizes   = op.getSrcSizes();
         src_strides = op.getSrcStrides();
         SmallVector<int64_t, 4> sizes;
-        for (auto size : src_sizes)
-          sizes.push_back(dyn_cast<IntegerAttr>(size.getDefiningOp<arith::ConstantOp>().getValue()).getInt());
-        auto memRefType = MemRefType::get(sizes,dyn_cast<MemRefType>(src.getType()).getElementType());
+        for (auto size : src_sizes){
+          auto sizeAttr = dyn_cast<IntegerAttr>(
+                          size.getDefiningOp<arith::ConstantOp>().getValue());
+          auto sizeInt = sizeAttr.getInt();
+          sizes.push_back(sizeInt);
+        }
+        auto memRefType 
+            = MemRefType::get(sizes, 
+                          dyn_cast<MemRefType>(src.getType()).getElementType());
         auto newMem = builder.create<AllocOp>(loc,memRefType);
         newMem->setAttr("gmio",builder.getUnitAttr());
         builder.setInsertionPoint(endlaunchcell);
@@ -74,10 +80,11 @@ private:
         builder.setInsertionPointAfter(newMem);
         auto dmaOp = builder.create<DmaOp>(
                               loc, src, src_offsets, src_sizes, src_strides,
-                                newMem, ValueRange(), ValueRange(), ValueRange());
+                              newMem, ValueRange(), ValueRange(), ValueRange());
         dmaOp->setAttr("in",builder.getUnitAttr());
         builder.setInsertionPoint(op);
-        builder.create<IOPushOp>(loc, newMem, ValueRange(), ValueRange(), ValueRange(), dst);             
+        builder.create<IOPushOp>(loc, newMem, 
+                                 ValueRange(), ValueRange(), ValueRange(), dst);             
         builder.setInsertionPoint(dmaOp);
         op.erase();
       });
@@ -90,21 +97,28 @@ private:
         dst_sizes   = op.getDstSizes();
         dst_strides = op.getDstStrides();
         SmallVector<int64_t, 4> sizes;
-        for (auto size : dst_sizes)
-          sizes.push_back(dyn_cast<IntegerAttr>(size.getDefiningOp<arith::ConstantOp>().getValue()).getInt());
-        auto memRefType = MemRefType::get(sizes,dyn_cast<MemRefType>(dst.getType()).getElementType());
+        for (auto size : dst_sizes){
+          auto sizeAttr = dyn_cast<IntegerAttr>(
+                          size.getDefiningOp<arith::ConstantOp>().getValue());
+          auto sizeInt = sizeAttr.getInt();
+          sizes.push_back(sizeInt);
+        }
+        auto memRefType 
+            = MemRefType::get(sizes, 
+                          dyn_cast<MemRefType>(dst.getType()).getElementType());
         auto newMem = builder.create<AllocOp>(loc,memRefType);
         newMem->setAttr("gmio",builder.getUnitAttr());
         builder.setInsertionPoint(endlaunchcell);
         auto dmaOp = builder.create<DmaOp>(
-                            loc, newMem, ValueRange(), ValueRange(), ValueRange(),
-                            dst, dst_offsets, dst_sizes, dst_strides);
+                          loc, newMem, ValueRange(), ValueRange(), ValueRange(),
+                          dst, dst_offsets, dst_sizes, dst_strides);
         dmaOp->setAttr("out",builder.getUnitAttr());
         builder.setInsertionPoint(endlaunchcell);
         auto dealloc = builder.create<DeallocOp>(loc,newMem);
         dealloc->setAttr("gmio",builder.getUnitAttr()); 
         builder.setInsertionPoint(op);
-        builder.create<IOPopOp>(loc, src, newMem, ValueRange(), ValueRange(), ValueRange());             
+        builder.create<IOPopOp>(loc, src, newMem, 
+                                ValueRange(), ValueRange(), ValueRange());             
         builder.setInsertionPoint(lauchcell);
         op.erase();
       });

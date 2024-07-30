@@ -15,7 +15,8 @@ using namespace mlir::memref;
 
 namespace {
 
-struct AriesKernelInterfaceCreate : public AriesKernelInterfaceCreateBase<AriesKernelInterfaceCreate> {
+struct AriesKernelInterfaceCreate 
+      : public AriesKernelInterfaceCreateBase<AriesKernelInterfaceCreate> {
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
@@ -26,7 +27,7 @@ public:
 
 private:
   // This is an experimental pass to create the output buffer
-  // TODO: Tensor may be a proper representation for the arguments of the adf kernel
+  // TODO: Tensor may be a proper representation for the arguments in adf.kernel
   bool KernelInterfaceCreate (ModuleOp mod, StringRef topFuncName) {
     auto builder = OpBuilder(mod);
     FuncOp topFunc;
@@ -42,8 +43,8 @@ private:
       auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
       auto &entryBlock = calleeFuncOp.getBody().front();
       auto returnOpOld = dyn_cast<ReturnOp>(entryBlock.getTerminator());
-      auto inTypes = SmallVector<Type,8>(calleeFuncOp.getArgumentTypes().begin(),
-                                         calleeFuncOp.getArgumentTypes().end());
+      auto inTypes =SmallVector<Type,8>(calleeFuncOp.getArgumentTypes().begin(),
+                                        calleeFuncOp.getArgumentTypes().end());
       SmallVector<Type,8> inTypesNew;
       SmallVector<Value,8> inCallerNew;
       auto outTypes =SmallVector<Type,8>(calleeFuncOp.getResultTypes().begin(),
@@ -70,7 +71,11 @@ private:
           //then alloc and copy to a new buffer and return it
           if(isWrite && isRead){
             builder.setInsertionPoint(returnOpOld);
-            auto buffer = builder.create<AllocOp>(loc,MemRefType::get(type.getShape(),type.getElementType(),AffineMap(),type.getMemorySpaceAsInt()));
+            auto buffer = builder.create<AllocOp>(loc,MemRefType::get(
+                                                  type.getShape(),
+                                                  type.getElementType(),
+                                                  AffineMap(),
+                                                  type.getMemorySpaceAsInt()));
             builder.setInsertionPointAfter(buffer);
             
             //Create nested for loops
@@ -93,7 +98,11 @@ private:
             //If it has only been written 
             //then move it from Argument list to return value
             builder.setInsertionPointToStart(&entryBlock);
-            auto buffer = builder.create<AllocOp>(loc,MemRefType::get(type.getShape(),type.getElementType(),AffineMap(),type.getMemorySpaceAsInt()));
+            auto buffer = builder.create<AllocOp>(loc,MemRefType::get(
+                                                  type.getShape(),
+                                                  type.getElementType(),
+                                                  AffineMap(),
+                                                  type.getMemorySpaceAsInt()));
             outTypes.push_back(type);
             returnOperands.push_back(buffer);
             OutargIndeices.push_back(index);
@@ -112,7 +121,8 @@ private:
       }
 
       //Update the callee function type and erase the old returnOp
-      auto newFuncType = FunctionType::get(calleeFuncOp.getContext(), inTypesNew, outTypes);
+      auto newFuncType 
+          = FunctionType::get(calleeFuncOp.getContext(), inTypesNew, outTypes);
       calleeFuncOp.setType(newFuncType);
 
       //Update the use of the callee arguments need to be removed
@@ -135,7 +145,10 @@ private:
 
       //////////Handle caller
       OpBuilder builder(caller);
-      auto newCallOp = builder.create<func::CallOp>(caller.getLoc(), SymbolRefAttr::get(calleeFuncOp), outTypes, inCallerNew);
+      auto newCallOp 
+           = builder.create<func::CallOp>(caller.getLoc(), 
+                                          SymbolRefAttr::get(calleeFuncOp), 
+                                          outTypes, inCallerNew);
 
       // Update the uses of the old call results to use the new call results
       index = 0;

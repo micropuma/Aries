@@ -72,9 +72,9 @@ private:
     // Find the CellOp
     // TODO: Handle Multiple CellOps
     CellOp cellOp;
-    for (auto op : topFunc.getOps<CellOp>()) {
+    topFunc.walk([&](CellOp op){
       cellOp = op;
-    }
+    });
 
     // Eliminate the cell.end Op
     cellOp.getBody().front().back().erase();
@@ -89,7 +89,8 @@ private:
     //Create an empty func adf_graph before the outmost band loop
     builder.setInsertionPoint(topFunc);
     auto funcName = "adf_" + cellOp.getCellName().str();
-    auto funcType = builder.getFunctionType(ValueRange(ArgIns), ValueRange(ArgOuts));
+    auto funcType 
+         = builder.getFunctionType(ValueRange(ArgIns), ValueRange(ArgOuts));
     auto newfunc = builder.create<FuncOp>(loc, funcName, funcType);
     newfunc->setAttr("adf.cell",builder.getUnitAttr());
     auto destBlock = newfunc.addEntryBlock();
@@ -104,9 +105,7 @@ private:
 
     // Create the function CallOp
     Block &entryBlock = topFunc.getBody().front();
-    auto topreturnOp = dyn_cast<ReturnOp>(entryBlock.getTerminator());
-
-    builder.setInsertionPoint(topreturnOp);
+    builder.setInsertionPoint(cellOp);
     auto cellLaunchop = builder.create<LauchCellOp>(loc);
     Block *cellLaunchBlock = builder.createBlock(&cellLaunchop.getRegion());
     builder.setInsertionPointToEnd(cellLaunchBlock);
@@ -132,7 +131,8 @@ private:
     }
 
     // Update the references in the newfunc after move
-    for (unsigned i = 0, num_arg = destBlock->getNumArguments(); i < num_arg; ++i) {
+    auto num_arg = destBlock->getNumArguments();
+    for (unsigned i = 0; i < num_arg; ++i) {
         auto sourceArg = ArgIns[i];
         auto destArg = destBlock->getArgument(i);
         sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){

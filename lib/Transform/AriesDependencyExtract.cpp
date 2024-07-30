@@ -16,7 +16,8 @@ using namespace mlir::memref;
 
 namespace {
 
-struct AriesDependencyExtract : public AriesDependencyExtractBase<AriesDependencyExtract> {
+struct AriesDependencyExtract 
+                  : public AriesDependencyExtractBase<AriesDependencyExtract> {
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
@@ -32,8 +33,10 @@ private:
     topFunc.walk([&](DmaOp dma){
       auto dmaSrc = dma.getSrc();
       auto dmaDst = dma.getDst();
-      auto SrcSpace = dmaSrc.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
-      auto DstSpace = dmaDst.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
+      auto SrcSpace 
+          = dmaSrc.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
+      auto DstSpace 
+          = dmaDst.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
 
       if(SrcSpace && SrcSpace == (int)mlir::aries::adf::MemorySpace::L1){
         if (!DstSpace || DstSpace!=(int)mlir::aries::adf::MemorySpace::L1) {
@@ -50,7 +53,8 @@ private:
   //Check if the collected dmaOp write to the external mem
   bool IsWrite(DmaOp dma){
     auto dmaDst = dma.getDst();
-    auto DstSpace = dmaDst.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
+    auto DstSpace 
+        = dmaDst.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
     if(!DstSpace || DstSpace!=(int)mlir::aries::adf::MemorySpace::L1)
       return true;
     else
@@ -85,13 +89,14 @@ private:
     // Find the CellOp
     // TODO: Handle Multiple CellOps
     CellOp cellOp;
-    for (auto op : topFunc.getOps<CellOp>()) {
+    topFunc.walk([&](CellOp op){
       cellOp = op;
-    }
+    });
 
     SmallVector<AffineForOp, 6> bands;
     getLoopBands(cellOp, bands);
 
+    // Find DmaWrite -> DmaRead pair that access the same mem
     for (auto dmaWrite : dmaOps){
       unsigned opIndex=0;
       if (IsWrite(dmaWrite)){
@@ -108,24 +113,41 @@ private:
             if(src == dst && srcOffsets == dstOffsets 
                           && srcSizes   == dstSizes
                           && srcStrides == dstStrides){
+              // If the loop variable is not included inside the access then
+              // it will cause loop-carried flow dependency
               unsigned bandIndex=0;
               for(auto band: bands){
                 auto vi = band.getInductionVar();
-                if(std::find(srcOffsets.begin(), srcOffsets.end(), vi) == srcOffsets.end()){
-                  if(getConstantTripCount(band)>1){
-                    if(opIndex>0){
-                      llvm::outs() << "More than one flow dependencies found\n" ;
-                      return false;
+                bool flag =false;
+                Value temp;
+                for(auto user: vi.getUsers()){
+                  if(auto dmaOp = dyn_cast<DmaOp>(user) ){
+                    temp = vi;
+                    flag =true;
+                  }else if(auto applyop = dyn_cast<AffineApplyOp>(user)){
+                    temp = applyop.getResult();
+                    flag =true;
+                  }
+                  if(flag){
+                    if(std::find( srcOffsets.begin(), srcOffsets.end(), temp) 
+                       ==  srcOffsets.end())
+                    if(getConstantTripCount(band)>1){
+                      if(opIndex>0){
+                        llvm::outs() 
+                            << "More than one flow dependencies found\n";
+                        return false;
+                      }
+                      if(bandIndex>0){
+                        llvm::outs() 
+                            << "More than one loops leads to flow dependency\n";
+                        return false;
+                      }  
+                      band->setAttr("flow", builder.getUnitAttr());
+                      dmaWrite->setAttr("write", builder.getUnitAttr());
+                      dmaRead->setAttr("read", builder.getUnitAttr());
+                      opIndex++;
+                      bandIndex++;
                     }
-                    if(bandIndex>0){
-                      llvm::outs() << "More than one loops leads to flow dependency\n" ;
-                      return false;
-                    }  
-                    band->setAttr("flow", builder.getUnitAttr());
-                    dmaWrite->setAttr("write", builder.getUnitAttr());
-                    dmaRead->setAttr("read", builder.getUnitAttr());
-                    opIndex++;
-                    bandIndex++;
                   }
                 }
               }
