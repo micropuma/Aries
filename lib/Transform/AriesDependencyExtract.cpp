@@ -29,8 +29,8 @@ public:
 
 private:
   // Collect dmaOp that access the external mem
-  void DMACollect(FuncOp topFunc, SmallVector<DmaOp, 4>& dmaOps){
-    topFunc.walk([&](DmaOp dma){
+  void DMACollect(AffineForOp forop, SmallVector<DmaOp, 4>& dmaOps){
+    forop.walk([&](DmaOp dma){
       auto dmaSrc = dma.getSrc();
       auto dmaDst = dma.getDst();
       auto SrcSpace 
@@ -83,8 +83,7 @@ private:
       return false;
     }
 
-    SmallVector<DmaOp, 4> dmaOps;
-    DMACollect(topFunc, dmaOps);
+    SmallVector<AffineForOp, 6> band;
 
     // Find the CellOp
     // TODO: Handle Multiple CellOps
@@ -92,11 +91,15 @@ private:
     topFunc.walk([&](CellOp op){
       cellOp = op;
     });
-    if(!cellOp)
-      return true;
 
-    SmallVector<AffineForOp, 6> bands;
-    getLoopBands(cellOp, bands);
+    if(cellOp)
+      getLoopBands(cellOp, band);
+    else
+      getLoopBands(topFunc, band);
+    
+    auto innerloop = band[band.size()-1];
+    SmallVector<DmaOp, 4> dmaOps;
+    DMACollect(innerloop, dmaOps);
 
     // Find DmaWrite -> DmaRead pair that access the same mem
     for (auto dmaWrite : dmaOps){
@@ -118,8 +121,8 @@ private:
               // If the loop variable is not included inside the access then
               // it will cause loop-carried flow dependency
               unsigned bandIndex=0;
-              for(auto band: bands){
-                auto vi = band.getInductionVar();
+              for(auto loop: band){
+                auto vi = loop.getInductionVar();
                 bool flag =false;
                 Value temp;
                 for(auto user: vi.getUsers()){
@@ -133,7 +136,7 @@ private:
                   if(flag){
                     if(std::find( srcOffsets.begin(), srcOffsets.end(), temp) 
                        ==  srcOffsets.end())
-                    if(getConstantTripCount(band)>1){
+                    if(getConstantTripCount(loop)>1){
                       if(opIndex>0){
                         llvm::outs() 
                             << "More than one flow dependencies found\n";
@@ -144,7 +147,7 @@ private:
                             << "More than one loops leads to flow dependency\n";
                         return false;
                       }  
-                      band->setAttr("flow", builder.getUnitAttr());
+                      loop->setAttr("flow", builder.getUnitAttr());
                       dmaWrite->setAttr("write", builder.getUnitAttr());
                       dmaRead->setAttr("read", builder.getUnitAttr());
                       opIndex++;
