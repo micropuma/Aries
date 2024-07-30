@@ -41,21 +41,78 @@ private:
       return false;
     }
 
-    funcUpdate(mod, topFunc);
-
     return true;
   }
 
-  //eliminate the unused arguments in callee and caller functions
-  void funcUpdate(ModuleOp mod, FuncOp topFunc){
+  bool subviewHoist(ModuleOp mod, FuncOp topFunc){
     auto builder = OpBuilder(mod);
-
     
     topFunc.walk([&](CallOp caller){
       auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
 
-      SmallVector<Type, 8> newinTypes;
+      // Change the offset of the subview that uses the callee arguments
+      // to use the caller arguments
+      for (auto arg : calleeFuncOp.getArguments()) {
+        for(auto user: arg.getUsers()) {
+          if((dyn_cast<SubViewOp>(user)
+              ||dyn_cast<AffineApplyOp>(user))
+              &&!dyn_cast<MemRefType>(arg.getType())){
+            arg.replaceAllUsesWith(caller.getOperand(arg.getArgNumber()));
+          }
+        }
+      }
+
+      // Move the Affineop used by subview to the caller
+      for (auto applyop : 
+            llvm::make_early_inc_range(calleeFuncOp.getOps<AffineApplyOp>())) {
+        for(auto user: applyop.getResult().getUsers()) {
+          if(dyn_cast<SubViewOp>(user)){
+            builder.setInsertionPoint(caller);
+            applyop->remove();
+            builder.insert(applyop);
+            break;
+          }
+        }
+      }
+
+      // Change source of the subview to the corresponding arg in the caller
+      // then move the subview to the caller
+      auto inTypes = 
+           SmallVector<Type, 8>(calleeFuncOp.getArgumentTypes().begin(),
+                                calleeFuncOp.getArgumentTypes().end());
       auto outTypes = calleeFuncOp.getResultTypes();
+      for (auto subview : 
+                llvm::make_early_inc_range(calleeFuncOp.getOps<SubViewOp>())) {
+        //check if the source of the subview is an argument of the callee
+        auto arg = subview.getSource().dyn_cast<BlockArgument>();
+        if (!arg)
+          continue;
+        
+        //Record the corrsponding arguments in caller since the subview will be
+        //replaced by the new callee arguments next
+        auto callerMem = caller.getOperand(arg.getArgNumber());
+
+        //Change the memref of callee to the type of corrsponding subview
+        //And replace the use of subview by the arguments 
+        inTypes[arg.getArgNumber()] = subview.getType();
+        arg.setType(subview.getType());
+        subview.replaceAllUsesWith(arg);
+        
+        //Move the subview before the caller function
+        subview.getSourceMutable().assign(callerMem);
+        subview->remove();
+        builder.setInsertionPoint(caller);
+        builder.insert(subview);
+
+        //Change the arguments of the caller function
+        caller.setOperand(arg.getArgNumber(), subview);
+      }
+
+      // Update the callee function type.
+      calleeFuncOp.setType(builder.getFunctionType(inTypes, outTypes));
+      
+      // Remove the unused arguments and update Callee and Caller
+      SmallVector<Type, 8> newinTypes;
       SmallVector<unsigned, 8> usedArgIndex;
       SmallVector<unsigned, 8> unusedArgIndex;
 
@@ -87,65 +144,14 @@ private:
         newOperands.push_back(caller.getOperand(usedArgIndex[i]));
       }
       builder.setInsertionPoint(caller);
-      auto newCallOp = builder.create<CallOp>(
-      caller.getLoc(), caller.getCallee(), caller.getResultTypes(), newOperands);
+      auto newCallOp = 
+           builder.create<CallOp>(caller.getLoc(), caller.getCallee(), 
+                                  caller.getResultTypes(), newOperands);
 
       // Replace the old CallOp with the new one
       caller.replaceAllUsesWith(newCallOp);
       caller.erase();
-
       return WalkResult::advance();
-    });
-  }
-
-  bool subviewHoist(ModuleOp mod, FuncOp topFunc){
-    auto builder = OpBuilder(mod);
-    
-    topFunc.walk([&](CallOp caller){
-      auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
-
-      //Change the offset of the subview to the caller arguments
-      for (auto arg : calleeFuncOp.getArguments()) {
-        auto firstUser = *arg.user_begin(); 
-        if(dyn_cast<SubViewOp>(firstUser)&&!dyn_cast<MemRefType>(arg.getType())){
-          arg.replaceAllUsesWith(caller.getOperand(arg.getArgNumber()));
-        }
-      }
-
-      auto inTypes = SmallVector<Type, 8>(calleeFuncOp.getArgumentTypes().begin(),
-                                           calleeFuncOp.getArgumentTypes().end());
-
-      auto outTypes = calleeFuncOp.getResultTypes();
-
-      for (auto subview : llvm::make_early_inc_range(calleeFuncOp.getOps<SubViewOp>())) {
-        //check if the source of the subview is an argument of the callee
-        auto arg = subview.getSource().dyn_cast<BlockArgument>();
-        if (!arg)
-          continue;
-        
-        //Record the corrsponding arguments in caller since the subview will be
-        //replaced by the new callee arguments next
-        auto callerMem = caller.getOperand(arg.getArgNumber());
-
-        //Change the memref of callee to the type of corrsponding subview
-        //And replace the use of subview by the arguments 
-        inTypes[arg.getArgNumber()] = subview.getType();
-        arg.setType(subview.getType());
-        subview.replaceAllUsesWith(arg);
-        
-        //Move the subview before the caller function
-        subview.getSourceMutable().assign(callerMem);
-        subview->remove();
-        builder.setInsertionPoint(caller);
-        builder.insert(subview);
-
-        //Change the arguments of the caller function
-        caller.setOperand(arg.getArgNumber(), subview);
-      }
-
-      // Update the callee function type.
-      calleeFuncOp.setType(builder.getFunctionType(inTypes, outTypes));
-
     });
 
     return true;
