@@ -205,7 +205,8 @@ static SmallString<16> getTypeName(Value val) {
   return getTypeName(valType);
 }
 
-static SmallString<16> getDMAAccess(adf::DmaOp op, unsigned rank, bool isSrc, bool dir){
+SmallString<16> ADFEmitterBase::getDMAAccess(adf::DmaOp op, unsigned rank, 
+                                             bool isSrc, bool dir){
   
   SmallVector<Value> offsets;
   SmallVector<Value> sizes  ;
@@ -229,16 +230,14 @@ static SmallString<16> getDMAAccess(adf::DmaOp op, unsigned rank, bool isSrc, bo
     for(unsigned i=0; i< rank; i++){
       unsigned offset = 0;
       unsigned stride = 1;
+      std::string offsetString = std::to_string(offset);
+      std::string strideString = std::to_string(stride);
       if(sizes.size()){
-        offset = dyn_cast<IntegerAttr>(
-                 offsets[i].getDefiningOp<arith::ConstantOp>()
-                 .getValue()).getInt();
-        stride = dyn_cast<IntegerAttr>(
-                 strides[i].getDefiningOp<arith::ConstantOp>()
-                 .getValue()).getInt();
+        strideString = getName(strides[i]).str();
+        offsetString = getName(offsets[i]).str();
       }
-      access += "[" + std::to_string(offset) + " + iv" + std::to_string(i) 
-                 + " * " + std::to_string(stride) + "]"; 
+      access += "[" + offsetString + " + iv" + std::to_string(i) 
+                 + " * " + strideString + "]"; 
     }
   }else{
     access = "[iv0";

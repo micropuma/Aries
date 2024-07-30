@@ -18,7 +18,7 @@ gemm: iomaterialize
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=8,8,8 l2-tile-sizes=4,4,4"
+			-aries-tiling="l1-tile-sizes=32,32,16 l2-tile-sizes=1,1,2"
 
 exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
@@ -87,6 +87,11 @@ ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/12_${FUNC}.adfgra
 	aries-opt -o $@ $< \
 			-aries-io-materialize
 
+testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
+${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
+	aries-translate -o $@ $< \
+		-emit-aie-adf
+
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
@@ -147,6 +152,9 @@ ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.m
 
 clean_test:
 	rm -rf ${PROJECT_PATH}/*_${FUNC}.*
+
+clean_testgen:
+	rm -rf ${PROJECT_AIE_PATH}/adf_graph_test.cpp
 
 clean_translate:
 	rm -rf ${PROJECT_AIE_PATH}/adf_graph.cpp ${PROJECT_AIE_PATH}/kernel.h ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc
