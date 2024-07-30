@@ -46,13 +46,12 @@ private:
 
   void createMemsubview(ModuleOp mod, FuncOp topFunc){
     auto builder = OpBuilder(mod);
+    auto context = mod.getContext();
+    auto loc = builder.getUnknownLoc();
 
     topFunc.walk([&](CallOp caller){
       auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
 
-      // Record the applyOperand that has alreday create new maps
-      SmallVector<Value, 4> applyOperandRecord;
-      SmallVector<Value, 4> offsets;
       for (auto arg : calleeFuncOp.getArguments()) {
         // Traverse the memref arguments in the callee function
         auto argType = arg.getType().dyn_cast<MemRefType>();
@@ -77,6 +76,7 @@ private:
         SmallVector<OpFoldResult, 4> memSizes;
         SmallVector<OpFoldResult, 4> memStrides;
         //Traverse the operands of affine.load and affine.store
+        builder.setInsertionPointToStart(&calleeFuncOp.front());
         for (auto operand: operands){
           // Get the applyOp that defines the memory access operands
           auto applyOp = dyn_cast<AffineApplyOp>(operand.getDefiningOp());
@@ -84,11 +84,12 @@ private:
           auto applyOperandsMap = applyOp.getAffineMap();
           auto mapResult = applyOperandsMap.getResult(0);
           auto binaryExpr = dyn_cast<AffineBinaryOpExpr>(mapResult);
+          SmallVector<Value, 4> newoperands;
 
-
-          //TODO:: Need to handle more complexed expressions
-          //Now assume the map is in form <(d0, d1) -> (d0 + d1*step)>
-          //Collect the step info which is in the left most of the AffineExpr
+          // TODO:: Need to handle more complexed expressions
+          // Now assume the map is in form <(d0, d1) -> (d0 + d1*step)>
+          // where d0 could be another experssion
+          // Collect the step info which is in the left most of the AffineExpr
           auto RHS = binaryExpr.getRHS();
           if (auto binaryExpr1 = dyn_cast<AffineBinaryOpExpr>(RHS)){
             if (auto RHS1 = dyn_cast<AffineConstantExpr>(binaryExpr1.getRHS())){
@@ -105,23 +106,31 @@ private:
           for (auto applyOperand: applyOperands){
             auto definedOp = applyOperand.getParentBlock()->getParentOp();
             if (auto funcOp = dyn_cast<FuncOp>(definedOp))
-              memOffsets.push_back(applyOperand);
+              newoperands.push_back(applyOperand);
             else if (auto forOp = dyn_cast<AffineForOp>(definedOp)){
               auto size = forOp.getConstantUpperBound();
               memSizes.push_back(builder.getIndexAttr(size));
             }
           }
+
+          //Collect the offset info
+          auto LHS = binaryExpr.getLHS();
+          AffineMap newMap = AffineMap::get(newoperands.size(),0, LHS, context);
+          auto newApplyOp = 
+               builder.create<AffineApplyOp>(loc, newMap, newoperands);
+          memOffsets.push_back(newApplyOp.getResult());
+          builder.setInsertionPointAfter(newApplyOp);
         }
 
-        auto subviewOutputType =
-        SubViewOp::inferResultType(arg.getType().dyn_cast<MemRefType>(),memOffsets, memSizes, memStrides)
-                                  .dyn_cast<MemRefType>();
         // Create the SubViewOp with dynmic and entries and inferred result type
-        builder.setInsertionPointToStart(&calleeFuncOp.front());
-
+        auto subviewOutputType =
+        SubViewOp::inferResultType(arg.getType().dyn_cast<MemRefType>(),
+                                   memOffsets, memSizes, memStrides)
+                                  .dyn_cast<MemRefType>();
         auto subview =
-            builder.create<SubViewOp>(builder.getUnknownLoc(), subviewOutputType, 
-                                      arg, memOffsets, memSizes, memStrides);
+            builder.create<SubViewOp>(loc, 
+                                      subviewOutputType, arg, memOffsets, 
+                                      memSizes, memStrides);
 
         arg.replaceAllUsesExcept(subview.getResult(), subview);
       }
@@ -134,6 +143,7 @@ private:
           if (dyn_cast<AffineForOp>(definedOp)){
             applyOp.replaceAllUsesWith(applyOperand);
             applyOp.erase();
+            break;
           }
         }
       });
