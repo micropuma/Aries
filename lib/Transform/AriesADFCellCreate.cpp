@@ -75,6 +75,8 @@ private:
     topFunc.walk([&](CellOp op){
       cellOp = op;
     });
+    if(!cellOp)
+      return true;
 
     // Eliminate the cell.end Op
     cellOp.getBody().front().back().erase();

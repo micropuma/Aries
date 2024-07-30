@@ -53,6 +53,8 @@ private:
     topFunc.walk([&](CellOp op){
       cellOp = op;
     });
+    if(!cellOp)
+      return true;
 
     SmallVector<AffineForOp, 6> bands;
     getLoopBands(cellOp, bands, true);

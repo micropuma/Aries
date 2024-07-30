@@ -40,6 +40,8 @@ private:
     topFunc.walk([&](AffineParallelOp op){
       parallelOp = op;
     });
+    if(!parallelOp)
+      return true;
 
     SmallVector<AffineForOp, 6> band;
     getLoopBands(parallelOp, band);

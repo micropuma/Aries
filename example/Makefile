@@ -13,7 +13,7 @@ copyFile:
 	cp -r template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
 	cp -r template_files/system.cfg ${PROJECT_PATH}
 
-gemm: adfgraph
+gemm: iomaterialize
 
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
@@ -33,8 +33,7 @@ ${PROJECT_PATH}/2_${FUNC}.loopsim.mlir: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 mem: ${PROJECT_PATH}/3_${FUNC}.memsubview.mlir
 ${PROJECT_PATH}/3_${FUNC}.memsubview.mlir: ${PROJECT_PATH}/2_${FUNC}.loopsim.mlir
 	aries-opt -o $@ $< \
-			-aries-mem-subview \
-			-canonicalize -cse
+			-aries-mem-subview
 
 hoistmem: ${PROJECT_PATH}/4_${FUNC}.hoistmem.mlir
 ${PROJECT_PATH}/4_${FUNC}.hoistmem.mlir: ${PROJECT_PATH}/3_${FUNC}.memsubview.mlir
@@ -75,13 +74,18 @@ ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/9_${FUNC}.unrollfun
 dmaio: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
 ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
 	aries-opt -o $@ $< \
-			-aries-dma-to-io="port-type=PLIO plio-width=128" \
+			-aries-dma-to-io="port-type=GMIO" \
 			-canonicalize -cse
 
 adfgraph: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
 ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
 	aries-opt -o $@ $< \
 			-aries-adf-cell-create
+
+iomaterialize: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
+${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
+	aries-opt -o $@ $< \
+			-aries-io-materialize
 
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
@@ -141,7 +145,8 @@ ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.m
 	aries-translate -o $@ $< \
 		-emit-kenrel-func
 
-
+clean_test:
+	rm -rf ${PROJECT_PATH}/*_${FUNC}.*
 
 clean_translate:
 	rm -rf ${PROJECT_AIE_PATH}/adf_graph.cpp ${PROJECT_AIE_PATH}/kernel.h ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc
