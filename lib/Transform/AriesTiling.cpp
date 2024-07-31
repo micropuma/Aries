@@ -88,9 +88,6 @@ private:
       auto outerBlockLoop = L1tileBand[0];
       if(L2TileSizes.size()){
         outerBlockLoop = L2tileBand[bandSize];
-        if(L3TileSizes.size()){
-          outerBlockLoop = L3tileBand[bandSize*2];
-        }
       }
       // Create nested parallel loops
       builder.setInsertionPoint(outerBlockLoop);
@@ -100,9 +97,6 @@ private:
         auto blockloop = L1tileBand[i];
         if(L2TileSizes.size()){
           blockloop = L2tileBand[bandSize+i];
-          if(L3TileSizes.size()){
-            blockloop = L3tileBand[bandSize*2+i];
-          }
         }
         AffineMap lbMap = blockloop.getLowerBoundMap();
         AffineMap ubMap = blockloop.getUpperBoundMap();
@@ -125,9 +119,6 @@ private:
         auto blockloop = L1tileBand[i];
         if(L2TileSizes.size()){
           blockloop = L2tileBand[bandSize+i];
-          if(L3TileSizes.size()){
-            blockloop = L3tileBand[bandSize*2+i];
-          }
         }
         blockloop.getBody()->back().erase();
         innerparallelop.getBody()->getOperations().splice(
@@ -149,6 +140,7 @@ private:
         return false;
       }
 
+      // Merge the nested parallelOps to a single parallelOp
       SmallVector<AffineMap, 6> lbMaps;
       SmallVector<AffineMap, 6> ubMaps;
       SmallVector<Value, 6> lbs;
