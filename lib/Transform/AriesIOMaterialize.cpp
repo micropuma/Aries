@@ -26,30 +26,13 @@ public:
   }
 
 private:
-
-  // Tranverse all the AffineApplyOps
-  // if used by IOPush or IOPop then hoist before lauchcell
-  void ApplyOpProcess(OpBuilder builder, FuncOp topFunc, LauchCellOp lauchcell){
-    topFunc.walk([&](AffineApplyOp op){
-      auto result = op.getResult();
-      for(auto user: result.getUsers()){
-        if(dyn_cast<IOPushOp>(user) || dyn_cast<IOPopOp>(user)){
-          op->remove();
-          builder.setInsertionPoint(lauchcell);
-          builder.insert(op); 
-        }
-      }
-    });
-  }
-
   // Serialize the IOPushOp for GMIO
   void IOPushOpProcess(OpBuilder builder, FuncOp topFunc, 
-                       LauchCellOp lauchcell){
+                       EndLauchCellOp endlauchCell){
     // Need to consider the insertion point of dma of PopOp and deallocOp
     // Now set after adf.cell.launch
     auto loc = builder.getUnknownLoc();
     auto &entryBlock = topFunc.getBody().front();
-    auto returnOp = dyn_cast<ReturnOp>(entryBlock.getTerminator());
     topFunc.walk([&](IOPushOp op){
       auto src         = op.getSrc();
       auto dst         = op.getDst();
@@ -72,10 +55,10 @@ private:
       builder.setInsertionPointToStart(&entryBlock);
       auto newMem = builder.create<AllocOp>(loc,memRefType);
       newMem->setAttr("gmio",builder.getUnitAttr());
-      builder.setInsertionPoint(returnOp);
+      builder.setInsertionPoint(endlauchCell);
       auto dealloc = builder.create<DeallocOp>(loc,newMem);
       dealloc->setAttr("gmio",builder.getUnitAttr());
-      builder.setInsertionPoint(lauchcell);
+      builder.setInsertionPoint(op);
       auto dmaOp = builder.create<DmaOp>(
                             loc, src, src_offsets, src_sizes, src_strides,
                             newMem, ValueRange(), ValueRange(), ValueRange());
@@ -90,16 +73,22 @@ private:
 
   // Serialize the IOPopOp for GMIO
   void IOPopOpProcess(OpBuilder builder, FuncOp topFunc, 
-                       LauchCellOp lauchcell){
+                       EndLauchCellOp endlauchCell){
     auto loc = builder.getUnknownLoc();
     auto &entryBlock = topFunc.getBody().front();
-    auto returnOp = dyn_cast<ReturnOp>(entryBlock.getTerminator());
     topFunc.walk([&](IOPopOp op){
       auto src = op.getSrc();
       auto dst   = op.getDst();
       auto dst_offsets = op.getDstOffsets();
       auto dst_sizes   = op.getDstSizes();
       auto dst_strides = op.getDstStrides();
+
+      IOWaitOp iowaitOp;
+      // Get the corresponding wait operation
+      for (auto user: src.getUsers()){
+        if(auto iowait = dyn_cast<IOWaitOp>(user))
+          iowaitOp = iowait;
+      }
       // Skip if the dst of the IOPop is serialized
       if((!dst_offsets.size())&&(!dst_sizes.size())&&(!dst_strides.size()))
         return WalkResult::advance();
@@ -116,12 +105,12 @@ private:
       builder.setInsertionPointToStart(&entryBlock);               
       auto newMem = builder.create<AllocOp>(loc,memRefType);
       newMem->setAttr("gmio",builder.getUnitAttr());
-      builder.setInsertionPointAfter(lauchcell);
+      builder.setInsertionPointAfter(iowaitOp);
       auto dmaOp = builder.create<DmaOp>(
                         loc, newMem, ValueRange(), ValueRange(), ValueRange(),
                         dst, dst_offsets, dst_sizes, dst_strides);
       dmaOp->setAttr("out",builder.getUnitAttr());
-      builder.setInsertionPoint(returnOp);
+      builder.setInsertionPoint(endlauchCell);
       auto dealloc = builder.create<DeallocOp>(loc,newMem);
       dealloc->setAttr("gmio",builder.getUnitAttr()); 
       builder.setInsertionPoint(op);
@@ -149,12 +138,14 @@ private:
     if(!lauchcell)
       return true;
     
+    auto &entryBlock = lauchcell.getBody().front();
+    auto endlaunchCell = dyn_cast<EndLauchCellOp>(entryBlock.getTerminator());
+
     // Materialize Push/Pop of GMIO
     auto boolval = topFunc->getAttr("gmio");
     if(dyn_cast<BoolAttr>(boolval).getValue()){
-      ApplyOpProcess(builder, topFunc, lauchcell);
-      IOPushOpProcess(builder, topFunc, lauchcell);
-      IOPopOpProcess(builder, topFunc, lauchcell);
+      IOPushOpProcess(builder, topFunc, endlaunchCell);
+      IOPopOpProcess(builder, topFunc, endlaunchCell);
     }
 
     return true;

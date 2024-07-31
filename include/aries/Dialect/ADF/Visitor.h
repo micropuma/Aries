@@ -27,9 +27,9 @@ public:
         .template Case<
             // ADF dialect operations.
             GraphOp, GraphReturnOp, CellOp, EndCellOp, LauchCellOp, 
-            EndLauchCellOp, KernelOp, CreateGraphIOOp, ConfigPLIOOp, 
-            ConfigGMIOOp, BufferOp, StreamOp, CascadeOp, CreateKernelIOOp, 
-            DmaOp, ConnectOp, IOPushOp, IOPopOp, IOWaitOp,
+            EndLauchCellOp, WaitLauchCellOp, KernelOp, CreateGraphIOOp, 
+            ConfigPLIOOp, ConfigGMIOOp, BufferOp, StreamOp, CascadeOp, 
+            CreateKernelIOOp, DmaOp, ConnectOp, IOPushOp, IOPopOp, IOWaitOp,
 
             // Function operations.
             func::CallOp, func::ReturnOp,
@@ -105,6 +105,7 @@ public:
   HANDLE(EndCellOp);
   HANDLE(LauchCellOp);
   HANDLE(EndLauchCellOp);
+  HANDLE(WaitLauchCellOp);
   HANDLE(KernelOp);
   HANDLE(CreateGraphIOOp);
   HANDLE(ConfigPLIOOp);

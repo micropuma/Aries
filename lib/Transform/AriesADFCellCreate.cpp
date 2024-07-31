@@ -106,29 +106,22 @@ private:
     }
 
     // Create the function CallOp
-    Block &entryBlock = topFunc.getBody().front();
     builder.setInsertionPoint(cellOp);
-    auto cellLaunchop = builder.create<LauchCellOp>(loc);
-    Block *cellLaunchBlock = builder.createBlock(&cellLaunchop.getRegion());
-    builder.setInsertionPointToEnd(cellLaunchBlock);
-    auto endLaunchCell = builder.create<EndLauchCellOp>(loc);
-
-    builder.setInsertionPoint(endLaunchCell);
     for (auto op : TopOps) {
-      op->moveBefore(endLaunchCell);
+      op->moveBefore(cellOp);
     }
 
-    builder.setInsertionPoint(endLaunchCell);
+    builder.setInsertionPoint(cellOp);
     auto callop = builder.create<CallOp>(loc, newfunc, ValueRange(ArgIns));
     callop->setAttr("adf.cell",builder.getUnitAttr());
 
-    builder.setInsertionPoint(endLaunchCell);
+    builder.setInsertionPoint(cellOp);
     for (auto op : IOPopOps) {
-      op->moveBefore(endLaunchCell);
+      op->moveBefore(cellOp);
     }
 
+    builder.setInsertionPoint(cellOp);
     for (auto op : IOPopOps) {
-      builder.setInsertionPoint(endLaunchCell);
       builder.create<IOWaitOp>(loc, op.getSrc());
     }
 
@@ -142,23 +135,37 @@ private:
         });
     }
 
-    // Update the returned value in the cellLaunch region
+    // Update the returned value after move
     for (unsigned i = 0, num_res = callop.getNumResults(); i < num_res; ++i) {
         auto sourceArg = ArgOuts[i];
         auto destArg = callop.getResult(i);
         sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
-            return cellLaunchop->isProperAncestor(use.getOwner());
+            return topFunc->isProperAncestor(use.getOwner());
         });
     }
+
+    //Create WaitLauchCellOp after all the IOwait
+    builder.create<WaitLauchCellOp>(loc, callop.getResults());
 
     //Erase cellop after func with adf.cell attributes has been created 
     cellOp.erase();
 
-    //Move the constantOp to the top_func
+    // Create LaunchCellOp and move all the operations inside LaunchCellOp
+    // TODO:: This is because current LaunchCellOp will be converted to
+    // graph.init() which should be declared only once. Thus, now all the ops
+    // are moved inside it. 
+    //----------This part May need to change------------.
+    Block &entryBlock = topFunc.getBody().front();
     builder.setInsertionPointToStart(&entryBlock);
-    cellLaunchop.walk([&](arith::ConstantOp op){
-        op->moveBefore(&entryBlock, entryBlock.begin());
-    });
+    auto cellLaunchop = builder.create<LauchCellOp>(loc);
+    Block *cellLaunchBlock = builder.createBlock(&cellLaunchop.getRegion());
+    builder.setInsertionPointToEnd(cellLaunchBlock);
+    auto endLaunchCell = builder.create<EndLauchCellOp>(loc);
+
+    for (auto &op: llvm::make_early_inc_range(entryBlock)){
+      if(!dyn_cast<LauchCellOp>(op)&&!dyn_cast<ReturnOp>(op))
+        op.moveBefore(endLaunchCell);
+    }
 
     return true;
   }

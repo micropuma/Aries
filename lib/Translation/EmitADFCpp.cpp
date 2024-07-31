@@ -312,6 +312,7 @@ public:
   /// ADFGrpah emitters
   void emitADFLaunchCell(adf::LauchCellOp op);
   void emitADFEndLaunchCell(adf::EndLauchCellOp op);
+  void emitADFWaitLaunchCell(adf::WaitLauchCellOp op);
   void emitADFPLIOConf(adf::ConfigPLIOOp op);
   void emitADFGMIOConf(adf::ConfigGMIOOp op);
   void emitADFBuffer(adf::BufferOp op);
@@ -438,12 +439,23 @@ public:
   bool visitOp(adf::GraphReturnOp op) { return true; };
   bool visitOp(adf::CellOp op) { return true; };
   bool visitOp(adf::EndCellOp op) { return true; };
-  bool visitOp(adf::LauchCellOp op) { return emitter.emitADFLaunchCell(op), true; };
-  bool visitOp(adf::EndLauchCellOp op) { return emitter.emitADFEndLaunchCell(op),true; };
+  bool visitOp(adf::LauchCellOp op) { 
+    return emitter.emitADFLaunchCell(op), true;
+  };
+  bool visitOp(adf::EndLauchCellOp op) { 
+    return emitter.emitADFEndLaunchCell(op), true;
+  };
+  bool visitOp(adf::WaitLauchCellOp op) { 
+    return emitter.emitADFWaitLaunchCell(op),true;
+  };
   bool visitOp(adf::KernelOp op) { return true; };
   bool visitOp(adf::CreateGraphIOOp op) { return true; };
-  bool visitOp(adf::ConfigPLIOOp op) { return emitter.emitADFPLIOConf(op), true; };
-  bool visitOp(adf::ConfigGMIOOp op) { return emitter.emitADFGMIOConf(op), true; };
+  bool visitOp(adf::ConfigPLIOOp op) { 
+    return emitter.emitADFPLIOConf(op), true;
+  };
+  bool visitOp(adf::ConfigGMIOOp op) { 
+    return emitter.emitADFGMIOConf(op), true; 
+  };
   bool visitOp(adf::BufferOp op) { return emitter.emitADFBuffer(op), true; };
   bool visitOp(adf::StreamOp op) { return true; };
   bool visitOp(adf::CascadeOp op) { return true; };
@@ -651,6 +663,19 @@ void ModuleEmitter::emitADFEndLaunchCell(adf::EndLauchCellOp op){
       os << getCall(call) << ".end();\n";
     }
   });
+}
+
+void ModuleEmitter::emitADFWaitLaunchCell(adf::WaitLauchCellOp op){
+  indent();
+  auto operandSize = op.getOperands().size();
+  if(operandSize){
+    auto call = dyn_cast<CallOp>(op.getOperand(0).getDefiningOp());
+    if(call->getAttr("adf.cell")){
+      os << getCall(call) << ".wait();\n";
+    }
+  }else{
+    op->emitError("operation has not operands, check the adf.cell call");
+  }
 }
 
 void ModuleEmitter::emitADFPLIOConf(adf::ConfigPLIOOp op){
