@@ -10,8 +10,14 @@ def AriesTiling : Pass<"aries-tiling"> {
   }];
   let constructor = "mlir::aries::createAriesTilingPass()";
   let options = [
-    ListOption<"TileSizes", "tile-sizes", "unsigned",
-               "Specify a list of loop tile sizes",
+    ListOption<"L1TileSizes", "l1-tile-sizes", "unsigned",
+               "Specify a list of L1 loop tile sizes",
+               "llvm::cl::ZeroOrMore">,
+    ListOption<"L2TileSizes", "l2-tile-sizes", "unsigned",
+               "Specify a list of L2 loop tile sizes",
+               "llvm::cl::ZeroOrMore">,
+    ListOption<"L3TileSizes", "l3-tile-sizes", "unsigned",
+               "Specify a list of L3 loop tile sizes",
                "llvm::cl::ZeroOrMore">
   ];
 }

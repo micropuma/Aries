@@ -3,6 +3,7 @@
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/InitAllDialects.h"
+#include "aries/Dialect/ADF/ADFDialect.h"
 
 namespace mlir {
 namespace aries {
@@ -72,6 +73,9 @@ public:
   SmallString<8> getName(Value val);
 
   SmallString<8> getCall(func::CallOp call);
+
+  SmallString<16> getDMAAccess(adf::DmaOp op, unsigned rank, 
+                               bool isSrc, bool dir);
 
   bool isDeclared(Value val) {
     if (getName(val).empty()) {

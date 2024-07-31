@@ -79,9 +79,12 @@ private:
           continue;
         auto type = dyn_cast<MemRefType>(argOperand.getType());
 
-        //Allocate, copy & deallocate new memref before & after the function call
+        //Allocate, copy & deallocate new memref before & after the caller
         builder.setInsertionPoint(caller);
-        auto allocOp = builder.create<AllocOp>(loc,MemRefType::get(type.getShape(),type.getElementType(),AffineMap(),(int)mlir::aries::adf::MemorySpace::L1));
+        auto allocOp 
+             = builder.create<AllocOp>(loc, MemRefType::get(type.getShape(),
+                                       type.getElementType(), AffineMap(),
+                                       (int)mlir::aries::adf::MemorySpace::L1));
         if (isRead(calleeFuncOp,index))
           builder.create<CopyOp>(loc, argOperand, allocOp);
         builder.setInsertionPointAfter(caller);

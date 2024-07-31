@@ -11,6 +11,7 @@ using namespace mlir;
 using namespace aries;
 using namespace adf;
 using namespace mlir::func;
+using namespace mlir::affine;
 
 struct DmaConvert : public OpConversionPattern<DmaOp> {
     std::string portType;
@@ -30,8 +31,10 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
 
       auto DmaSrc = op.getSrc();
       auto DmaDst = op.getDst();
-      auto SrcSpace = DmaSrc.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
-      auto DstSpace = DmaDst.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
+      auto SrcSpace 
+           = DmaSrc.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
+      auto DstSpace 
+           = DmaDst.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
       auto writeAttr = op->getAttr("write");
       auto readAttr = op->getAttr("read");
 
@@ -95,7 +98,8 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
       //if the DmaOp is copied to L1 mem
       if(SrcSpace !=(int)MemorySpace::L1 && DstSpace == (int)MemorySpace::L1){
         rewriter.setInsertionPoint(op);
-        auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portIn,portName);
+        auto port 
+             = rewriter.create<CreateGraphIOOp>(op->getLoc(),portIn,portName);
         rewriter.setInsertionPointAfter(port);
         if(flag_config==1)
           rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
@@ -111,11 +115,14 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
           newOp->setAttr("read", intRAttr);
         }
         rewriter.setInsertionPoint(newOp);
-        rewriter.create<IOPushOp>(newOp->getLoc(),DmaSrc, src_offsets,src_sizes,src_strides, dst);
+        rewriter.create<IOPushOp>(newOp->getLoc(), DmaSrc, src_offsets,
+                                  src_sizes, src_strides, dst);
         return success();
-      }else if(SrcSpace == (int)MemorySpace::L1 && DstSpace != (int)MemorySpace::L1){
+      }else if(SrcSpace == (int)MemorySpace::L1 && 
+               DstSpace != (int)MemorySpace::L1){
         rewriter.setInsertionPoint(op);
-        auto port = rewriter.create<CreateGraphIOOp>(op->getLoc(),portOut,portName);
+        auto port 
+             = rewriter.create<CreateGraphIOOp>(op->getLoc(),portOut,portName);
         rewriter.setInsertionPointAfter(port);
         if(flag_config==1)
           rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
@@ -130,9 +137,11 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
           newOp->setAttr("write", intWAttr);
         }
         rewriter.setInsertionPointAfter(newOp);
-        rewriter.create<IOPopOp>(newOp->getLoc(), port, DmaDst, dst_offsets,dst_sizes,dst_strides);
+        rewriter.create<IOPopOp>(newOp->getLoc(), port, DmaDst, 
+                                 dst_offsets, dst_sizes, dst_strides);
         return success();
-      }else if(SrcSpace == (int)MemorySpace::L1 && DstSpace == (int)MemorySpace::L1){
+      }else if(SrcSpace == (int)MemorySpace::L1 && 
+               DstSpace == (int)MemorySpace::L1){
         rewriter.replaceOpWithNewOp<ConnectOp>(op, DmaSrc, DmaDst);
         return success();
       }
@@ -188,6 +197,7 @@ private:
     target.addLegalOp<IOPushOp>();
     target.addLegalOp<IOPopOp>();
     target.addLegalOp<ConnectOp>();
+    target.addLegalOp<AffineApplyOp>();
     target.addLegalDialect<ADFDialect>();
 
     if (failed(applyPartialConversion(mod, target, std::move(patterns)))) {

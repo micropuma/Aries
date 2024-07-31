@@ -109,7 +109,8 @@ DMAForward(MLIRContext *context)
 
 namespace {
 
-struct AriesLocalDataForward : public AriesLocalDataForwardBase<AriesLocalDataForward> {
+struct AriesLocalDataForward 
+      : public AriesLocalDataForwardBase<AriesLocalDataForward> {
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());

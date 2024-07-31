@@ -13,10 +13,89 @@ copyFile:
 	cp -r template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
 	cp -r template_files/system.cfg ${PROJECT_PATH}
 
+test: iomaterialize
+
+tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
+${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
+	aries-opt -o $@ $< \
+			-aries-tiling="l1-tile-sizes=16,16,16 l2-tile-sizes=2,2,2"
+
+exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
+${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
+	aries-opt -o $@ $< \
+			-aries-func-extract
+
+loopsim: ${PROJECT_PATH}/2_${FUNC}.loopsim.mlir
+${PROJECT_PATH}/2_${FUNC}.loopsim.mlir: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
+	aries-opt -o $@ $< \
+			-aries-loop-simplify
+
+mem: ${PROJECT_PATH}/3_${FUNC}.memsubview.mlir
+${PROJECT_PATH}/3_${FUNC}.memsubview.mlir: ${PROJECT_PATH}/2_${FUNC}.loopsim.mlir
+	aries-opt -o $@ $< \
+			-aries-mem-subview
+
+hoistmem: ${PROJECT_PATH}/4_${FUNC}.hoistmem.mlir
+${PROJECT_PATH}/4_${FUNC}.hoistmem.mlir: ${PROJECT_PATH}/3_${FUNC}.memsubview.mlir
+	aries-opt -o $@ $< \
+			-aries-mem-hoist
+
+copymem: ${PROJECT_PATH}/5_${FUNC}.copymem.mlir
+${PROJECT_PATH}/5_${FUNC}.copymem.mlir: ${PROJECT_PATH}/4_${FUNC}.hoistmem.mlir
+	aries-opt -o $@ $< \
+			-aries-mem-copy
+
+toadf: ${PROJECT_PATH}/6_${FUNC}.adf.mlir
+${PROJECT_PATH}/6_${FUNC}.adf.mlir: ${PROJECT_PATH}/5_${FUNC}.copymem.mlir
+	aries-opt -o $@ $< \
+			-aries-lower-to-adf \
+			-canonicalize -cse
+
+flow: ${PROJECT_PATH}/7_${FUNC}.flow.mlir
+${PROJECT_PATH}/7_${FUNC}.flow.mlir: ${PROJECT_PATH}/6_${FUNC}.adf.mlir
+	aries-opt -o $@ $< \
+			-aries-dependency-extract
+
+kernelio: ${PROJECT_PATH}/8_${FUNC}.kernelio.mlir
+${PROJECT_PATH}/8_${FUNC}.kernelio.mlir: ${PROJECT_PATH}/7_${FUNC}.flow.mlir
+	aries-opt -o $@ $< \
+			-aries-kernel-interface-create
+
+unrollfunc: ${PROJECT_PATH}/9_${FUNC}.unrollfunc.mlir
+${PROJECT_PATH}/9_${FUNC}.unrollfunc.mlir: ${PROJECT_PATH}/8_${FUNC}.kernelio.mlir
+	aries-opt -o $@ $< \
+			-aries-func-unroll
+
+dataforward: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
+${PROJECT_PATH}/10_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/9_${FUNC}.unrollfunc.mlir
+	aries-opt -o $@ $< \
+			-aries-local-data-forward
+
+dmaio: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
+${PROJECT_PATH}/11_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
+	aries-opt -o $@ $< \
+			-aries-dma-to-io="port-type=GMIO" \
+			-canonicalize -cse
+
+adfgraph: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
+${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
+	aries-opt -o $@ $< \
+			-aries-adf-cell-create
+
+iomaterialize: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
+${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
+	aries-opt -o $@ $< \
+			-aries-io-materialize
+
+testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
+${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
+	aries-translate -o $@ $< \
+		-emit-aie-adf
+
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="tile-sizes=32,32,32" \
+			-aries-tiling="l1-tile-sizes=16,16,16 l2-tile-sizes=2,2,2" \
 			-aries-func-extract \
 			-aries-loop-simplify \
 			-aries-mem-subview \
@@ -71,7 +150,11 @@ ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.m
 	aries-translate -o $@ $< \
 		-emit-kenrel-func
 
+clean_test:
+	rm -rf ${PROJECT_PATH}/*_${FUNC}.*
 
+clean_testgen:
+	rm -rf ${PROJECT_AIE_PATH}/adf_graph_test.cpp
 
 clean_translate:
 	rm -rf ${PROJECT_AIE_PATH}/adf_graph.cpp ${PROJECT_AIE_PATH}/kernel.h ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc

@@ -75,8 +75,11 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
         for (auto offset : mixedOffsets) {
           if (auto attr = dyn_cast<Attribute>(offset)) {//static offset
             if (auto integerAttr = dyn_cast<IntegerAttr>(attr)) {
-              auto offsetAttr = rewriter.getIntegerAttr(indexType, integerAttr.getInt());
-              auto offsetValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, offsetAttr);
+              auto offsetAttr 
+                   = rewriter.getIntegerAttr(indexType, integerAttr.getInt());
+              auto offsetValue 
+                   = rewriter.create<arith::ConstantOp>(op->getLoc(), 
+                                                        indexType, offsetAttr);
               src_offsets.push_back(offsetValue);
             }
           }else if (auto value = dyn_cast<Value>(offset)) {//dynamic offset
@@ -85,12 +88,14 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
         }
         for(auto size : subViewOp.getStaticSizes()){
           auto sizeAttr = rewriter.getIntegerAttr(indexType, size);
-          auto sizeValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, sizeAttr);
+          auto sizeValue = rewriter.create<arith::ConstantOp>(op->getLoc(), 
+                                                           indexType, sizeAttr);
           src_sizes.push_back(sizeValue);
         }
         for(auto stride : subViewOp.getStaticStrides()){
           auto strideAttr = rewriter.getIntegerAttr(indexType, stride);
-          auto strideValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, strideAttr);
+          auto strideValue = rewriter.create<arith::ConstantOp>(op->getLoc(), 
+                                                        indexType, strideAttr);
           src_strides.push_back(strideValue);
         }
       }
@@ -108,8 +113,11 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
         for (auto offset : mixedOffsets) {
           if (auto attr = dyn_cast<Attribute>(offset)) {//static offset
             if (auto integerAttr = dyn_cast<IntegerAttr>(attr)) {
-              auto offsetAttr = rewriter.getIntegerAttr(indexType, integerAttr.getInt());
-              auto offsetValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, offsetAttr);
+              auto offsetAttr 
+                  = rewriter.getIntegerAttr(indexType, integerAttr.getInt());
+              auto offsetValue 
+                  = rewriter.create<arith::ConstantOp>(op->getLoc(), 
+                                                       indexType, offsetAttr);
               dst_offsets.push_back(offsetValue);
             }
           }else if (auto value = dyn_cast<Value>(offset)) {//dynamic offset
@@ -119,13 +127,15 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
 
         for(auto size : subViewOp.getStaticSizes()){
           auto sizeAttr = rewriter.getIntegerAttr(indexType, size);
-          auto sizeValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, sizeAttr);
+          auto sizeValue = rewriter.create<arith::ConstantOp>(op->getLoc(), 
+                                                          indexType, sizeAttr);
           dst_sizes.push_back(sizeValue);
         }
 
         for(auto stride : subViewOp.getStaticStrides()){
           auto strideAttr = rewriter.getIntegerAttr(indexType, stride);
-          auto strideValue = rewriter.create<arith::ConstantOp>(op->getLoc(), indexType, strideAttr);
+          auto strideValue = rewriter.create<arith::ConstantOp>(op->getLoc(), 
+                                                        indexType, strideAttr);
           dst_strides.push_back(strideValue);
         }
       }
@@ -134,7 +144,8 @@ struct CopyConvert : public OpConversionPattern<CopyOp> {
       }
     }
 
-    rewriter.replaceOpWithNewOp<DmaOp>(op,src,src_offsets,src_sizes,src_strides,dst,dst_offsets,dst_sizes,dst_strides);
+    rewriter.replaceOpWithNewOp<DmaOp>(op,src,src_offsets,src_sizes,src_strides,
+                                       dst,dst_offsets,dst_sizes,dst_strides);
     return success();
   }
 };
@@ -162,8 +173,10 @@ struct AffineParallelConvert : public OpConversionPattern<AffineParallelOp> {
         assert("The upper bound has non-constant map\n");
         return failure();
       }
-      auto lowerBound = dyn_cast<AffineConstantExpr>(lbMap.getResult(i)).getValue();
-      auto upperBound = dyn_cast<AffineConstantExpr>(ubMap.getResult(i)).getValue();
+      auto lowerBound 
+            = dyn_cast<AffineConstantExpr>(lbMap.getResult(i)).getValue();
+      auto upperBound 
+            = dyn_cast<AffineConstantExpr>(ubMap.getResult(i)).getValue();
       auto step = steps[i];
 
       auto affineForOp = rewriter.create<AffineForOp>(
@@ -243,6 +256,7 @@ private:
     target.addLegalOp<arith::ConstantOp>();
     target.addLegalOp<BufferOp>();
     target.addLegalOp<DmaOp>();
+    target.addLegalOp<AffineApplyOp>();
     target.addLegalOp<AffineForOp>();
     target.addLegalOp<CellOp>();
     target.addLegalOp<EndCellOp>();
