@@ -30,7 +30,7 @@ private:
   void IOPushOpProcess(OpBuilder builder, FuncOp topFunc, 
                        EndLauchCellOp endlauchCell){
     // Need to consider the insertion point of dma of PopOp and deallocOp
-    // Now set after adf.cell.launch
+    // Now set before EndLauchCellOp
     auto loc = builder.getUnknownLoc();
     auto &entryBlock = topFunc.getBody().front();
     topFunc.walk([&](IOPushOp op){
@@ -142,10 +142,13 @@ private:
     auto endlaunchCell = dyn_cast<EndLauchCellOp>(entryBlock.getTerminator());
 
     // Materialize Push/Pop of GMIO
-    auto boolval = topFunc->getAttr("gmio");
-    if(dyn_cast<BoolAttr>(boolval).getValue()){
+    auto boolGMIO = topFunc->getAttr("gmio");
+    auto boolPLIO = topFunc->getAttr("plio");
+    if(dyn_cast<BoolAttr>(boolGMIO).getValue()){
       IOPushOpProcess(builder, topFunc, endlaunchCell);
       IOPopOpProcess(builder, topFunc, endlaunchCell);
+    }else if(dyn_cast<BoolAttr>(boolPLIO).getValue()){
+      
     }
 
     return true;

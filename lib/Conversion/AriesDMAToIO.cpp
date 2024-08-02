@@ -183,11 +183,15 @@ private:
       return false;
     }
 
-    auto attr = builder.getBoolAttr(false);
+    auto attrGMIO = builder.getBoolAttr(false);
+    auto attrPLIO = builder.getBoolAttr(false);
     if(PortType=="GMIO" || PortType=="gmio"){
-      attr = builder.getBoolAttr(true);
+      attrGMIO = builder.getBoolAttr(true);
+    }else if(PortType=="PLIO" || PortType=="plio"){
+      attrPLIO = builder.getBoolAttr(true);
     }
-    topFunc->setAttr("gmio",attr);
+    topFunc->setAttr("gmio",attrGMIO);
+    topFunc->setAttr("plio",attrPLIO);
 
     ConversionTarget target(context);
     target.addIllegalOp<DmaOp>();

@@ -28,30 +28,15 @@ private:
                  SmallVector<Operation*> &TopOps, 
                  SmallVector<Operation*> &GraphOps, 
                  SmallVector<IOPopOp> &IOPopOps, 
-                 SmallVector<Value> &ArgIns,
-                 SmallVector<Value> &ArgOuts){
+                 SmallVector<Value> &ArgIns){
     cellop.walk([&](Operation *op){
       if( dyn_cast<BufferOp>(op) || dyn_cast<ConnectOp>(op) || 
           dyn_cast<CallOp>(op)   || dyn_cast<ConfigPLIOOp>(op) ||
           dyn_cast<ConfigGMIOOp>(op)){
             GraphOps.push_back(op);
       }else if(auto graphio = dyn_cast<CreateGraphIOOp>(op)){
-        PortDir portDir = PortDir::In;
-        if(auto type = dyn_cast<PLIOType>(graphio.getResult().getType())){
-          portDir = type.getDir();
-        }else if(auto type = dyn_cast<GMIOType>(graphio.getResult().getType())){
-          portDir = type.getDir();
-        }else{
-          auto type1 = dyn_cast<PortType>(graphio.getResult().getType());
-          portDir = type1.getDir();
-        }
-        if(portDir == PortDir::In){
           TopOps.push_back(op);
           ArgIns.push_back(graphio.getResult());
-        }else if(portDir == PortDir::Out){
-          GraphOps.push_back(op);
-          ArgOuts.push_back(graphio.getResult());
-        }
       }else if(auto iopopOp = dyn_cast<IOPopOp>(op)){
         IOPopOps.push_back(iopopOp);
       }else{
@@ -85,19 +70,18 @@ private:
     SmallVector<Operation*> GraphOps;
     SmallVector<IOPopOp> IOPopOps;
     SmallVector<Value> ArgIns;
-    SmallVector<Value> ArgOuts;
-    OpCollect(cellOp, TopOps, GraphOps, IOPopOps, ArgIns, ArgOuts);
+    OpCollect(cellOp, TopOps, GraphOps, IOPopOps, ArgIns);
 
     //Create an empty func adf_graph before the outmost band loop
     builder.setInsertionPoint(topFunc);
     auto funcName = "adf_" + cellOp.getCellName().str();
     auto funcType 
-         = builder.getFunctionType(ValueRange(ArgIns), ValueRange(ArgOuts));
+         = builder.getFunctionType(ValueRange(ArgIns), ValueRange());
     auto newfunc = builder.create<FuncOp>(loc, funcName, funcType);
     newfunc->setAttr("adf.cell",builder.getUnitAttr());
     auto destBlock = newfunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
-    auto returnOp = builder.create<ReturnOp>(loc,ValueRange(ArgOuts));
+    auto returnOp = builder.create<ReturnOp>(loc);
 
     //Move GraphOps into adf_cell
     builder.setInsertionPoint(returnOp);
@@ -135,17 +119,8 @@ private:
         });
     }
 
-    // Update the returned value after move
-    for (unsigned i = 0, num_res = callop.getNumResults(); i < num_res; ++i) {
-        auto sourceArg = ArgOuts[i];
-        auto destArg = callop.getResult(i);
-        sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
-            return topFunc->isProperAncestor(use.getOwner());
-        });
-    }
-
     //Create WaitLauchCellOp after all the IOwait
-    builder.create<WaitLauchCellOp>(loc, callop.getResults());
+    builder.create<WaitLauchCellOp>(loc,callop.getCallee());
 
     //Erase cellop after func with adf.cell attributes has been created 
     cellOp.erase();

@@ -74,10 +74,10 @@ def LauchCellOp : ADF_Op<"cell.launch", [SingleBlock]> {
 def WaitLauchCellOp : ADF_Op<"cell.launch.wait", [Pure]>{
   let summary = "An operation that wait for the adf.cell";
   let arguments = (
-    ins Variadic<GraphIOType>:$graphios
+    ins FlatSymbolRefAttr:$callee
   );
   let assemblyFormat = [{
-    `(` ($graphios^)? `)`  attr-dict `:` type($graphios)
+    $callee   attr-dict
   }];
 }
 

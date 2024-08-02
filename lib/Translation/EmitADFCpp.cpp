@@ -102,25 +102,27 @@ SmallString<8> ADFEmitterBase::getCall(CallOp call) {
   return state.callTable.lookup(call);
 };
 
-static Value getCalleeArg(Value val, CallOp call){
-  unsigned index_final = 0;
-  if(call){
-    unsigned index=0;
-    for(auto res: call.getResults()){
-      if(res == val){
-        index_final = index;
-        break;
+static Value getCalleeArg(Value val, CallOp& call){
+  unsigned index_final;
+  for(auto use : val.getUsers()){
+    if(auto callop = dyn_cast<CallOp>(use)){
+      call = callop;
+      unsigned index=0;
+      for(auto arg: call.getArgOperands()){
+        if(arg == val){
+          index_final = index;
+          break;
+        }
+        index++;
       }
-      index++;
+      break;
+    }else{
+      assert("The dst of the IOPush is not used by adf.cell");
     }
-  }else{
-    assert("The src of the IOPop is not used by adf.cell");
   }
   auto mod = call->getParentOfType<ModuleOp>();
   auto calleeFuncOp = mod.lookupSymbol<FuncOp>(call.getCallee());
-  Block &entryBlock = calleeFuncOp.getBody().front();
-  auto returnOp = dyn_cast<ReturnOp>(entryBlock.getTerminator()); 
-  auto gmio = returnOp.getOperand(index_final);
+  auto gmio = calleeFuncOp.getArgument(index_final);
   return gmio;
 }
 
@@ -667,15 +669,16 @@ void ModuleEmitter::emitADFEndLaunchCell(adf::EndLauchCellOp op){
 
 void ModuleEmitter::emitADFWaitLaunchCell(adf::WaitLauchCellOp op){
   indent();
-  auto operandSize = op.getOperands().size();
-  if(operandSize){
-    auto call = dyn_cast<CallOp>(op.getOperand(0).getDefiningOp());
-    if(call->getAttr("adf.cell")){
-      os << getCall(call) << ".wait();\n";
+  auto calleeName = op.getCallee();
+  auto *parentBlock = op->getBlock();
+  for(auto callop : parentBlock->getOps<CallOp>()){
+    auto callee = callop.getCallee();
+    if(callee == calleeName){
+      os << getCall(callop) << ".wait();\n";
+      return;
     }
-  }else{
-    op->emitError("operation has not operands, check the adf.cell call");
   }
+  op->emitError("Could not find corresponding CallOp");
 }
 
 void ModuleEmitter::emitADFPLIOConf(adf::ConfigPLIOOp op){
@@ -786,27 +789,8 @@ void ModuleEmitter::emitADFIOPush(adf::IOPushOp op) {
   auto src = op.getSrc();
   auto dst = op.getDst();
   CallOp call;
-  unsigned index_final;
-  for(auto use : dst.getUsers()){
-    if(auto callop = dyn_cast<CallOp>(use)){
-      call = callop;
-      unsigned index=0;
-      for(auto arg: call.getArgOperands()){
-        if(arg == dst){
-          index_final = index;
-          break;
-        }
-        index++;
-      }
-      break;
-    }else{
-      op->emitError("The dst of the IOPush is not used by adf.cell");
-    }
-  }
-  auto mod = call->getParentOfType<ModuleOp>();
-  auto calleeFuncOp = mod.lookupSymbol<FuncOp>(call.getCallee());
   auto memref = dyn_cast<MemRefType>(src.getType());
-  auto gmio = calleeFuncOp.getArgument(index_final);
+  auto gmio = getCalleeArg(dst, call);
   os << getCall(call) << "." << getName(gmio) << ".gm2aie_nb(" 
   << getName(src) << ", " << memref.getNumElements() << "*sizeof(" 
   << getTypeName(memref) << "));\n";
@@ -816,7 +800,7 @@ void ModuleEmitter::emitADFIOPop(adf::IOPopOp op) {
   indent();
   auto src = op.getSrc();
   auto dst = op.getDst();
-  auto call = dyn_cast<CallOp>(src.getDefiningOp());
+  CallOp call;
   auto gmio = getCalleeArg(src, call);
   auto memref = dyn_cast<MemRefType>(dst.getType());
   os << getCall(call) << "." << getName(gmio) << ".aie2gm_nb(" 
@@ -827,7 +811,7 @@ void ModuleEmitter::emitADFIOPop(adf::IOPopOp op) {
 void ModuleEmitter::emitADFIOWait(adf::IOWaitOp op){
   indent();
   auto io = op.getGraphio();
-  auto call = dyn_cast<CallOp>(io.getDefiningOp());
+  CallOp call;
   auto gmio = getCalleeArg(io, call);
   os << getCall(call) << "." << getName(gmio) << ".wait();\n";
 }
@@ -1755,7 +1739,7 @@ void ModuleEmitter::emitIODef(FuncOp func) {
 
   auto &entryBlock = func.getBody().front();
   auto returnOp = dyn_cast<ReturnOp>(entryBlock.getTerminator());
-   for (auto operand: returnOp.getOperands()){
+  for (auto operand: returnOp.getOperands()){
     indent();
     os << getTypeName(operand) << " ";
     os << addName(operand) << ";\n";
@@ -1803,6 +1787,7 @@ int main(int argc, char ** argv) {
 )XXX";
   os << adf_main_head << "\n";
   emitCellArg(func);
+
   auto boolAttr = func->getAttrOfType<BoolAttr>("gmio");
   if(boolAttr && boolAttr.getValue()==true){
     emitBlock(func.getBody().front());
