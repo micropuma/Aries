@@ -120,7 +120,7 @@ private:
     }
 
     //Create WaitLauchCellOp after all the IOwait
-    builder.create<WaitLauchCellOp>(loc,callop.getCallee());
+    builder.create<WaitLauchCellOp>(loc);
 
     //Erase cellop after func with adf.cell attributes has been created 
     cellOp.erase();
@@ -132,7 +132,7 @@ private:
     //----------This part May need to change------------.
     Block &entryBlock = topFunc.getBody().front();
     builder.setInsertionPointToStart(&entryBlock);
-    auto cellLaunchop = builder.create<LauchCellOp>(loc);
+    auto cellLaunchop = builder.create<LauchCellOp>(loc, callop.getCallee());
     Block *cellLaunchBlock = builder.createBlock(&cellLaunchop.getRegion());
     builder.setInsertionPointToEnd(cellLaunchBlock);
     auto endLaunchCell = builder.create<EndLauchCellOp>(loc);

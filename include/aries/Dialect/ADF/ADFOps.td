@@ -66,18 +66,18 @@ def LauchCellOp : ADF_Op<"cell.launch", [SingleBlock]> {
     could be useful for to generate the buffer.sync barriers in the host code.
   }];
   let regions = (region SizedRegion<1>:$body);
+  let arguments = (
+    ins FlatSymbolRefAttr:$callee
+  );
   let assemblyFormat = [{
-      regions attr-dict
+      $callee regions attr-dict
     }];
 }
 
 def WaitLauchCellOp : ADF_Op<"cell.launch.wait", [Pure]>{
   let summary = "An operation that wait for the adf.cell";
-  let arguments = (
-    ins FlatSymbolRefAttr:$callee
-  );
   let assemblyFormat = [{
-    $callee   attr-dict
+    attr-dict
   }];
 }
 

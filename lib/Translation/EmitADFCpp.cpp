@@ -669,7 +669,8 @@ void ModuleEmitter::emitADFEndLaunchCell(adf::EndLauchCellOp op){
 
 void ModuleEmitter::emitADFWaitLaunchCell(adf::WaitLauchCellOp op){
   indent();
-  auto calleeName = op.getCallee();
+  auto launchop = op->getParentOfType<LauchCellOp>();
+  auto calleeName = launchop.getCallee();
   auto *parentBlock = op->getBlock();
   for(auto callop : parentBlock->getOps<CallOp>()){
     auto callee = callop.getCallee();
