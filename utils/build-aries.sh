@@ -16,3 +16,5 @@ mkdir -p ${PRO_PATH}/build && cd ${PRO_PATH}/build
     -DCMAKE_CXX_COMPILER=clang++
 
 ninja
+
+cd ${PRO_PATH}
