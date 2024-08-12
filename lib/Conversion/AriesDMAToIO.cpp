@@ -170,7 +170,43 @@ public:
   }
 
 private:
-  
+  LogicalResult BroadcastDetect(FuncOp topFunc){
+    SmallVector<IOPushOp, 6> iopushs;
+    topFunc.walk([&](IOPushOp op){
+      iopushs.push_back(op);
+    });
+
+    // Record the index of IOpush that has the same source
+    // And replace the dst with the dst of the first IOPush
+    SmallVector<unsigned, 6> indeices;
+    for (auto iopush0 : iopushs) {
+      unsigned index = 0;
+      for (auto iopush1 : iopushs) {
+        if(iopush0==iopush1){
+          index++;
+          continue;
+        }
+        if (iopush0.getSrc() == iopush1.getSrc() &&
+            iopush0.getSrcOffsets() == iopush1.getSrcOffsets() &&
+            iopush0.getSrcSizes() == iopush1.getSrcSizes() &&
+            iopush0.getSrcStrides() == iopush1.getSrcStrides()){
+          auto dst1 = iopush1.getDst();
+          auto dst0 = iopush0.getDst();
+          if(dst0!=dst1){
+            dst1.replaceAllUsesWith(dst0);
+            indeices.push_back(index);
+          }
+        }
+        index++;
+      }
+    }
+
+    for (auto index : indeices) {
+      auto op = iopushs[index];
+      op.erase();
+    }
+    return success();
+  }
 
   bool DMAToIO (ModuleOp mod, StringRef topFuncName) {
     MLIRContext &context = getContext();
@@ -183,11 +219,15 @@ private:
       return false;
     }
 
-    auto attr = builder.getBoolAttr(false);
+    auto attrGMIO = builder.getBoolAttr(false);
+    auto attrPLIO = builder.getBoolAttr(false);
     if(PortType=="GMIO" || PortType=="gmio"){
-      attr = builder.getBoolAttr(true);
+      attrGMIO = builder.getBoolAttr(true);
+    }else if(PortType=="PLIO" || PortType=="plio"){
+      attrPLIO = builder.getBoolAttr(true);
     }
-    topFunc->setAttr("gmio",attr);
+    topFunc->setAttr("gmio",attrGMIO);
+    topFunc->setAttr("plio",attrPLIO);
 
     ConversionTarget target(context);
     target.addIllegalOp<DmaOp>();
@@ -200,9 +240,11 @@ private:
     target.addLegalOp<AffineApplyOp>();
     target.addLegalDialect<ADFDialect>();
 
-    if (failed(applyPartialConversion(mod, target, std::move(patterns)))) {
+    if (failed(applyPartialConversion(mod, target, std::move(patterns))))
       return false;
-    }
+
+    if (failed(BroadcastDetect(topFunc)))
+      return false;
 
     return true;
   }

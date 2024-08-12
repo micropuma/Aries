@@ -74,8 +74,7 @@ ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/9_${FUNC}.unrollfun
 dmaio: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
 ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
 	aries-opt -o $@ $< \
-			-aries-dma-to-io="port-type=GMIO" \
-			-canonicalize -cse
+			-aries-dma-to-io="port-type=PLIO"
 
 adfgraph: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
 ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
@@ -85,7 +84,8 @@ ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
 iomaterialize: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
 ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
 	aries-opt -o $@ $< \
-			-aries-io-materialize
+			-aries-io-materialize \
+			-canonicalize -cse
 
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
 ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
@@ -95,7 +95,7 @@ ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/13_${FUNC}.iomaterialize
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=16,16,16 l2-tile-sizes=2,2,2" \
+			-aries-tiling="l1-tile-sizes=32,32,32 l2-tile-sizes=2,2,2" \
 			-aries-func-extract \
 			-aries-loop-simplify \
 			-aries-mem-subview \
@@ -106,7 +106,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-kernel-interface-create \
 			-aries-func-unroll \
 			-aries-local-data-forward \
-			-aries-dma-to-io="port-type=GMIO plio-width=128 plio-freq=250" \
+			-aries-dma-to-io="port-type=PLIO plio-width=128 plio-freq=250" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
 			-aries-io-materialize

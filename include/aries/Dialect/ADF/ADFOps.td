@@ -62,22 +62,22 @@ def EndCellOp : ADF_Op<"cell.end", [HasParent<"CellOp">, Pure, Terminator]>{
 def LauchCellOp : ADF_Op<"cell.launch", [SingleBlock]> {
   let summary = "An operation to identify the accelerator part";
   let description = [{
-    This op is currently used to identify the part run on the accelerator. It
+    This op is currently used to identify the part run on the adf.cell. It
     could be useful for to generate the buffer.sync barriers in the host code.
   }];
   let regions = (region SizedRegion<1>:$body);
+  let arguments = (
+    ins FlatSymbolRefAttr:$callee
+  );
   let assemblyFormat = [{
-      regions attr-dict
+      $callee regions attr-dict
     }];
 }
 
 def WaitLauchCellOp : ADF_Op<"cell.launch.wait", [Pure]>{
   let summary = "An operation that wait for the adf.cell";
-  let arguments = (
-    ins Variadic<GraphIOType>:$graphios
-  );
   let assemblyFormat = [{
-    `(` ($graphios^)? `)`  attr-dict `:` type($graphios)
+    attr-dict
   }];
 }
 
@@ -85,6 +85,29 @@ def EndLauchCellOp : ADF_Op<"cell.launch.end", [HasParent<"LauchCellOp">,
                             Pure, Terminator]>{
   let summary = "Terminator for adf.cell.launch region.";
   let assemblyFormat = "attr-dict";
+}
+
+def LauchPLOp : ADF_Op<"pl.launch", [SingleBlock]> {
+  let summary = "An operation to identify the PL part";
+  let description = [{
+    This op is currently used to identify the part run on the adf.pl. It
+    could be useful for to generate the buffer.sync barriers in the host code.
+  }];
+  let regions = (region SizedRegion<1>:$body);
+  let arguments = (
+    ins FlatSymbolRefAttr:$callee
+  );
+  let assemblyFormat = [{
+      $callee regions attr-dict
+    }];
+}
+
+def WaitLauchPLOp : ADF_Op<"pl.launch.wait", [HasParent<"LauchPLOp">, 
+                            Pure, Terminator]>{
+  let summary = "An operation that wait for the adf.pl";
+  let assemblyFormat = [{
+    attr-dict
+  }];
 }
 
 def KernelOp : ADF_Op<"kernel", [Pure]> {
