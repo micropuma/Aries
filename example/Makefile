@@ -18,7 +18,7 @@ test: iomaterialize
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=16,16,16 l2-tile-sizes=2,2,2"
+			-aries-tiling="l1-tile-sizes=8,8,8 l2-tile-sizes=2,2,2 l3-tile-sizes=2,2,2"
 
 exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
@@ -48,8 +48,7 @@ ${PROJECT_PATH}/5_${FUNC}.copymem.mlir: ${PROJECT_PATH}/4_${FUNC}.hoistmem.mlir
 toadf: ${PROJECT_PATH}/6_${FUNC}.adf.mlir
 ${PROJECT_PATH}/6_${FUNC}.adf.mlir: ${PROJECT_PATH}/5_${FUNC}.copymem.mlir
 	aries-opt -o $@ $< \
-			-aries-lower-to-adf \
-			-canonicalize -cse
+			-aries-lower-to-adf
 
 flow: ${PROJECT_PATH}/7_${FUNC}.flow.mlir
 ${PROJECT_PATH}/7_${FUNC}.flow.mlir: ${PROJECT_PATH}/6_${FUNC}.adf.mlir
@@ -74,7 +73,8 @@ ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/9_${FUNC}.unrollfun
 dmaio: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
 ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
 	aries-opt -o $@ $< \
-			-aries-dma-to-io="port-type=PLIO"
+			-aries-dma-to-io="port-type=PLIO" \
+			-canonicalize -cse
 
 adfgraph: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
 ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
@@ -84,8 +84,7 @@ ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
 iomaterialize: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
 ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
 	aries-opt -o $@ $< \
-			-aries-io-materialize \
-			-canonicalize -cse
+			-aries-io-materialize
 
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
 ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
@@ -95,7 +94,7 @@ ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/13_${FUNC}.iomaterialize
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=32,32,32 l2-tile-sizes=2,2,2" \
+			-aries-tiling="l1-tile-sizes=8,8,8 l2-tile-sizes=2,2,2 l3-tile-sizes=2,2,2" \
 			-aries-func-extract \
 			-aries-loop-simplify \
 			-aries-mem-subview \

@@ -80,6 +80,8 @@ private:
           if (failed(tilePerfectlyNested(
                                 blocktileBandL2, L3tileSizes, &L3tileBand)))
               return false;
+          L3tileBand[bandSize-1]->setAttr(
+                                "Array_Partition", builder.getUnitAttr());
         }
       }
       

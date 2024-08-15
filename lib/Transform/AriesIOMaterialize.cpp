@@ -2,6 +2,9 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Analysis/Liveness.h"
+#include "mlir/Dialect/Affine/Utils.h"
+#include "mlir/Dialect/Affine/LoopUtils.h"
+#include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "llvm/Support/Debug.h"
 #include "aries/Transform/Passes.h"
 #include "aries/Transform/Utils.h"
@@ -143,6 +146,7 @@ private:
     });
   }
 
+  // Detect liveinVal to construct dma func
   void ArguDetect(LauchCellOp lauchcell, SmallVectorImpl<Value> &inputs){
     //Find all the liveness within LauchCellOp
     auto liveness = Liveness(lauchcell);
@@ -157,7 +161,7 @@ private:
   }
 
   // Create PL func.func and pl.launch. Create Callop inside pl.launch
-  void PLFuncCreation(OpBuilder builder, FuncOp topFunc, 
+  FuncOp PLFuncCreation(OpBuilder builder, FuncOp topFunc, 
                       LauchCellOp lauchcell, SmallVectorImpl<Value>& inputs){
     auto loc = builder.getUnknownLoc();
     // Define the dma function with the detected inputs as arguments
@@ -192,12 +196,126 @@ private:
     // Update the references in the newfunc after move
     for (unsigned i = 0, num_arg = destBlock->getNumArguments(); 
          i < num_arg; ++i) {
-        auto sourceArg = inputs[i];
-        auto destArg = destBlock->getArgument(i);
-        sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
-            return newfunc->isProperAncestor(use.getOwner());
-        });
+      auto sourceArg = inputs[i];
+      auto destArg = destBlock->getArgument(i);
+      sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
+          return newfunc->isProperAncestor(use.getOwner());
+      });
     }
+    return newfunc;
+  }
+
+  // This is a helper function that resolves the offset defined recursively by
+  // nested AffineApplyOps and returns the operands of the last AffineApplyOp 
+  void resolveOffset(Value val, SmallVector<Value, 4>& operands){
+    auto definedOp = val.getDefiningOp();
+    if (!definedOp){
+      operands.push_back(val);
+      return;
+    }else if (auto applyop = dyn_cast<AffineApplyOp>(definedOp)){
+      for (auto operand : applyop.getOperands()){
+        resolveOffset(operand, operands);
+      }
+    }else{
+      operands.push_back(val);
+      return;
+    }
+  }
+
+  // Allocate L2 memory
+  bool ADFPLAlloc(OpBuilder builder, FuncOp plFunc){
+    auto loc = builder.getUnknownLoc();
+    AffineForOp plForOp;
+    plFunc.walk([&](AffineForOp forOp){
+      if(forOp->hasAttr("Array_Partition"))
+        plForOp = forOp;
+    });
+    if(!plForOp){
+      llvm::outs() << "Array_Partition loop not found\n";
+      return false;
+    }
+    // Get point loops in band
+    SmallVector<AffineForOp, 6> band;
+    for (auto forOp : plForOp.getOps<AffineForOp>())
+      getPerfectlyNestedLoops(band, forOp);
+
+    // Normalize point loops
+    for (auto forOp : band){
+      if(failed(normalizeAffineFor(forOp)))
+        return false;
+    }
+
+    // Move AffineApplyOp to the innerLoop
+    auto outerloop = band[0];
+    auto innerLoop = band[band.size()-1];
+    auto loopBody = innerLoop.getBody();
+    SmallVector<AffineApplyOp, 6> applyOps;
+    plForOp.walk([&](AffineApplyOp op){
+      applyOps.push_back(op);
+    });
+    std::reverse(applyOps.begin(), applyOps.end());
+    for (auto applyOp :  applyOps)
+      applyOp->moveBefore(&loopBody->front());
+
+    //////////////////////////TODO////////////////////////
+    /*
+    Need to handle more general cases of the offest in IOPushOp
+    Now assumes this is a rectangular tiling. 
+    the size of local buffer = point loop bounds * size of IOPush src
+    the offset of the local buffer = point loop variable * size of IOPush src
+    the stride of the local buffer = 1 
+    */
+    //////////////////////////////////////////////////////
+
+    // Tranverse the IOPushOps and allocate L2 buffers
+    auto flag = plForOp.walk([&](IOPushOp op){
+      SmallVector<Value, 4> offsets=op.getSrcOffsets();
+      SmallVector<Value, 4> sizes=op.getSrcSizes();
+      auto type = dyn_cast<MemRefType>(op.getSrc().getType());
+      SmallVector<Value, 4> bufOffsets;
+      SmallVector<int64_t, 4> bufSizes;
+      // Get the buffer size of each dim
+      unsigned dim = 0;
+      for (auto offset: offsets){
+        SmallVector<Value, 4> operands;
+        resolveOffset(offset,operands);
+        for (auto operand : operands){
+          // Get the trip count of the corresponding point loop
+          auto loop = getForInductionVarOwner(operand);
+          if (loop && llvm::find(band, loop) != band.end()) {
+            SmallVector<Value, 4> foroperands;
+            AffineMap map;
+            getTripCountMapAndOperands(loop, &map, &foroperands);
+            auto tripCount = map.getSingleConstantResult();
+            if (!tripCount){
+              llvm::outs() << "Involve loops with non-consant trip count!\n";
+              return WalkResult::interrupt();
+            }
+            auto size = sizes[dim];
+            auto constantOp = dyn_cast<arith::ConstantOp>(size.getDefiningOp());
+            if(!constantOp)
+              return WalkResult::interrupt();
+            auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
+            auto sizeInt = intAttr.getInt();
+            bufSizes.push_back(tripCount*sizeInt);
+            break;
+          }
+        }
+        dim++;
+      }
+      //Allocate L2 buffer between the outer point loop
+      builder.setInsertionPoint(outerloop);
+      auto allocOp 
+           = builder.create<AllocOp>(loc, MemRefType::get(bufSizes,
+                                     type.getElementType(), AffineMap(),
+                                     (int)mlir::aries::adf::MemorySpace::L2));
+      return WalkResult::advance();
+    });
+
+    if (flag == WalkResult::interrupt())
+      return false;
+      
+    return true;
   }
 
   // Move the collected adf.cell to adf.cell.launch
@@ -209,21 +327,20 @@ private:
       builder.insert(call);
   }
 
-  void ADFPLCreate(OpBuilder builder, FuncOp topFunc, LauchCellOp lauchcell){  
+  bool ADFPLCreate(OpBuilder builder, FuncOp topFunc, LauchCellOp lauchcell){  
     SmallVector<CallOp> calls;
     SmallVector<Value> inputs;
+    bool flag = true;
     Preprocess(lauchcell, calls);
     ArguDetect(lauchcell, inputs);
-    PLFuncCreation(builder, topFunc, lauchcell, inputs);
+    auto plFunc = PLFuncCreation(builder, topFunc, lauchcell, inputs);
+    flag = ADFPLAlloc(builder, plFunc);
     UpdateCellLaunch(builder, lauchcell, calls);
-  }
-
-  void ADFPLAlloc(OpBuilder builder, FuncOp topFunc){
-    
-
+    return flag;
   }
 
   bool IOMaterialize (ModuleOp mod, StringRef topFuncName) {
+    bool flag = true;
     auto builder = OpBuilder(mod);
     FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
@@ -252,10 +369,10 @@ private:
       GMIOPushOpProcess(builder, topFunc, endlaunchCell);
       GMIOPopOpProcess(builder, topFunc, endlaunchCell);
     }else if(dyn_cast<BoolAttr>(boolPLIO).getValue()){
-      ADFPLCreate(builder, topFunc, lauchcell);
+      flag = ADFPLCreate(builder, topFunc, lauchcell);
     }
 
-    return true;
+    return flag;
   }
 
 };
