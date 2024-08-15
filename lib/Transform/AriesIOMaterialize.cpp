@@ -31,14 +31,6 @@ public:
 
 private:
   // Serialize the IOPushOp for GMIO
-  void GraphIOProcess(FuncOp topFunc){
-    auto &entryBlock = topFunc.getBody().front();
-    topFunc.walk([&](CreateGraphIOOp op){
-      op->moveBefore(&entryBlock, entryBlock.begin());
-    });
-  }
-
-  // Serialize the IOPushOp for GMIO
   void GMIOPushOpProcess(OpBuilder builder, FuncOp topFunc, 
                        EndLauchCellOp endlauchCell){
     // Need to consider the insertion point of dma of PopOp and deallocOp
@@ -684,8 +676,6 @@ private:
     
     auto &entryBlock = lauchcell.getBody().front();
     auto endlaunchCell = dyn_cast<EndLauchCellOp>(entryBlock.getTerminator());
-
-    GraphIOProcess(topFunc);
 
     // Materialize Push/Pop of GMIO
     auto boolGMIO = topFunc->getAttr("gmio");

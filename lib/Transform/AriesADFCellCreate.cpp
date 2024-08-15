@@ -142,6 +142,11 @@ private:
         op.moveBefore(endLaunchCell);
     }
 
+    // Move CreateGraphIOOp before adf.cell.launch
+    topFunc.walk([&](CreateGraphIOOp op){
+      op->moveBefore(&entryBlock, entryBlock.begin());
+    });
+
     return true;
   }
 
