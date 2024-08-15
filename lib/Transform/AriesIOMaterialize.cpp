@@ -274,10 +274,13 @@ private:
 
     // Tranverse the IOPushOps and allocate L2 buffers
     auto flag = plForOp.walk([&](IOPushOp op){
-      SmallVector<Value, 4> offsets=op.getSrcOffsets();
-      SmallVector<Value, 4> sizes=op.getSrcSizes();
-      auto type = dyn_cast<MemRefType>(op.getSrc().getType());
-      SmallVector<Value, 4> bufOffsets;
+      auto src = op.getSrc();
+      auto offsets = op.getSrcOffsets();
+      auto sizes = op.getSrcSizes();
+      auto strides = op.getSrcStrides();
+      SmallVector<int64_t, 4> sizesInt;
+      unsigned rank = offsets.size();
+      auto type = dyn_cast<MemRefType>(src.getType());
       SmallVector<int64_t, 4> bufSizes;
       SmallVector<AffineForOp, 4> loops;
       SmallVector<AffineApplyOp, 4> applyops;
@@ -305,6 +308,7 @@ private:
               return WalkResult::interrupt();
             auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
             auto sizeInt = intAttr.getInt();
+            sizesInt.push_back(sizeInt);
             bufSizes.push_back(tripCount*sizeInt);
             loops.push_back(loop);
             break;
@@ -312,7 +316,7 @@ private:
         }
         dim++;
       }
-      // Allocate L2 buffer between the outer point loop
+      // Allocate L2 buffer before the outer point loop
       builder.setInsertionPoint(outerloop);
       auto allocOp 
            = builder.create<AllocOp>(loc, MemRefType::get(bufSizes,
@@ -361,6 +365,44 @@ private:
         }
       }
 
+      // Create local buffer offset for dma
+      SmallVector<Value, 4> localOffsets;
+      for (unsigned i = 0; i < rank; i++){
+        auto sizeInt = sizesInt[i];
+        auto d0 = builder.getAffineDimExpr(0);
+        auto map = AffineMap::get(1, 0, d0 * sizeInt, builder.getContext());
+        auto loop = loops[i];
+        auto var = loop.getInductionVar();
+        auto newApplyop = builder.create<AffineApplyOp>(loc, map, var);
+        localOffsets.push_back(newApplyop);
+        builder.setInsertionPointAfter(newApplyop);
+      }
+
+      // Create dma op to load data from external mem to L2 buffer
+      // Create local buffer strides(=1) for dma
+      auto indexType = builder.getIndexType();
+      auto oneAttr = builder.getIntegerAttr(indexType, 1);
+      auto oneValue = builder.create<arith::ConstantOp>(loc,indexType,oneAttr);
+      builder.setInsertionPointAfter(oneValue);
+      //SmallVector<Value> localStrides(rank,oneValue);
+      SmallVector<Value> localSizes;
+      SmallVector<Value> localStrides;
+      for(unsigned i=0; i< rank; i++){
+        auto sizeAttr = builder.getIntegerAttr(indexType, sizesInt[i]);
+        auto sizeValue 
+             = builder.create<arith::ConstantOp>(loc, indexType, sizeAttr);
+        builder.setInsertionPointAfter(sizeValue);
+        localSizes.push_back(oneValue);
+        localStrides.push_back(sizeValue);
+      }
+      builder.create<DmaOp>(loc, src,      offsets,      sizes,      strides,
+                             allocOp, localOffsets, localSizes, localStrides);
+
+      // Replace IOPush: Send data from L2 buffer to L1 buffer
+      // builder.setInsertionPoint(op);
+      // builder.create<IOPushOp>(loc, src,      offsets,      sizes,   strides,
+      //                       allocOp, localOffsets, localSizes, localStrides);
+
       // Update the loop variable used in AffineApply in the newInnerLoop
       auto numVi = newLoops.size();
       auto newInnerLoop = newLoops[newLoops.size()-1];
@@ -373,13 +415,34 @@ private:
       }
 
       // Update the Operands defined by AffineApply in the newInnerLoop
-      for (unsigned i=0; i<nestedOperands.size(); i++) {
+      for (unsigned i = 0; i < nestedOperands.size(); i++) {
         auto oldNestedOperand = nestedOperands[i];
         auto newNestedOperand = newApplyops[ApplyOpIndex[i]];
         oldNestedOperand.replaceUsesWithIf(newNestedOperand,[&](OpOperand &use){
             return newInnerLoop->isProperAncestor(use.getOwner());
         });
       }
+
+      // Update the offsets of dma in the newInnerLoop
+      for (unsigned i = 0; i < rank; i++) {
+        auto oldOffset = offsets[i];
+        auto definedOp = oldOffset.getDefiningOp();
+        if(!definedOp || dyn_cast<ConstantOp>(definedOp))
+          continue;
+        auto applyop = dyn_cast<AffineApplyOp>(definedOp);
+        auto it = llvm::find(applyops, applyop);
+        if (it == applyops.end()){
+          llvm::outs() << "IOpushOp involves offset not"
+                       << "defined by AffineApplyOp & ConstantOp\n";
+          return WalkResult::interrupt();
+        }
+        unsigned index = std::distance(applyops.begin(), it);
+        auto newOffset = newApplyops[index];
+        oldOffset.replaceUsesWithIf(newOffset,[&](OpOperand &use){
+            return newInnerLoop->isProperAncestor(use.getOwner());
+        });
+      }
+
 
       return WalkResult::advance();
     });
