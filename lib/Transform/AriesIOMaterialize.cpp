@@ -206,16 +206,21 @@ private:
   }
 
   // This is a helper function that resolves the offset defined recursively by
-  // nested AffineApplyOps and returns the operands of the last AffineApplyOp 
-  void resolveOffset(Value val, SmallVector<Value, 4>& operands){
+  // nested AffineApplyOps 0) val: should be the offset of IOPush
+  // 1) operands:stores all the operands related to val & not defined by Applyop
+  // 2) applyops: stores all the applyops related to val
+  void resolveOffset(Value val, 
+                     SmallVector<Value, 4>& operands,
+                     SmallVector<AffineApplyOp, 4>& applyops){
     auto definedOp = val.getDefiningOp();
     if (!definedOp){
       operands.push_back(val);
       return;
     }else if (auto applyop = dyn_cast<AffineApplyOp>(definedOp)){
-      for (auto operand : applyop.getOperands()){
-        resolveOffset(operand, operands);
-      }
+      if (llvm::find(applyops, applyop) == applyops.end())
+        applyops.push_back(applyop);
+      for (auto operand : applyop.getOperands())
+        resolveOffset(operand, operands, applyops);
     }else{
       operands.push_back(val);
       return;
@@ -249,12 +254,12 @@ private:
     auto outerloop = band[0];
     auto innerLoop = band[band.size()-1];
     auto loopBody = innerLoop.getBody();
-    SmallVector<AffineApplyOp, 6> applyOps;
+    SmallVector<AffineApplyOp, 6> applyOpsBefore;
     plForOp.walk([&](AffineApplyOp op){
-      applyOps.push_back(op);
+      applyOpsBefore.push_back(op);
     });
-    std::reverse(applyOps.begin(), applyOps.end());
-    for (auto applyOp :  applyOps)
+    std::reverse(applyOpsBefore.begin(), applyOpsBefore.end());
+    for (auto applyOp :  applyOpsBefore)
       applyOp->moveBefore(&loopBody->front());
 
     //////////////////////////TODO////////////////////////
@@ -274,11 +279,14 @@ private:
       auto type = dyn_cast<MemRefType>(op.getSrc().getType());
       SmallVector<Value, 4> bufOffsets;
       SmallVector<int64_t, 4> bufSizes;
+      SmallVector<AffineForOp, 4> loops;
+      SmallVector<AffineApplyOp, 4> applyops;
       // Get the buffer size of each dim
       unsigned dim = 0;
       for (auto offset: offsets){
         SmallVector<Value, 4> operands;
-        resolveOffset(offset,operands);
+        resolveOffset(offset,operands,applyops);
+        std::reverse(applyops.begin(), applyops.end());
         for (auto operand : operands){
           // Get the trip count of the corresponding point loop
           auto loop = getForInductionVarOwner(operand);
@@ -298,17 +306,81 @@ private:
             auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
             auto sizeInt = intAttr.getInt();
             bufSizes.push_back(tripCount*sizeInt);
+            loops.push_back(loop);
             break;
           }
         }
         dim++;
       }
-      //Allocate L2 buffer between the outer point loop
+      // Allocate L2 buffer between the outer point loop
       builder.setInsertionPoint(outerloop);
       auto allocOp 
            = builder.create<AllocOp>(loc, MemRefType::get(bufSizes,
                                      type.getElementType(), AffineMap(),
                                      (int)mlir::aries::adf::MemorySpace::L2));
+      
+      // Load data from external mem to L2 buffer
+      SmallVector<AffineForOp, 4> newLoops;
+      builder.setInsertionPointAfter(allocOp);
+      // Clone buffer related loops
+      for (auto loop : loops){
+        auto newForOp 
+             = builder.create<AffineForOp>(loc,
+                                           loop.getLowerBoundOperands(),
+                                           loop.getLowerBoundMap(),
+                                           loop.getUpperBoundOperands(),
+                                           loop.getUpperBoundMap());
+        newLoops.push_back(newForOp);
+        builder.setInsertionPointToStart(newForOp.getBody());
+      }
+      // Create affine ApplyOps inside the innermost new loop
+      SmallVector<AffineApplyOp, 4> newApplyops;
+      SmallVector<Value, 4> nestedOperands;
+      SmallVector<unsigned, 4> ApplyOpIndex;
+      for (auto applyop : applyops){
+        auto newApplyop = builder.create<AffineApplyOp>(loc, 
+                                                        applyop.getAffineMap(),
+                                                        applyop.getOperands());
+        newApplyops.push_back(newApplyop);
+        builder.setInsertionPointAfter(newApplyop);
+        // Get operands that defined by another AffineApplyOp
+        for (auto operand : applyop.getOperands()){
+          auto definedOp = operand.getDefiningOp();
+          if(!definedOp)
+            continue;
+          if (auto nestapplyop = dyn_cast<AffineApplyOp>(definedOp)){
+            if (llvm::find(nestedOperands, operand) == nestedOperands.end()){
+              nestedOperands.push_back(operand);
+              auto it = llvm::find(applyops, nestapplyop);
+              if (it != applyops.end()) {
+                unsigned index = std::distance(applyops.begin(), it);
+                ApplyOpIndex.push_back(index);
+              }
+            }
+          }
+        }
+      }
+
+      // Update the loop variable used in AffineApply in the newInnerLoop
+      auto numVi = newLoops.size();
+      auto newInnerLoop = newLoops[newLoops.size()-1];
+      for (unsigned i = 0; i < numVi; ++i) {
+        auto oldvi = loops[i].getInductionVar();
+        auto newvi = newLoops[i].getInductionVar();
+        oldvi.replaceUsesWithIf(newvi,[&](OpOperand &use){
+            return newInnerLoop->isProperAncestor(use.getOwner());
+        });
+      }
+
+      // Update the Operands defined by AffineApply in the newInnerLoop
+      for (unsigned i=0; i<nestedOperands.size(); i++) {
+        auto oldNestedOperand = nestedOperands[i];
+        auto newNestedOperand = newApplyops[ApplyOpIndex[i]];
+        oldNestedOperand.replaceUsesWithIf(newNestedOperand,[&](OpOperand &use){
+            return newInnerLoop->isProperAncestor(use.getOwner());
+        });
+      }
+
       return WalkResult::advance();
     });
 
