@@ -1,4 +1,4 @@
-FUNC:=gemm
+FUNC:=add
 PROJECT_NAME:=adf_graph_${FUNC}
 KERNEL_NAME:=kernel_${FUNC}
 PROJECT_PATH=./${PROJECT_NAME}
@@ -84,7 +84,8 @@ ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
 iomaterialize: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
 ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
 	aries-opt -o $@ $< \
-			-aries-io-materialize
+			-aries-io-materialize \
+			-canonicalize -cse
 
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
 ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
