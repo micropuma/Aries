@@ -84,7 +84,7 @@ ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
 iomaterialize: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
 ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
 	aries-opt -o $@ $< \
-			-aries-io-materialize \
+			-aries-gmio-materialize \
 			-canonicalize -cse
 
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
@@ -109,7 +109,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-dma-to-io="port-type=PLIO plio-width=128 plio-freq=250" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
-			-aries-io-materialize
+			-aries-gmio-materialize
 
 translate: adf_graph kernel_header kernel_cc
 adf_graph: adf_graph_temp

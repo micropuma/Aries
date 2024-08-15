@@ -19,7 +19,7 @@ using namespace mlir::affine;
 
 namespace {
 
-struct AriesIOMaterialize : public AriesIOMaterializeBase<AriesIOMaterialize> {
+struct AriesGMIOMaterialize : public AriesGMIOMaterializeBase<AriesGMIOMaterialize> {
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
@@ -698,8 +698,8 @@ private:
 namespace mlir {
 namespace aries {
 
-std::unique_ptr<Pass> createAriesIOMaterializePass() {
-  return std::make_unique<AriesIOMaterialize>();
+std::unique_ptr<Pass> createAriesGMIOMaterializePass() {
+  return std::make_unique<AriesGMIOMaterialize>();
 }
 
 } // namespace aries
