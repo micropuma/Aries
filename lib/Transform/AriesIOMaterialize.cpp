@@ -316,6 +316,24 @@ private:
         }
         dim++;
       }
+
+      // Create static size and strides for dma & IOPush at the front of func
+      builder.setInsertionPointToStart(&plFunc.getBody().front());
+      auto indexType = builder.getIndexType();
+      auto oneAttr = builder.getIntegerAttr(indexType, 1);
+      auto oneValue = builder.create<arith::ConstantOp>(loc,indexType,oneAttr);
+      builder.setInsertionPointAfter(oneValue);
+      SmallVector<Value> localSizes;
+      SmallVector<Value> localStrides;
+      for(unsigned i=0; i< rank; i++){
+        auto sizeAttr = builder.getIntegerAttr(indexType, sizesInt[i]);
+        auto sizeValue 
+             = builder.create<arith::ConstantOp>(loc, indexType, sizeAttr);
+        builder.setInsertionPointAfter(sizeValue);
+        localSizes.push_back(sizeValue);
+        localStrides.push_back(oneValue);
+      }
+
       // Allocate L2 buffer before the outer point loop
       builder.setInsertionPoint(outerloop);
       auto allocOp 
@@ -364,44 +382,36 @@ private:
           }
         }
       }
-
-      // Create local buffer offset for dma
+      
+      // Create local buffer offset for dma & IOPush
       SmallVector<Value, 4> localOffsets;
+      SmallVector<Value, 4> IOPushOffsets;
       for (unsigned i = 0; i < rank; i++){
         auto sizeInt = sizesInt[i];
         auto d0 = builder.getAffineDimExpr(0);
         auto map = AffineMap::get(1, 0, d0 * sizeInt, builder.getContext());
+        // Add ApplyOp for dma
         auto loop = loops[i];
         auto var = loop.getInductionVar();
+        auto newApplyopDMA = builder.create<AffineApplyOp>(loc, map, var);
+        localOffsets.push_back(newApplyopDMA);
+        // Add ApplyOp for IOPush
+        builder.setInsertionPointToStart(loopBody);
+        loop = loops[i];
+        var = loop.getInductionVar();
         auto newApplyop = builder.create<AffineApplyOp>(loc, map, var);
-        localOffsets.push_back(newApplyop);
-        builder.setInsertionPointAfter(newApplyop);
+        IOPushOffsets.push_back(newApplyop);
+        builder.setInsertionPointAfter(newApplyopDMA);
       }
-
       // Create dma op to load data from external mem to L2 buffer
-      // Create local buffer strides(=1) for dma
-      auto indexType = builder.getIndexType();
-      auto oneAttr = builder.getIntegerAttr(indexType, 1);
-      auto oneValue = builder.create<arith::ConstantOp>(loc,indexType,oneAttr);
-      builder.setInsertionPointAfter(oneValue);
-      //SmallVector<Value> localStrides(rank,oneValue);
-      SmallVector<Value> localSizes;
-      SmallVector<Value> localStrides;
-      for(unsigned i=0; i< rank; i++){
-        auto sizeAttr = builder.getIntegerAttr(indexType, sizesInt[i]);
-        auto sizeValue 
-             = builder.create<arith::ConstantOp>(loc, indexType, sizeAttr);
-        builder.setInsertionPointAfter(sizeValue);
-        localSizes.push_back(oneValue);
-        localStrides.push_back(sizeValue);
-      }
       builder.create<DmaOp>(loc, src,      offsets,      sizes,      strides,
                              allocOp, localOffsets, localSizes, localStrides);
 
       // Replace IOPush: Send data from L2 buffer to L1 buffer
-      // builder.setInsertionPoint(op);
-      // builder.create<IOPushOp>(loc, src,      offsets,      sizes,   strides,
-      //                       allocOp, localOffsets, localSizes, localStrides);
+      builder.setInsertionPoint(op);
+      builder.create<IOPushOp>(loc, allocOp, IOPushOffsets, localSizes, 
+                               localStrides, op.getDst());
+      op.erase();
 
       // Update the loop variable used in AffineApply in the newInnerLoop
       auto numVi = newLoops.size();
