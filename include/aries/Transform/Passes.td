@@ -125,10 +125,18 @@ def AriesGMIOMaterialize : Pass<"aries-gmio-materialize"> {
   let description = [{
     This pass materialize the IOPush/IOPop Ops with specific DMA. For example,
     the GMIO in AIE1 can only do 1d slicing. Thus another DMA is needed in the 
-    host memory to do slicing. Similar transform is needed for PLIO in AIE1
-    whereas the extra DMA could happen in on-chip buffer.
+    host memory to do slicing.
   }];
   let constructor = "mlir::aries::createAriesGMIOMaterializePass()";
+}
+
+def AriesPLIOMaterialize : Pass<"aries-plio-materialize"> {
+  let summary = "Materialize IOPush/IOPop Ops with specific DMA";
+  let description = [{
+    This pass extract the IOPush/IOPop Ops into pl.dma func, allocate L2 buffer,
+    and materialize the IOPush/IOPop Ops with specific DMA.
+  }];
+  let constructor = "mlir::aries::createAriesPLIOMaterializePass()";
 }
 
 def AriesADFTest : Pass<"aries-adf-test"> {
