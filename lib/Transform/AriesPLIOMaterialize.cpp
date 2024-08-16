@@ -391,8 +391,8 @@ private:
       WalkResult result;
       if(dyn_cast<IOPushOp>(op))
         result = IOProcesses(builder, plFunc, op, band, true);
-      // else if(dyn_cast<IOPopOp>(op))
-      //   result = IOProcesses(builder, plFunc, op, band, false);
+      else if(dyn_cast<IOPopOp>(op))
+        result = IOProcesses(builder, plFunc, op, band, false);
       else
         return WalkResult::advance();
       return result;
