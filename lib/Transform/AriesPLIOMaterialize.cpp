@@ -101,7 +101,7 @@ private:
   }
 
   // This is a helper function that resolves the offset defined recursively by
-  // nested AffineApplyOps 0) val: should be the offset of IOPush
+  // nested AffineApplyOps 0) val: should be the offset of IOPush/IOPop
   // 1) operands:stores all the operands related to val & not defined by Applyop
   // 2) applyops: stores all the applyops related to val
   void resolveOffset(Value val, 
@@ -156,8 +156,8 @@ private:
     /*
     Need to handle more general cases of the offest in IOPushOp/IOPopOp
     Now assumes this is a rectangular tiling. 
-    the size of local buffer = point loop bounds * size of IOPush src
-    the offset of the local buffer = point loop variable * size of IOPush src
+    the size of local buffer = point loop bounds * size of IOPush/IOPop src
+    the offset of the local buffer = point loop variable * size of ~ src
     the stride of the local buffer = 1 
     */
     //////////////////////////////////////////////////////
@@ -208,7 +208,7 @@ private:
                                    type.getElementType(), AffineMap(),
                                    (int)mlir::aries::adf::MemorySpace::L2));
     
-    // Create static size and strides for dma & IOPush at the front of func
+    // Create static size and strides for dma & IOPush/IOPop
     auto indexType = builder.getIndexType();
     auto oneAttr = builder.getIntegerAttr(indexType, 1);
     auto oneValue = builder.create<arith::ConstantOp>(loc,indexType,oneAttr);
@@ -270,9 +270,9 @@ private:
       }
     }
     
-    // Create local buffer offset for dma & IOPush
+    // Create local buffer offset for dma & IOPush/IOPop
     SmallVector<Value, 4> localOffsets;
-    SmallVector<Value, 4> IOPushOffsets;
+    SmallVector<Value, 4> IOOffsets;
     for (unsigned i = 0; i < rank; i++){
       auto sizeInt = sizesInt[i];
       auto d0 = builder.getAffineDimExpr(0);
@@ -282,12 +282,12 @@ private:
       auto var = loop.getInductionVar();
       auto newApplyopDMA = builder.create<AffineApplyOp>(loc, map, var);
       localOffsets.push_back(newApplyopDMA);
-      // Add ApplyOp for IOPush
+      // Add ApplyOp for IOPush/IOPop
       builder.setInsertionPointToStart(innerLoop.getBody());
       loop = loops[i];
       var = loop.getInductionVar();
       auto newApplyop = builder.create<AffineApplyOp>(loc, map, var);
-      IOPushOffsets.push_back(newApplyop);
+      IOOffsets.push_back(newApplyop);
       builder.setInsertionPointAfter(newApplyopDMA);
     }
     if (iopush){
@@ -295,9 +295,8 @@ private:
       // Replace IOPush: Send data from L2 buffer to L1 buffer
       builder.create<DmaOp>(loc, src,      offsets,      sizes,      strides,
                              allocOp, localOffsets, localSizes, localStrides);
-      // Replace IOPush: Send data from L2 buffer to L1 buffer
       builder.setInsertionPoint(iopushOp);
-      builder.create<IOPushOp>(loc, allocOp, IOPushOffsets, localSizes, 
+      builder.create<IOPushOp>(loc, allocOp, IOOffsets, localSizes, 
                                localStrides, dst);
       iopushOp.erase();
     }else{
@@ -307,7 +306,7 @@ private:
                                 dst,     offsets,      sizes,      strides);
       builder.setInsertionPoint(iopopOp);
       builder.create<IOPopOp>(loc, src, allocOp, 
-                              IOPushOffsets, localSizes, localStrides);
+                              IOOffsets, localSizes, localStrides);
       iopopOp.erase();
     }
 
@@ -386,7 +385,7 @@ private:
     for (auto applyOp :  applyOpsBefore)
       applyOp->moveBefore(&loopBody->front());
 
-    // Tranverse the IOPushOps and allocate L2 buffers
+    // Tranverse the IOPushOps/IOPopOps and allocate L2 buffers
     auto flag = plForOp.walk([&](Operation* op){
       WalkResult result;
       if(dyn_cast<IOPushOp>(op))
@@ -431,7 +430,7 @@ private:
     if(!lauchcell)
       return true;
 
-    // Materialize Push/Pop of GMIO
+    // Materialize Push/Pop of PLIO
     auto boolPLIO = topFunc->getAttr("plio");
     SmallVector<CallOp> calls;
     SmallVector<Value> inputs;
