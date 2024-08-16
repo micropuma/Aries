@@ -107,7 +107,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-kernel-interface-create \
 			-aries-func-unroll \
 			-aries-local-data-forward \
-			-aries-dma-to-io="port-type=PLIO plio-width=128 plio-freq=250" \
+			-aries-dma-to-io="port-type=GMIO" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
 			-aries-gmio-materialize \
