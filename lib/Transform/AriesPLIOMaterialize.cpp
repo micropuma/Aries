@@ -112,8 +112,7 @@ private:
       operands.push_back(val);
       return;
     }else if (auto applyop = dyn_cast<AffineApplyOp>(definedOp)){
-      if (llvm::find(applyops, applyop) == applyops.end())
-        applyops.push_back(applyop);
+      applyops.push_back(applyop);
       for (auto operand : applyop.getOperands())
         resolveOffset(operand, operands, applyops);
     }else{
@@ -122,6 +121,9 @@ private:
     }
   }
 
+  // Allocate L2 memory and add data movement involving L2 mem(PL buffer)
+  // including load/store data from/to L3 mem (external)
+  // send/receive data to/from L1 mem (AIE local)
   WalkResult IOProcesses(OpBuilder builder, FuncOp plFunc, Operation* op, 
                          SmallVector<AffineForOp, 6> band, bool iopush){
     auto loc = builder.getUnknownLoc();
@@ -170,8 +172,8 @@ private:
     unsigned dim = 0;
     for (auto offset: offsets){
       SmallVector<Value, 4> operands;
+      SmallVector<AffineApplyOp, 4> localApplyops;
       resolveOffset(offset,operands,applyops);
-      std::reverse(applyops.begin(), applyops.end());
       for (auto operand : operands){
         // Get the trip count of the corresponding point loop
         auto loop = getForInductionVarOwner(operand);
@@ -240,6 +242,7 @@ private:
       builder.setInsertionPointToStart(newForOp.getBody());
     }
     // Create affine ApplyOps inside the innermost new loop
+    std::reverse(applyops.begin(), applyops.end());
     SmallVector<AffineApplyOp, 4> newApplyops;
     SmallVector<Value, 4> nestedOperands;
     SmallVector<unsigned, 4> ApplyOpIndex;
@@ -337,7 +340,7 @@ private:
       auto applyop = dyn_cast<AffineApplyOp>(definedOp);
       auto it = llvm::find(applyops, applyop);
       if (it == applyops.end()){
-        llvm::outs() << "IOpushOp involves offset not"
+        llvm::outs() << "IOpushOp/IOpopOp involves offset not"
                      << "defined by AffineApplyOp & ConstantOp\n";
         return WalkResult::interrupt();
       }
