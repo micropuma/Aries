@@ -378,7 +378,170 @@ private:
     return WalkResult::advance();
   }
 
-  // Allocate L2 memory
+  WalkResult ConvertIOToAffine(OpBuilder builder, Operation* op,  bool iopush){
+    auto loc = builder.getUnknownLoc();
+    IOPushOp iopushOp;
+    IOPopOp iopopOp;
+    Value src, dst;
+    SmallVector<Value> offsets;
+    SmallVector<Value> sizes;
+    MemRefType type;
+    if(iopush){
+      iopushOp = dyn_cast<IOPushOp>(op);
+      src = iopushOp.getSrc();
+      type = dyn_cast<MemRefType>(src.getType());
+      dst = iopushOp.getDst();
+      offsets = iopushOp.getSrcOffsets();
+      sizes = iopushOp.getSrcSizes();
+      builder.setInsertionPoint(iopushOp);
+    }else{
+      iopopOp = dyn_cast<IOPopOp>(op);
+      src = iopopOp.getSrc();
+      dst = iopopOp.getDst();
+      type = dyn_cast<MemRefType>(dst.getType());
+      offsets = iopopOp.getDstOffsets();
+      sizes = iopopOp.getDstSizes();
+      builder.setInsertionPoint(iopopOp);
+    } // Create for loops for IOPush/Pop Ops
+    SmallVector<AffineForOp, 4> newIOLoops;
+    auto rank = offsets.size();
+    for(unsigned i = 0; i < rank; i++){
+      auto size = sizes[i];
+      auto constantSize = dyn_cast<arith::ConstantOp>(size.getDefiningOp());
+      if(!constantSize)
+        return WalkResult::interrupt();
+      auto sizeAttr = dyn_cast<IntegerAttr>(constantSize.getValue());
+      auto sizeInt = sizeAttr.getInt();
+      auto newIOForOp 
+           = builder.create<AffineForOp>(loc, 0, sizeInt, 1);
+      newIOLoops.push_back(newIOForOp);
+      builder.setInsertionPointToStart(newIOForOp.getBody());
+    }// Get the access operands of affine load/store
+    auto newInnerIOLoop = newIOLoops[newIOLoops.size()-1];
+    auto newInnerIOYiled = newInnerIOLoop.getBody()->getTerminator();
+    auto d0 = builder.getAffineDimExpr(0);
+    auto d1 = builder.getAffineDimExpr(1);
+    auto map = AffineMap::get(2, 0, d0 + d1, builder.getContext());
+    SmallVector<Value> newApplyopIOs;
+    for(unsigned i = 0; i < rank; i++){
+      SmallVector<Value, 2> applyOperands;
+      auto newIOLoop = newIOLoops[i];
+      auto var = newIOLoop.getInductionVar();
+      auto offset = offsets[i];
+      applyOperands.push_back(var);
+      applyOperands.push_back(offset);
+      builder.setInsertionPoint(newInnerIOYiled);
+      auto newApplyopIO=builder.create<AffineApplyOp>(loc, map, applyOperands);
+      newApplyopIOs.push_back(newApplyopIO);
+    } // Replace IOPush/Pop Ops with affine.load and affine.store
+    if(iopush){
+      auto loadOp = builder.create<AffineLoadOp>(loc, src, newApplyopIOs);
+      builder.create<IOWriteOp>(loc, loadOp, dst);
+      iopushOp.erase();
+    }else{
+      auto result = builder.create<IOReadOp>(loc, type.getElementType(), src);
+      builder.create<AffineStoreOp>(loc, result, dst, newApplyopIOs);
+      iopopOp.erase();
+    }
+    return WalkResult::advance();
+  }
+
+  WalkResult ConvertDMAToAffine(OpBuilder builder, Operation* op){
+    auto loc = builder.getUnknownLoc();
+    auto context = builder.getContext();
+    auto dmaOp = dyn_cast<DmaOp>(op);
+    auto src = dmaOp.getSrc();
+    auto srcType = dyn_cast<MemRefType>(src.getType());
+    auto dst = dmaOp.getDst();
+    auto dstType = dyn_cast<MemRefType>(dst.getType());
+    SmallVector<Value> L2Sizes;
+    SmallVector<Value> L2Offsets;
+    SmallVector<Value> L3Offsets;
+    SmallVector<Value> L3Strides;
+    bool dmaLoad;
+    if (srcType.getMemorySpaceAsInt() == (int)MemorySpace::L2){
+      L2Sizes   = dmaOp.getSrcSizes();
+      L2Offsets = dmaOp.getSrcOffsets();
+      L3Offsets = dmaOp.getDstOffsets();
+      L3Strides = dmaOp.getDstStrides();
+      dmaLoad = false;
+    }else if(dstType.getMemorySpaceAsInt() == (int)MemorySpace::L2){
+      L2Sizes   = dmaOp.getDstSizes();
+      L2Offsets = dmaOp.getDstOffsets();
+      L3Offsets = dmaOp.getSrcOffsets();
+      L3Strides = dmaOp.getSrcStrides();
+      dmaLoad = true;
+    }else{
+      return WalkResult::interrupt();
+    }
+    // Create for loops for DMA Ops
+    builder.setInsertionPoint(dmaOp);
+    SmallVector<AffineForOp, 4> newDMALoops;
+    auto rank = L2Sizes.size();
+    for(unsigned i = 0; i < rank; i++){
+      Value size = L2Sizes[i];
+      auto constantSize = dyn_cast<arith::ConstantOp>(size.getDefiningOp());
+      if(!constantSize)
+        return WalkResult::interrupt();
+      auto sizeAttr = dyn_cast<IntegerAttr>(constantSize.getValue());
+      auto sizeInt = sizeAttr.getInt();
+      auto newDMAForOp 
+           = builder.create<AffineForOp>(loc, 0, sizeInt, 1);
+      newDMALoops.push_back(newDMAForOp);
+      builder.setInsertionPointToStart(newDMAForOp.getBody());
+    }
+    auto newInnerDMALoop = newDMALoops[newDMALoops.size()-1];
+    auto newInnerDMAYiled = newInnerDMALoop.getBody()->getTerminator();
+    // Create mem access for L2 buffer
+    SmallVector<Value> newApplyopL2DMAs;
+    auto d0 = builder.getAffineDimExpr(0);
+    auto d1 = builder.getAffineDimExpr(1);
+    auto map = AffineMap::get(2, 0, d0 + d1, context);
+    for(unsigned i = 0; i < rank; i++){
+      SmallVector<Value, 2> applyOperands;
+      auto newIOLoop = newDMALoops[i];
+      auto var = newIOLoop.getInductionVar();
+      auto offset = L2Offsets[i];
+      applyOperands.push_back(var);
+      applyOperands.push_back(offset);
+      builder.setInsertionPoint(newInnerDMAYiled);
+      auto newApplyopL2DMA 
+           = builder.create<AffineApplyOp>(loc, map, applyOperands);
+      newApplyopL2DMAs.push_back(newApplyopL2DMA);
+    }
+    // Create mem access for L3 buffer
+    SmallVector<Value> newApplyopL3DMAs;
+    for(unsigned i = 0; i < rank; i++){
+      SmallVector<Value, 2> applyOperands;
+      auto newIOLoop = newDMALoops[i];
+      auto stride = L3Strides[i];
+      auto constantStride = dyn_cast<arith::ConstantOp>(stride.getDefiningOp());
+      if(!constantStride)
+        return WalkResult::interrupt();
+      auto strideAttr = dyn_cast<IntegerAttr>(constantStride.getValue());
+      auto StrideInt = strideAttr.getInt();
+      auto map = AffineMap::get(2, 0, d0 * StrideInt + d1, context);
+      auto var = newIOLoop.getInductionVar();
+      auto offset = L3Offsets[i];
+      applyOperands.push_back(var);
+      applyOperands.push_back(offset);
+      builder.setInsertionPoint(newInnerDMAYiled);
+      auto newApplyopL3DMA 
+           = builder.create<AffineApplyOp>(loc, map, applyOperands);
+      newApplyopL3DMAs.push_back(newApplyopL3DMA);
+    }
+    if(dmaLoad){
+      auto loadOp = builder.create<AffineLoadOp>(loc, src, newApplyopL3DMAs);
+      builder.create<AffineStoreOp>(loc, loadOp, dst, newApplyopL2DMAs);
+    }else{
+      auto loadOp = builder.create<AffineLoadOp>(loc, src, newApplyopL2DMAs);
+      builder.create<AffineStoreOp>(loc, loadOp, dst, newApplyopL3DMAs); 
+    }
+    dmaOp.erase();
+    return WalkResult::advance();
+  }
+
+  // Allocate L2 memory & add data movement
   bool ADFPLAlloc(OpBuilder builder, FuncOp plFunc){
     AffineForOp plForOp;
     plFunc.walk([&](AffineForOp forOp){
@@ -427,8 +590,22 @@ private:
     if (flag == WalkResult::interrupt()) 
       return false;
     
-    // After Processes IOPush/IOPop safe to erase outerLoop
+    // After Processes IOPush/IOPop in the outerloop, safe to erase outerLoop
     outerLoop.erase();
+
+    // Tranverse the IOPushOps/IOPopOps and convert them to affine load/store
+    flag = plForOp.walk([&](Operation* op){
+      WalkResult result;
+      if(dyn_cast<IOPushOp>(op))
+        result = ConvertIOToAffine(builder, op, true);
+      else if(dyn_cast<IOPopOp>(op))
+        result = ConvertIOToAffine(builder, op, false);
+      else if(dyn_cast<DmaOp>(op))
+        result = ConvertDMAToAffine(builder, op);
+      else
+        return WalkResult::advance();
+      return result;
+    });
       
     return true;
   }
@@ -472,10 +649,8 @@ private:
       flag = ADFPLAlloc(builder, plFunc);
       UpdateCellLaunch(builder, lauchcell, calls);
     }
-
     return flag;
   }
-
 };
 } // namespace
 
