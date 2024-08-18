@@ -322,7 +322,7 @@ def IOPushOp: ADF_Op<"io.push", [AttrSizedOperandSegments]> {
       %mem0 = memref.alloc() : memref<64x64xf32>
       %plio0 = adf.graph.io(PLIO) : !adf.plio<In>
       adf.io.push(%mem0[0, 0][32, 32][1, 1], %plio0) 
-      : (memref<64x64xf32>, : !adf.plio<In>)
+      : (memref<64x64xf32>, !adf.plio<In>)
     ```
   }];
   let arguments = (
@@ -351,7 +351,7 @@ def IOPopOp: ADF_Op<"io.pop", [AttrSizedOperandSegments]> {
       %mem0 = memref.alloc() : memref<64x64xf32>
       %plio0 = adf.graph.io(PLIO) : !adf.plio<In> 
       adf.io.pop(%plio0,%mem0[0, 0][32, 32][1, 1]) 
-      : (!adf.plio<In> : memref<64x64xf32>)
+      : (!adf.plio<In> , memref<64x64xf32>)
     ```
   }];
   let arguments = (
@@ -370,12 +370,46 @@ def IOPopOp: ADF_Op<"io.pop", [AttrSizedOperandSegments]> {
 
 def IOWaitOp: ADF_Op<"io.wait", []> {
   let summary = "Barrier operation for IOPop op";
-  let arguments = (
-    ins GraphIOType:$graphio
-  );
+  let arguments = (ins GraphIOType:$graphio);
   let assemblyFormat = [{
     `(` $graphio `)`  attr-dict `:` type($graphio)
   }];
+}
+
+def IOWriteOp: ADF_Op<"io.write", []> {
+  let summary = "Write one date into GraphIO";
+  let description = [{
+    This operation is used in the PL to write data to a GraphIO which is similar 
+    to fifo.write 
+
+    ```mlir
+      %data = affine.load %alloc[%1] : memref<32xf32>
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In>
+      adf.io.write(%data, %plio0) 
+      : (f32, , !adf.plio<In>)
+    ```
+  }];
+  let arguments = (ins AnyType:$src, PLIOType:$dst);
+  let assemblyFormat = [{
+    `(` $src  `,` $dst `)`  attr-dict `:` `(` type($src) `,` type($dst) `)`
+  }];
+}
+
+def IOReadOp: ADF_Op<"io.Read", []> {
+  let summary = "Read one date from GraphIO";
+  let description = [{
+    This operation is used in the PL to read data from a GraphIO which is 
+    similar to fifo.read 
+
+    ```mlir
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In>
+      %data = adf.io.read(%plio0) 
+      : (!adf.plio<In>, f32)
+    ```
+  }];
+  let arguments = (ins PLIOType:$src);
+  let results = (outs AnyType:$result);
+  let hasCustomAssemblyFormat = 1;
 }
 
 
