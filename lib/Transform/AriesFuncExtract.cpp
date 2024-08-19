@@ -42,7 +42,7 @@ private:
       return true;
 
     SmallVector<AffineForOp, 6> band;
-    getLoopBand(parallelOp.getRegion(), band);
+    getNestedLoopBand(parallelOp.getRegion(), band);
     
     // There should be at least one point loop
     unsigned width = band.size();

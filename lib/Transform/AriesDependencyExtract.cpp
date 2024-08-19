@@ -90,9 +90,9 @@ private:
     CellOp cellOp = getFirstOpOfType<CellOp>(topFunc.getBody());
 
     if(cellOp)
-      getLoopBand(cellOp.getBody(), band);
+      getNestedLoopBand(cellOp.getBody(), band);
     else
-      getLoopBand(topFunc.getBody(), band);
+      getNestedLoopBand(topFunc.getBody(), band);
     
     auto innerloop = band[band.size()-1];
     SmallVector<DmaOp, 4> dmaOps;

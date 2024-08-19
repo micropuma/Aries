@@ -34,8 +34,8 @@ OpType getFirstOpOfType(Region &region) {
 }
 
 // Get all the affine.for loops within the FuncOp and return them in the band
-void getLoopBand(Region &region, SmallVector<AffineForOp, 6> &band, 
-                 bool reverse = false);
+void getNestedLoopBand(Region &region, SmallVector<AffineForOp, 6> &band, 
+                       bool reverse = false);
 
 /// Built-in Function: Checks whether a loop nest is hyper-rectangular or not.
 LogicalResult checkIfHyperRectangular(MutableArrayRef<AffineForOp> input);

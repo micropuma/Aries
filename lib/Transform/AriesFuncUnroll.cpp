@@ -54,7 +54,7 @@ private:
       return true;
 
     SmallVector<AffineForOp, 6> band;
-    getLoopBand(cellOp.getBody(), band, true);
+    getNestedLoopBand(cellOp.getBody(), band, true);
     
     //Start from the innermost loop
     for (auto loop: band) {

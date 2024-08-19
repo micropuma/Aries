@@ -42,7 +42,7 @@ private:
     for (auto func : mod.getOps<FuncOp>()) {
       func->setAttr("top_func", builder.getUnitAttr());
       SmallVector<AffineForOp, 6> band;
-      getLoopBand(func.getBody(), band);
+      getNestedLoopBand(func.getBody(), band);
       
 
       auto bandSize = band.size();

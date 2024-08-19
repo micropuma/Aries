@@ -36,8 +36,8 @@ LogicalResult loopUnrollFull(AffineForOp forOp,
 
 
 // Get all the affine.for loops within the forOp and return them in the band
-void getLoopBand(Region &region, SmallVector<AffineForOp, 6> &band, 
-                 bool reverse) {
+void getNestedLoopBand(Region &region, SmallVector<AffineForOp, 6> &band, 
+                       bool reverse) {
   auto forOp = getFirstOpOfType<AffineForOp>(region);
   getPerfectlyNestedLoops(band, forOp);
   if (reverse)

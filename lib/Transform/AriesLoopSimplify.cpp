@@ -47,7 +47,7 @@ private:
       auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
 
       SmallVector<AffineForOp, 6> band;
-      getLoopBand(calleeFuncOp.getBody(), band);
+      getNestedLoopBand(calleeFuncOp.getBody(), band);
 
       if (failed(checkIfHyperRectangular(band))){
         llvm::outs() << "Not recutangular nested loops!\n";
