@@ -100,6 +100,30 @@ private:
     }
   }
 
+  bool loopNormalize(AffineForOp plForOp, SmallVector<AffineForOp, 6>& band){
+    // Get point loops in band
+    for (auto forOp : plForOp.getOps<AffineForOp>())
+      getPerfectlyNestedLoops(band, forOp);
+
+    // Normalize point loops
+    for (auto forOp : band){
+      if(failed(normalizeAffineFor(forOp)))
+        return false;
+    }
+
+    // Move AffineApplyOp to the innerLoop
+    auto innerLoop = band[band.size()-1];
+    auto loopBody = innerLoop.getBody();
+    SmallVector<AffineApplyOp, 6> applyOpsBefore;
+    plForOp.walk([&](AffineApplyOp op){
+      applyOpsBefore.push_back(op);
+    });
+    std::reverse(applyOpsBefore.begin(), applyOpsBefore.end());
+    for (auto applyOp :  applyOpsBefore)
+      applyOp->moveBefore(&loopBody->front());
+    return true;
+  }
+
   // This is a helper function that resolves the offset defined recursively by
   // nested AffineApplyOps 0) val: should be the offset of IOPush/IOPop
   // 1) operands:stores all the operands related to val & not defined by Applyop
@@ -125,7 +149,8 @@ private:
   // including load/store data from/to L3 mem (external)
   // send/receive data to/from L1 mem (AIE local)
   WalkResult IOProcesses(OpBuilder builder, FuncOp plFunc, Operation* op, 
-                         SmallVector<AffineForOp, 6> band, bool iopush){
+                         SmallVector<AffineForOp, 6> band, unsigned& loadIndex,
+                         unsigned& storeIndex, bool iopush){
     auto loc = builder.getUnknownLoc();
     IOPushOp iopushOp;
     IOPopOp iopopOp;
@@ -256,7 +281,20 @@ private:
       newIOLoops.push_back(newIOForOp);
       builder.setInsertionPointToStart(newIOForOp.getBody());
     }
-
+    // Anotate the outer new point loops with name and index
+    auto newDMAOuterloop = newDMALoops[0];
+    auto newIOOuterloop = newIOLoops[0];
+    auto loadAttr = builder.getIntegerAttr(builder.getIndexType(),loadIndex);
+    auto storeAttr = builder.getIntegerAttr(builder.getIndexType(),storeIndex);
+    if(iopush){
+      newDMAOuterloop->setAttr("load",loadAttr);
+      newIOOuterloop->setAttr("send",loadAttr);
+      loadIndex++;
+    }else{
+      newDMAOuterloop->setAttr("store",storeAttr);
+      newIOOuterloop->setAttr("receive",storeAttr);
+      storeIndex++;
+    }
     // Create affine ApplyOps inside the innermost new loop
     auto newInnerDMALoop = newDMALoops[newDMALoops.size()-1];
     auto newInnerIOLoop = newIOLoops[newIOLoops.size()-1];
@@ -542,7 +580,7 @@ private:
   }
 
   // Allocate L2 memory & add data movement
-  bool ADFPLAlloc(OpBuilder builder, FuncOp plFunc){
+  bool PLDataMovement(OpBuilder builder, FuncOp plFunc){
     AffineForOp plForOp;
     plFunc.walk([&](AffineForOp forOp){
       if(forOp->hasAttr("Array_Partition"))
@@ -552,45 +590,30 @@ private:
       llvm::outs() << "Array_Partition loop not found\n";
       return false;
     }
-    // Get point loops in band
     SmallVector<AffineForOp, 6> band;
-    for (auto forOp : plForOp.getOps<AffineForOp>())
-      getPerfectlyNestedLoops(band, forOp);
-
-    // Normalize point loops
-    for (auto forOp : band){
-      if(failed(normalizeAffineFor(forOp)))
-        return false;
-    }
-
-    // Move AffineApplyOp to the innerLoop
-    auto outerLoop = band[0];
-    auto innerLoop = band[band.size()-1];
-    auto loopBody = innerLoop.getBody();
-    SmallVector<AffineApplyOp, 6> applyOpsBefore;
-    plForOp.walk([&](AffineApplyOp op){
-      applyOpsBefore.push_back(op);
-    });
-    std::reverse(applyOpsBefore.begin(), applyOpsBefore.end());
-    for (auto applyOp :  applyOpsBefore)
-      applyOp->moveBefore(&loopBody->front());
+    if(!loopNormalize(plForOp, band))
+      return false;
 
     // Tranverse the IOPushOps/IOPopOps and allocate L2 buffers
+    unsigned loadIndex = 0;
+    unsigned storeIndex = 0;
     auto flag = plForOp.walk([&](Operation* op){
       WalkResult result;
       if(dyn_cast<IOPushOp>(op))
-        result = IOProcesses(builder, plFunc, op, band, true);
+        result = IOProcesses(builder, plFunc, op, band, 
+                             loadIndex, storeIndex, true);
       else if(dyn_cast<IOPopOp>(op))
-        result = IOProcesses(builder, plFunc, op, band, false);
+        result = IOProcesses(builder, plFunc, op, band, 
+                             loadIndex, storeIndex, false);
       else
         return WalkResult::advance();
       return result;
     });
-
     if (flag == WalkResult::interrupt()) 
       return false;
-    
+
     // After Processes IOPush/IOPop in the outerloop, safe to erase outerLoop
+    auto outerLoop = band[0];
     outerLoop.erase();
 
     // Tranverse the IOPushOps/IOPopOps and convert them to affine load/store
@@ -606,6 +629,8 @@ private:
         return WalkResult::advance();
       return result;
     });
+    if (flag == WalkResult::interrupt()) 
+      return false;
       
     return true;
   }
@@ -646,7 +671,7 @@ private:
       Preprocess(lauchcell, calls);
       ArguDetect(lauchcell, inputs);
       PLFuncCreation(builder, topFunc, plFunc, lauchcell, inputs);
-      flag = ADFPLAlloc(builder, plFunc);
+      flag = PLDataMovement(builder, plFunc);
       UpdateCellLaunch(builder, lauchcell, calls);
     }
     return flag;
