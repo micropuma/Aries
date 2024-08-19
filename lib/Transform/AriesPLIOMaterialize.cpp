@@ -99,28 +99,33 @@ private:
       });
     }
   }
+  
+  // This is a specific function that perfectize the affine.apply ops between
+  // nested for loops. May need to be extend to a general pass.
+  void AffineApplyPerfectize(SmallVector<AffineForOp, 6>& band){
+    // Move AffineApplyOp to the innerLoop
+    auto outerLoop = band[0];
+    auto innerLoop = band[band.size()-1];
+    auto loopBody = innerLoop.getBody();
+    SmallVector<AffineApplyOp, 6> applyOpsBefore;
+    outerLoop.walk([&](AffineApplyOp op){
+      applyOpsBefore.push_back(op);
+    });
+    std::reverse(applyOpsBefore.begin(), applyOpsBefore.end());
+    for (auto applyOp :  applyOpsBefore)
+      applyOp->moveBefore(&loopBody->front());
+  }
 
   bool loopNormalize(AffineForOp plForOp, SmallVector<AffineForOp, 6>& band){
     // Get point loops in band
-    for (auto forOp : plForOp.getOps<AffineForOp>())
-      getPerfectlyNestedLoops(band, forOp);
+    getNestedLoopBand(plForOp.getRegion(),band);
 
     // Normalize point loops
     for (auto forOp : band){
       if(failed(normalizeAffineFor(forOp)))
         return false;
     }
-
-    // Move AffineApplyOp to the innerLoop
-    auto innerLoop = band[band.size()-1];
-    auto loopBody = innerLoop.getBody();
-    SmallVector<AffineApplyOp, 6> applyOpsBefore;
-    plForOp.walk([&](AffineApplyOp op){
-      applyOpsBefore.push_back(op);
-    });
-    std::reverse(applyOpsBefore.begin(), applyOpsBefore.end());
-    for (auto applyOp :  applyOpsBefore)
-      applyOp->moveBefore(&loopBody->front());
+    AffineApplyPerfectize(band);
     return true;
   }
 
@@ -540,8 +545,8 @@ private:
       auto newIOLoop = newDMALoops[i];
       auto var = newIOLoop.getInductionVar();
       auto offset = L2Offsets[i];
-      applyOperands.push_back(var);
       applyOperands.push_back(offset);
+      applyOperands.push_back(var);
       builder.setInsertionPoint(newInnerDMAYiled);
       auto newApplyopL2DMA 
            = builder.create<AffineApplyOp>(loc, map, applyOperands);
@@ -561,8 +566,8 @@ private:
       auto map = AffineMap::get(2, 0, d0 * StrideInt + d1, context);
       auto var = newIOLoop.getInductionVar();
       auto offset = L3Offsets[i];
-      applyOperands.push_back(var);
       applyOperands.push_back(offset);
+      applyOperands.push_back(var);
       builder.setInsertionPoint(newInnerDMAYiled);
       auto newApplyopL3DMA 
            = builder.create<AffineApplyOp>(loc, map, applyOperands);
@@ -577,6 +582,85 @@ private:
     }
     dmaOp.erase();
     return WalkResult::advance();
+  }
+
+  // This function works coalesce with ConvertDMAToAffine as it assumes the way
+  // of constructing newApplyopL2DMA
+  void L2BufferProcess(OpBuilder builder, FuncOp plFunc, 
+                       SmallVector<AffineForOp, 6> band){
+    auto loc = builder.getUnknownLoc();
+    auto outerLoop = band[0];
+    auto innerLoop = band[band.size()-1];
+    auto innerYiled = innerLoop.getBody()->getTerminator();
+    SmallVector<OpFoldResult> sizes;
+    sizes.push_back(builder.getIndexAttr(1));
+    auto streamAttr = builder.getStringAttr("stream");
+    if(outerLoop->hasAttr("load")){
+      for (auto storeOp: innerLoop.getOps<AffineStoreOp>()){
+        auto memref = storeOp.getMemRef();
+        auto val = storeOp.getValueToStore();
+        auto type = dyn_cast<MemRefType>(memref.getType());
+        auto elementType = type.getElementType();
+        if (type.getMemorySpaceAsInt() != (int)MemorySpace::L2)
+          return;
+        auto rank = type.getRank();
+        auto indices = storeOp.getIndices();
+        SmallVector<AffineApplyOp, 4> applyops;
+        SmallVector<AffineForOp, 4> loops;
+        SmallVector<AffineForOp, 4> newForOps;
+        builder.setInsertionPointAfter(outerLoop);
+        for (unsigned i = 0; i < rank; i++){
+          SmallVector<Value, 4> operands;
+          auto index = indices[i];
+          resolveOffset(index,operands,applyops);
+          // create new for loops
+          for (auto operand : operands){
+            auto loop = getForInductionVarOwner(operand);
+            if (loop && llvm::find(band, loop) != band.end()) {
+              auto newForOp 
+                   = builder.create<AffineForOp>(loc,
+                                                 loop.getLowerBoundOperands(),
+                                                 loop.getLowerBoundMap(),
+                                                 loop.getUpperBoundOperands(),
+                                                 loop.getUpperBoundMap());
+              newForOps.push_back(newForOp);
+              loops.push_back(loop);
+              builder.setInsertionPointToStart(newForOp.getBody());
+            }
+          }
+        }
+        // Create affine store to memref with 1 element, then load data from the
+        // single-element memref to L2 buffer. This is to represent FIFO in PL.
+        builder.setInsertionPointToStart(&plFunc.getBody().front());
+        auto allocOp 
+             = builder.create<AllocOp>(loc, sizes, elementType, streamAttr);
+        auto indexType = builder.getIndexType();
+        auto zeroAttr = builder.getIntegerAttr(indexType, 0);
+        auto zeroValue = builder.create<arith::ConstantOp>(loc, zeroAttr);
+        SmallVector<Value> zeroValues(1, zeroValue);
+        builder.setInsertionPoint(innerYiled);
+        builder.create<AffineStoreOp>(loc, val, allocOp, zeroValues);
+        storeOp.erase();
+        auto innerNewLoop = newForOps[newForOps.size()-1];
+        auto innerNewYiled = innerNewLoop.getBody()->getTerminator();
+        builder.setInsertionPoint(innerNewYiled);
+        auto newLoad = builder.create<AffineLoadOp>(loc, allocOp, zeroValues);
+        builder.create<AffineStoreOp>(loc, newLoad, memref, indices);
+        // Update the loop variables
+        auto numVi = newForOps.size();
+        for (unsigned i = 0; i < numVi; ++i) {
+          auto oldvi = loops[i].getInductionVar();
+          auto newvi = newForOps[i].getInductionVar();
+          oldvi.replaceUsesWithIf(newvi,[&](OpOperand &use){
+              return innerNewLoop->isProperAncestor(use.getOwner());
+          });
+        }
+      }
+    }else if(outerLoop->hasAttr("store")){
+      for (auto loadOp: innerLoop.getOps<AffineLoadOp>()){
+        
+      }
+    }
   }
 
   // Allocate L2 memory & add data movement
@@ -631,6 +715,15 @@ private:
     });
     if (flag == WalkResult::interrupt()) 
       return false;
+    
+    // Tranverse all the outer point dma loops(involve L3 mem) and change the
+    // L2 buffer access with stream access
+    for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
+      SmallVector<AffineForOp, 6> band;
+      getNestedLoops(band, forOp);
+      AffineApplyPerfectize(band);
+      //L2BufferProcess(builder, plFunc, band);
+    }
       
     return true;
   }
@@ -655,10 +748,7 @@ private:
     
     // Find the LauchCellOp
     // TODO: Handle Multiple LauchCellOps
-    LauchCellOp lauchcell;
-    topFunc.walk([&](LauchCellOp op){
-      lauchcell = op;
-    });
+    LauchCellOp lauchcell = getFirstOpOfType<LauchCellOp>(topFunc.getBody());
     if(!lauchcell)
       return true;
 
