@@ -87,15 +87,12 @@ private:
 
     // Find the CellOp
     // TODO: Handle Multiple CellOps
-    CellOp cellOp;
-    topFunc.walk([&](CellOp op){
-      cellOp = op;
-    });
+    CellOp cellOp = getFirstOpOfType<CellOp>(topFunc.getBody());
 
     if(cellOp)
-      getLoopBands(cellOp, band);
+      getLoopBand(cellOp.getBody(), band);
     else
-      getLoopBands(topFunc, band);
+      getLoopBand(topFunc.getBody(), band);
     
     auto innerloop = band[band.size()-1];
     SmallVector<DmaOp, 4> dmaOps;

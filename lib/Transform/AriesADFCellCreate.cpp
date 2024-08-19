@@ -56,10 +56,7 @@ private:
 
     // Find the CellOp
     // TODO: Handle Multiple CellOps
-    CellOp cellOp;
-    topFunc.walk([&](CellOp op){
-      cellOp = op;
-    });
+    CellOp cellOp = getFirstOpOfType<CellOp>(topFunc.getBody());
     if(!cellOp)
       return true;
 

@@ -135,10 +135,7 @@ private:
     
     // Find the LauchCellOp
     // TODO: Handle Multiple LauchCellOps
-    LauchCellOp lauchcell;
-    topFunc.walk([&](LauchCellOp op){
-      lauchcell = op;
-    });
+    LauchCellOp lauchcell = getFirstOpOfType<LauchCellOp>(topFunc.getBody());
     if(!lauchcell)
       return true;
     

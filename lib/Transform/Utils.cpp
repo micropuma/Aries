@@ -35,33 +35,11 @@ LogicalResult loopUnrollFull(AffineForOp forOp,
 }
 
 
-// Get all the affine.for loops within the FuncOp and return them in the band
-void getLoopBands(FuncOp f, SmallVector<AffineForOp, 6> &band, bool reverse) {
-  for (AffineForOp forOp : f.getOps<AffineForOp>()) {
-    getPerfectlyNestedLoops(band, forOp);
-  }
-  if (reverse)
-    std::reverse(band.begin(), band.end());
-}
-
-// Get all the affine.for loops within the AffineParallelOp 
-// and return them in the band
-void getLoopBands(AffineParallelOp op, 
-                  SmallVector<AffineForOp, 6> &band, bool reverse) {
-  for (AffineForOp forOp : op.getOps<AffineForOp>()) {
-    getPerfectlyNestedLoops(band, forOp);
-  }
-  if (reverse)
-    std::reverse(band.begin(), band.end());
-}
-
-// Get all the affine.for loops within the adf::CellOp 
-// and return them in the band
-void getLoopBands(adf::CellOp op, 
-                  SmallVector<AffineForOp, 6> &band, bool reverse) {
-  for (AffineForOp forOp : op.getOps<AffineForOp>()) {
-    getPerfectlyNestedLoops(band, forOp);
-  }
+// Get all the affine.for loops within the forOp and return them in the band
+void getLoopBand(Region &region, SmallVector<AffineForOp, 6> &band, 
+                 bool reverse) {
+  auto forOp = getFirstOpOfType<AffineForOp>(region);
+  getPerfectlyNestedLoops(band, forOp);
   if (reverse)
     std::reverse(band.begin(), band.end());
 }

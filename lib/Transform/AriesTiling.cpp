@@ -42,7 +42,8 @@ private:
     for (auto func : mod.getOps<FuncOp>()) {
       func->setAttr("top_func", builder.getUnitAttr());
       SmallVector<AffineForOp, 6> band;
-      getLoopBands(func, band);
+      getLoopBand(func.getBody(), band);
+      
 
       auto bandSize = band.size();
       // Set the default tiling fatctor

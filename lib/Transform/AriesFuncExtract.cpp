@@ -36,15 +36,13 @@ private:
 
     // Find the affineParallelOp
     // TODO: Handle Multiple affineParallelOps
-    AffineParallelOp parallelOp;
-    topFunc.walk([&](AffineParallelOp op){
-      parallelOp = op;
-    });
+    AffineParallelOp parallelOp 
+                     = getFirstOpOfType<AffineParallelOp>(topFunc.getBody());
     if(!parallelOp)
       return true;
 
     SmallVector<AffineForOp, 6> band;
-    getLoopBands(parallelOp, band);
+    getLoopBand(parallelOp.getRegion(), band);
     
     // There should be at least one point loop
     unsigned width = band.size();
