@@ -20,20 +20,23 @@ LogicalResult loopUnrollFull(AffineForOp forOp,
 
 template <typename OpType>
 OpType getFirstOpOfType(Region &region) {
-  for (Operation &op : region.getOps()) {
-    if (auto specificOp = dyn_cast<OpType>(&op)) {
+  for (Operation &op : region.getOps()){
+    if (auto specificOp = dyn_cast<OpType>(&op))
       return specificOp;
-    }
-    for (Region &nestedRegion : op.getRegions()) {
-      if (auto nestedSpecificOp = getFirstOpOfType<OpType>(nestedRegion)) {
+    for (Region &nestedRegion : op.getRegions())
+      if (auto nestedSpecificOp = getFirstOpOfType<OpType>(nestedRegion))
         return nestedSpecificOp;
-      }
-    }
   }
   return nullptr;
 }
 
-// Get all the affine.for loops within the FuncOp and return them in the band
+unsigned getLoopNum(Operation *op, AffineForOp &loop);
+
+// Extend getPerfectlyNestedLoops func to imperfect nested loops
+void getNestedLoops(SmallVectorImpl<AffineForOp> &nestedLoops, 
+                    AffineForOp root);
+
+// Get all the affine.for loops within a region and return them in the band
 void getNestedLoopBand(Region &region, SmallVector<AffineForOp, 6> &band, 
                        bool reverse = false);
 

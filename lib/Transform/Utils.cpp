@@ -34,12 +34,37 @@ LogicalResult loopUnrollFull(AffineForOp forOp,
   return failure();
 }
 
+unsigned getLoopNum(Operation *op, AffineForOp &loop) {
+  unsigned loopNum = 0;
+  for (auto &region : op->getRegions())
+    for (auto &block : region)
+      for (auto &op : block)
+        if (auto forOp = dyn_cast<AffineForOp>(op)){
+          loop = forOp;
+          loopNum++;
+        }
+  return loopNum;
+}
 
-// Get all the affine.for loops within the forOp and return them in the band
+// Extend getPerfectlyNestedLoops func to imperfect nested loops
+void getNestedLoops(
+    SmallVectorImpl<AffineForOp> &nestedLoops, AffineForOp root) {
+  SmallVector<AffineForOp> loops;
+  for (unsigned i = 0; i < std::numeric_limits<unsigned>::max(); ++i) {
+    nestedLoops.push_back(root);
+    AffineForOp loop;
+    auto loopNum = getLoopNum(root, loop);
+    if(loopNum != 1)
+      return;
+    root = loop;
+  }
+}
+
+// Get all the affine.for loops within a region and return them in the band
 void getNestedLoopBand(Region &region, SmallVector<AffineForOp, 6> &band, 
                        bool reverse) {
   auto forOp = getFirstOpOfType<AffineForOp>(region);
-  getPerfectlyNestedLoops(band, forOp);
+  getNestedLoops(band, forOp);
   if (reverse)
     std::reverse(band.begin(), band.end());
 }
