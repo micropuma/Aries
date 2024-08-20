@@ -286,8 +286,7 @@ private:
       builder.setInsertionPoint(outerloop);
     else
       builder.setInsertionPointAfter(outerloop);
-    for (auto loopIndex : orderedIndices){
-      auto loop = band[loopIndex];
+    for (auto loop : band){
       auto newIOForOp 
            = builder.create<AffineForOp>(loc,
                                          loop.getLowerBoundOperands(),
@@ -378,8 +377,11 @@ private:
       builder.create<DmaOp>(loc,allocOp, localOffsets, localSizes, localStrides,
                                 dst,     offsets,      sizes,      strides);
       builder.setInsertionPoint(newInnerIOYiled);
-      builder.create<IOPopOp>(loc, src, allocOp, 
-                              IOOffsets, localSizes, localStrides);
+      auto popOp = builder.create<IOPopOp>(loc, src, allocOp, 
+                                           IOOffsets, localSizes, localStrides);
+      // check if there is output buffer reuse and set an Attr
+      if (loopIndices.size()!=band.size())
+        popOp->setAttr("reduction", builder.getUnitAttr());
     }
 
     // Update the loop variable used in AffineApply in the newInnerDMALoop
@@ -396,8 +398,7 @@ private:
     // Update the loop variable used in AffineApply in the newInnerIOLoop
     numVi = newIOLoops.size();
     for (unsigned i = 0; i < numVi; ++i) {
-      auto oldloopIndex = orderedIndices[i];
-      auto oldvi = band[oldloopIndex].getInductionVar();
+      auto oldvi = band[i].getInductionVar();
       auto newvi = newIOLoops[i].getInductionVar();
       oldvi.replaceUsesWithIf(newvi,[&](OpOperand &use){
           return newInnerIOLoop->isProperAncestor(use.getOwner());
@@ -497,7 +498,17 @@ private:
       iopushOp.erase();
     }else{
       auto result = builder.create<IOReadOp>(loc, type.getElementType(), src);
-      builder.create<AffineStoreOp>(loc, result, dst, newApplyopIOs);
+      if(iopopOp->hasAttr("reduction")){
+        auto loadOp = builder.create<AffineLoadOp>(loc, dst, newApplyopIOs);
+        Value addOp;
+        if (type.getElementType().isa<FloatType>())
+          addOp = builder.create<arith::AddFOp>(loc, loadOp, result);
+        else
+          addOp = builder.create<arith::AddIOp>(loc, loadOp, result);
+        builder.create<AffineStoreOp>(loc, addOp, dst, newApplyopIOs);
+      }else{
+        builder.create<AffineStoreOp>(loc, result, dst, newApplyopIOs);
+      }
       iopopOp.erase();
     }
     return WalkResult::advance();
@@ -651,7 +662,8 @@ private:
                                          loop.getLowerBoundOperands(),
                                          loop.getLowerBoundMap(),
                                          loop.getUpperBoundOperands(),
-                                         loop.getUpperBoundMap());
+                                         loop.getUpperBoundMap(),
+                                         loop.getStepAsInt());
       newForOps.push_back(newForOp);
       builder.setInsertionPointToStart(newForOp.getBody());
     }
@@ -715,8 +727,35 @@ private:
     SmallVector<AffineForOp, 6> tileBand;
     getNestedLoopBand(plFunc.getRegion(),tileBand);
     auto outerTileBand = tileBand[0];
-    for (auto forOp :
-              llvm::make_early_inc_range(plForOp.getOps<AffineForOp>())) {
+    // Tranverse the forOps and group then by the attribute 
+    DenseMap<StringRef, SmallVector<unsigned, 4>> groups;
+    SmallVector<AffineForOp, 4> forOps;
+    unsigned index = 0;
+    plForOp.walk([&](AffineForOp forOp){
+      if(auto Attr = forOp->getAttrOfType<IntegerAttr>("load")){
+        std::string str = "load" + std::to_string(Attr.getInt());
+        StringRef strRef(str);
+        groups[strRef].push_back(index++);
+        forOps.push_back(forOp);
+      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("store")){
+        std::string str = "store" + std::to_string(Attr.getInt());
+        StringRef strRef(str);
+        groups[strRef].push_back(index++);
+        forOps.push_back(forOp);
+      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("send")){
+        std::string str = "send" + std::to_string(Attr.getInt());
+        StringRef strRef(str);
+        groups[strRef].push_back(index++);
+        forOps.push_back(forOp);
+      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("receive")){
+        std::string str = "receive" + std::to_string(Attr.getInt());
+        StringRef strRef(str);
+        groups[strRef].push_back(index++);
+        forOps.push_back(forOp);
+      }
+    });
+    // Move the forOps with the same attribute to the same tileBand
+    for (const auto &group : groups) {
       SmallVector<AffineForOp, 4> newForOps;
       builder.setInsertionPoint(outerTileBand);
       for (auto loop: tileBand){
@@ -725,34 +764,37 @@ private:
                                            loop.getLowerBoundOperands(),
                                            loop.getLowerBoundMap(),
                                            loop.getUpperBoundOperands(),
-                                           loop.getUpperBoundMap());
+                                           loop.getUpperBoundMap(),
+                                           loop.getStepAsInt());
         newForOps.push_back(newForOp);
         builder.setInsertionPointToStart(newForOp.getBody());
       }
-      //Move the original attr to new outerloop
       auto outerNewloop = newForOps[0];
-      Attribute Attr;
-      if(forOp->hasAttr("load")){
-        Attr = forOp->getAttr("load");
-        outerNewloop->setAttr("load", Attr);
-        forOp->removeAttr("load");
-      }else if(forOp->hasAttr("store")){
-        Attr = forOp->getAttr("store");
-        outerNewloop->setAttr("store", Attr);
-        forOp->removeAttr("store");
-      }else if(forOp->hasAttr("send")){
-        Attr = forOp->getAttr("send");
-        outerNewloop->setAttr("send", Attr);
-        forOp->removeAttr("send");
-      }else if(forOp->hasAttr("receive")){
-        Attr = forOp->getAttr("receive");
-        outerNewloop->setAttr("receive", Attr);
-        forOp->removeAttr("receive");
-      }
-      // Move the forOp to the new loop nests
       auto innerNewLoop = newForOps[newForOps.size()-1];
       auto innerNewYiled = innerNewLoop.getBody()->getTerminator();
-      forOp->moveBefore(innerNewYiled);
+      unsigned cnt = 0;
+      for (unsigned idx : group.second) {
+        // Move the forOp to the new loop nests and set new Attrs
+        auto forOp = forOps[idx];
+        forOp->moveBefore(innerNewYiled);
+        auto indexType = builder.getIndexType();
+        auto newAttr = builder.getIntegerAttr(indexType, cnt++);
+        if(auto Attr = forOp->getAttr("load")){
+          outerNewloop->setAttr("load", Attr);
+          forOp->removeAttr("load");
+        }else if(auto Attr = forOp->getAttr("store")){
+          outerNewloop->setAttr("store", Attr);
+          forOp->removeAttr("store");
+        }else if(auto Attr = forOp->getAttr("send")){
+          outerNewloop->setAttr("send", Attr);
+          forOp->removeAttr("send");
+          forOp->setAttr("module", newAttr);
+        }else if(auto Attr = forOp->getAttr("receive")){
+          outerNewloop->setAttr("receive", Attr);
+          forOp->removeAttr("receive");
+          forOp->setAttr("module", newAttr);
+        }
+      }
       // Update the loop variables
       auto numVi = newForOps.size();
       for (unsigned i = 0; i < numVi; ++i) {
@@ -764,6 +806,8 @@ private:
       }
     }
     outerTileBand.erase();
+
+
   }
 
   // Allocate L2 memory & add data movement
