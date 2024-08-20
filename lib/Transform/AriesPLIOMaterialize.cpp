@@ -43,26 +43,15 @@ private:
     });
   }
 
-  // Detect liveinVal to construct dma func
-  void ArguDetect(LauchCellOp lauchcell, SmallVectorImpl<Value> &inputs){
-    //Find all the liveness within LauchCellOp
-    auto liveness = Liveness(lauchcell);
-    //Check each liveinVal in the block
-    for (auto liveinVal: liveness.getLiveIn(&lauchcell.getBody().front())){
-      //Check if the liveinVal is defined in the AffineParallelOp 
-      if (!lauchcell->isProperAncestor(
-                            liveinVal.getParentBlock()->getParentOp())){
-        inputs.push_back(liveinVal);
-      }
-    }
-  }
-
   // Create PL func.func and pl.launch. Create Callop inside pl.launch
   void PLFuncCreation(OpBuilder builder, FuncOp topFunc, FuncOp& plFunc,
                       LauchCellOp lauchcell){
     auto loc = builder.getUnknownLoc();
     SmallVector<Value> inputs;
-    ArguDetect(lauchcell, inputs);
+    auto liveness = Liveness(lauchcell);
+    for (auto livein: liveness.getLiveIn(&lauchcell.getBody().front()))
+      if (!lauchcell->isProperAncestor(livein.getParentBlock()->getParentOp()))
+        inputs.push_back(livein);
 
     // Define the dma function with the detected inputs as arguments
     builder.setInsertionPoint(topFunc);
