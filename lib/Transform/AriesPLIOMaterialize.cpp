@@ -59,8 +59,11 @@ private:
 
   // Create PL func.func and pl.launch. Create Callop inside pl.launch
   void PLFuncCreation(OpBuilder builder, FuncOp topFunc, FuncOp& plFunc,
-                      LauchCellOp lauchcell, SmallVectorImpl<Value>& inputs){
+                      LauchCellOp lauchcell){
     auto loc = builder.getUnknownLoc();
+    SmallVector<Value> inputs;
+    ArguDetect(lauchcell, inputs);
+
     // Define the dma function with the detected inputs as arguments
     builder.setInsertionPoint(topFunc);
     auto funcName = "dma_pl";
@@ -595,10 +598,6 @@ private:
     return WalkResult::advance();
   }
 
-  void CreateStream(){
-
-  }
-
   void L2BufferProcess(OpBuilder builder, FuncOp plFunc, AffineStoreOp storeOp,
                        AffineLoadOp loadOp, SmallVector<AffineForOp, 6> band, 
                        bool load){
@@ -665,6 +664,7 @@ private:
       resolveOffset(index,operands,applyops);
     }
     // Clone and move the used affine apply ops inside newForOps
+    auto outerNewLoop = newForOps[0];
     auto innerNewLoop = newForOps[newForOps.size()-1];
     auto innerNewYiled = innerNewLoop.getBody()->getTerminator();
     SmallVector<AffineApplyOp, 4> newApplyops;
@@ -681,10 +681,14 @@ private:
       auto newLoad = builder.create<AffineLoadOp>(loc, allocOp, zeroValues);
       builder.create<AffineStoreOp>(loc, newLoad, memref, indices);
       storeOp.erase();
+      auto Attr = outerLoop->getAttr("load");
+      outerNewLoop->setAttr("send", Attr);
     }else{
       auto newLoad = builder.create<AffineLoadOp>(loc, memref, indices);
       builder.create<AffineStoreOp>(loc, newLoad, allocOp, zeroValues);
       loadOp.erase();
+      auto Attr = outerLoop->getAttr("store");
+      outerNewLoop->setAttr("receive", Attr);
     }
     // Update the loop variables
     auto numVi = newForOps.size();
@@ -705,171 +709,61 @@ private:
     }
   }
 
-  void L2BufferProcess1(OpBuilder builder, FuncOp plFunc, 
-                       SmallVector<AffineForOp, 6> band){
+  // 
+  void PLFuncSplit(OpBuilder builder, FuncOp plFunc, AffineForOp plForOp){
     auto loc = builder.getUnknownLoc();
-    auto outerLoop = band[0];
-    auto innerLoop = band[band.size()-1];
-    SmallVector<OpFoldResult> sizes;
-    sizes.push_back(builder.getIndexAttr(1));
-    auto streamAttr = builder.getStringAttr("stream");
-    if(outerLoop->hasAttr("load")){
-      for (auto storeOp: 
-           llvm::make_early_inc_range(innerLoop.getOps<AffineStoreOp>())){
-        auto memref = storeOp.getMemRef();
-        auto type = dyn_cast<MemRefType>(memref.getType());
-        if (type.getMemorySpaceAsInt() != (int)MemorySpace::L2)
-          return;
-        // Create affine store to memref with 1 element
-        builder.setInsertionPointToStart(&plFunc.getBody().front());
-        auto elementType = type.getElementType();
-        auto allocOp 
-             = builder.create<AllocOp>(loc, sizes, elementType, streamAttr);
-        auto indexType = builder.getIndexType();
-        auto zeroAttr = builder.getIntegerAttr(indexType, 0);
-        auto zeroValue = builder.create<arith::ConstantOp>(loc, zeroAttr);
-        SmallVector<Value> zeroValues(1, zeroValue);
-        builder.setInsertionPoint(storeOp);
-        auto val = storeOp.getValueToStore();
-        builder.create<AffineStoreOp>(loc, val, allocOp, zeroValues);
-        
-        // Create newForOps for reading data from single-element memref 
-        // and store to L2 buffer. This is to represent FIFO in PL.
-        SmallVector<AffineForOp, 4> newForOps;
-        builder.setInsertionPointAfter(outerLoop);
-        for (auto loop: band){
-          auto newForOp 
-               = builder.create<AffineForOp>(loc,
-                                             loop.getLowerBoundOperands(),
-                                             loop.getLowerBoundMap(),
-                                             loop.getUpperBoundOperands(),
-                                             loop.getUpperBoundMap());
-          newForOps.push_back(newForOp);
-          builder.setInsertionPointToStart(newForOp.getBody());
-        }
-        // Get the affine.apply ops used in affine.store op
-        auto rank = type.getRank();
-        auto indices = storeOp.getIndices();
-        SmallVector<AffineApplyOp, 4> applyops;
-        for (unsigned i = 0; i < rank; i++){
-          SmallVector<Value, 4> operands;
-          auto index = indices[i];
-          resolveOffset(index,operands,applyops);
-        }
-        // Clone and move the used affine apply ops inside newForOps
-        auto innerNewLoop = newForOps[newForOps.size()-1];
-        auto innerNewYiled = innerNewLoop.getBody()->getTerminator();
-        SmallVector<AffineApplyOp, 4> newApplyops;
-        std::reverse(applyops.begin(), applyops.end());
-        builder.setInsertionPoint(innerNewYiled);
-        for(auto applyop : applyops){
-          auto *clonedOp = applyop->clone();
-          builder.insert(clonedOp);
-          auto newApplyOp = dyn_cast<AffineApplyOp>(clonedOp);
-          newApplyops.push_back(newApplyOp);
-        }
-        // Load data from single-element memref and store to L2 buffer
-        auto newLoad = builder.create<AffineLoadOp>(loc, allocOp, zeroValues);
-        builder.create<AffineStoreOp>(loc, newLoad, memref, indices);
-        storeOp.erase();
-        // Update the loop variables
-        auto numVi = newForOps.size();
-        for (unsigned i = 0; i < numVi; ++i) {
-          auto oldvi = band[i].getInductionVar();
-          auto newvi = newForOps[i].getInductionVar();
-          oldvi.replaceUsesWithIf(newvi,[&](OpOperand &use){
-              return innerNewLoop->isProperAncestor(use.getOwner());
-          });
-        }
-        // Update the AffineApplyOp used in the innerNewLoop
-        for (unsigned i = 0; i < applyops.size(); i++) {
-          auto oldApplyOp = applyops[i].getResult();
-          auto newApplyOp = newApplyops[i].getResult();
-          oldApplyOp.replaceUsesWithIf(newApplyOp,[&](OpOperand &use){
-              return innerNewLoop->isProperAncestor(use.getOwner());
-          });
-        }
+    SmallVector<AffineForOp, 6> tileBand;
+    getNestedLoopBand(plFunc.getRegion(),tileBand);
+    auto outerTileBand = tileBand[0];
+    for (auto forOp :
+              llvm::make_early_inc_range(plForOp.getOps<AffineForOp>())) {
+      SmallVector<AffineForOp, 4> newForOps;
+      builder.setInsertionPoint(outerTileBand);
+      for (auto loop: tileBand){
+        auto newForOp 
+             = builder.create<AffineForOp>(loc,
+                                           loop.getLowerBoundOperands(),
+                                           loop.getLowerBoundMap(),
+                                           loop.getUpperBoundOperands(),
+                                           loop.getUpperBoundMap());
+        newForOps.push_back(newForOp);
+        builder.setInsertionPointToStart(newForOp.getBody());
       }
-    }else if(outerLoop->hasAttr("store")){
-      for (auto loadOp: innerLoop.getOps<AffineLoadOp>()){
-        auto memref = loadOp.getMemRef();
-        auto type = dyn_cast<MemRefType>(memref.getType());
-        if (type.getMemorySpaceAsInt() != (int)MemorySpace::L2)
-          return;
-        // Create affine store to memref with 1 element
-        builder.setInsertionPointToStart(&plFunc.getBody().front());
-        auto elementType = type.getElementType();
-        auto allocOp 
-             = builder.create<AllocOp>(loc, sizes, elementType, streamAttr);
-        auto indexType = builder.getIndexType();
-        auto zeroAttr = builder.getIntegerAttr(indexType, 0);
-        auto zeroValue = builder.create<arith::ConstantOp>(loc, zeroAttr);
-        SmallVector<Value> zeroValues(1, zeroValue);
-        builder.setInsertionPoint(loadOp);
-        auto val = loadOp.getResult();
-        auto newLoadOp = builder.create<AffineLoadOp>(loc, allocOp, zeroValues);
-        val.replaceUsesWithIf(newLoadOp,[&](OpOperand &use){
-            return innerLoop->isProperAncestor(use.getOwner());
+      //Move the original attr to new outerloop
+      auto outerNewloop = newForOps[0];
+      Attribute Attr;
+      if(forOp->hasAttr("load")){
+        Attr = forOp->getAttr("load");
+        outerNewloop->setAttr("load", Attr);
+        forOp->removeAttr("load");
+      }else if(forOp->hasAttr("store")){
+        Attr = forOp->getAttr("store");
+        outerNewloop->setAttr("store", Attr);
+        forOp->removeAttr("store");
+      }else if(forOp->hasAttr("send")){
+        Attr = forOp->getAttr("send");
+        outerNewloop->setAttr("send", Attr);
+        forOp->removeAttr("send");
+      }else if(forOp->hasAttr("receive")){
+        Attr = forOp->getAttr("receive");
+        outerNewloop->setAttr("receive", Attr);
+        forOp->removeAttr("receive");
+      }
+      // Move the forOp to the new loop nests
+      auto innerNewLoop = newForOps[newForOps.size()-1];
+      auto innerNewYiled = innerNewLoop.getBody()->getTerminator();
+      forOp->moveBefore(innerNewYiled);
+      // Update the loop variables
+      auto numVi = newForOps.size();
+      for (unsigned i = 0; i < numVi; ++i) {
+        auto oldvi = tileBand[i].getInductionVar();
+        auto newvi = newForOps[i].getInductionVar();
+        oldvi.replaceUsesWithIf(newvi,[&](OpOperand &use){
+            return innerNewLoop->isProperAncestor(use.getOwner());
         });
-      
-        // Create newForOps for reading data from single-element memref 
-        // and store to L2 buffer. This is to represent FIFO in PL.
-        SmallVector<AffineForOp, 4> newForOps;
-        builder.setInsertionPoint(outerLoop);
-        for (auto loop: band){
-          auto newForOp 
-               = builder.create<AffineForOp>(loc,
-                                             loop.getLowerBoundOperands(),
-                                             loop.getLowerBoundMap(),
-                                             loop.getUpperBoundOperands(),
-                                             loop.getUpperBoundMap());
-          newForOps.push_back(newForOp);
-          builder.setInsertionPointToStart(newForOp.getBody());
-        }
-        // Get the affine.apply ops used in affine.store op
-        auto rank = type.getRank();
-        auto indices = loadOp.getIndices();
-        SmallVector<AffineApplyOp, 4> applyops;
-        for (unsigned i = 0; i < rank; i++){
-          SmallVector<Value, 4> operands;
-          auto index = indices[i];
-          resolveOffset(index,operands,applyops);
-        }
-        // Clone and move the used affine apply ops inside newForOps
-        auto innerNewLoop = newForOps[newForOps.size()-1];
-        auto innerNewYiled = innerNewLoop.getBody()->getTerminator();
-        SmallVector<AffineApplyOp, 4> newApplyops;
-        std::reverse(applyops.begin(), applyops.end());
-        builder.setInsertionPoint(innerNewYiled);
-        for(auto applyop : applyops){
-          auto *clonedOp = applyop->clone();
-          builder.insert(clonedOp);
-          auto newApplyOp = dyn_cast<AffineApplyOp>(clonedOp);
-          newApplyops.push_back(newApplyOp);
-        }
-        // Load data from L2 buffer and store to single-element memref
-        auto newLoad = builder.create<AffineLoadOp>(loc, memref, indices);
-        builder.create<AffineStoreOp>(loc, newLoad, allocOp, zeroValues);
-        loadOp.erase();
-        // Update the loop variables
-        auto numVi = newForOps.size();
-        for (unsigned i = 0; i < numVi; ++i) {
-          auto oldvi = band[i].getInductionVar();
-          auto newvi = newForOps[i].getInductionVar();
-          oldvi.replaceUsesWithIf(newvi,[&](OpOperand &use){
-              return innerNewLoop->isProperAncestor(use.getOwner());
-          });
-        }
-        // Update the AffineApplyOp used in the innerNewLoop
-        for (unsigned i = 0; i < applyops.size(); i++) {
-          auto oldApplyOp = applyops[i].getResult();
-          auto newApplyOp = newApplyops[i].getResult();
-          oldApplyOp.replaceUsesWithIf(newApplyOp,[&](OpOperand &use){
-              return innerNewLoop->isProperAncestor(use.getOwner());
-          });
-        }
       }
     }
+    outerTileBand.erase();
   }
 
   // Allocate L2 memory & add data movement
@@ -946,6 +840,10 @@ private:
              llvm::make_early_inc_range(innerLoop.getOps<AffineLoadOp>()))
           L2BufferProcess(builder, plFunc, emptyStoreOp, loadOp, band, false);
     }
+
+    // Post processes, move each loop marked by "load,store,receive,send" to the
+    // outermost temporal tileBand
+    PLFuncSplit(builder, plFunc, plForOp);
       
     return true;
   }
@@ -976,12 +874,10 @@ private:
     // Materialize Push/Pop of PLIO
     auto boolPLIO = topFunc->getAttr("plio");
     SmallVector<CallOp> calls;
-    SmallVector<Value> inputs;
     FuncOp plFunc;
     if(dyn_cast<BoolAttr>(boolPLIO).getValue()){
       Preprocess(lauchcell, calls);
-      ArguDetect(lauchcell, inputs);
-      PLFuncCreation(builder, topFunc, plFunc, lauchcell, inputs);
+      PLFuncCreation(builder, topFunc, plFunc, lauchcell);
       if(!PLDataMovement(builder, plFunc))
         return false;
       UpdateCellLaunch(builder, lauchcell, calls);
