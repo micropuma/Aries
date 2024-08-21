@@ -17,8 +17,8 @@ def PortType : ADF_Type<"Port", "port"> {
 
 def PLIOType : ADF_Type<"PLIO", "plio"> {
   let summary = "plio type";
-  let parameters = (ins PortDirParam:$dir);
-  let assemblyFormat = "`<` $dir `>`";
+  let parameters = (ins PortDirParam:$dir, "unsigned":$width);
+  let assemblyFormat = "`<` $dir `,` $width `>`";
 }
 
 def GMIOType : ADF_Type<"GMIO", "gmio"> {

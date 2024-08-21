@@ -40,13 +40,12 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
 
       GraphIOName portName;
       Type portIn,portOut;
-      PortWidth portwid;
       PortBurst portburst;
       unsigned flag_config=0;
       if (portType=="PLIO" || portType=="plio"){
         portName = GraphIOName::PLIO;
-        portIn = PLIOType::get(rewriter.getContext(), PortDir::In);
-        portOut = PLIOType::get(rewriter.getContext(), PortDir::Out);
+        portIn = PLIOType::get(rewriter.getContext(), PortDir::In, portWidth);
+        portOut = PLIOType::get(rewriter.getContext(), PortDir::Out, portWidth);
         flag_config=1;
       }else if(portType=="GMIO" || portType=="gmio"){
         portName = GraphIOName::GMIO;
@@ -59,23 +58,6 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         portOut = PortType::get(rewriter.getContext(), PortDir::Out);
       }else{
         return failure();
-      }
-      
-      switch(portWidth) {
-        case 0:
-          portwid = PortWidth::WidthNULL;
-          break;
-        case 32:
-          portwid = PortWidth::Width32;
-          break;
-        case 64:
-          portwid = PortWidth::Width64;
-          break;
-        case 128:
-          portwid = PortWidth::Width128;
-          break;
-        default:
-          portwid = PortWidth::Width128;
       }
 
       switch(portBurst) {
@@ -99,10 +81,10 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
       if(SrcSpace !=(int)MemorySpace::L1 && DstSpace == (int)MemorySpace::L1){
         rewriter.setInsertionPoint(op);
         auto port 
-             = rewriter.create<CreateGraphIOOp>(op->getLoc(),portIn,portName);
+             = rewriter.create<CreateGraphIOOp>(op->getLoc(), portIn, portName);
         rewriter.setInsertionPointAfter(port);
         if(flag_config==1)
-          rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
+          rewriter.create<ConfigPLIOOp>(port->getLoc(), port, pliofreq);
         else if(flag_config==2)
           rewriter.create<ConfigGMIOOp>(port->getLoc(), port, portburst,gmiobw);
         auto dst = port.getResult();
@@ -125,7 +107,7 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
              = rewriter.create<CreateGraphIOOp>(op->getLoc(),portOut,portName);
         rewriter.setInsertionPointAfter(port);
         if(flag_config==1)
-          rewriter.create<ConfigPLIOOp>(port->getLoc(), port, portwid,pliofreq);
+          rewriter.create<ConfigPLIOOp>(port->getLoc(), port, pliofreq);
         else if(flag_config==2)
           rewriter.create<ConfigGMIOOp>(port->getLoc(), port, portburst,gmiobw);
         SmallVector<Value> dst_offsets=op.getDstOffsets();

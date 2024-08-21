@@ -146,7 +146,7 @@ def CreateGraphIOOp : ADF_Op<"graph.io", []> {
     This operation creates either PLIO, GMIO or Port.
 
     ```mlir
-      %plio0 = adf.graph.io(PLIO) : !adf.plio<In> 
+      %plio0 = adf.graph.io(PLIO) : !adf.plio<In,128> 
       %gmio0 = adf.graph.io(GMIO) : !adf.gmio<In>
       %port0 = adf.graph.io(PORT) : !adf.port<In>
     ```
@@ -162,18 +162,18 @@ def CreateGraphIOOp : ADF_Op<"graph.io", []> {
 def ConfigPLIOOp : ADF_Op<"config.plio", []> {
   let summary = "Set PLIO width and frequency";
   let description = [{
-    This operation set the port width(32,64,128 bits) and frequency(MHz) of PLIO 
+    This operation sets port width and the frequency(MHz) of PLIO 
     in the ADF Graph.
 
     ```mlir
       %plio0 = adf.graph.io(PLIO) : !adf.plio<In>
-      adf.config.plio(%plio0,128,250)
+      adf.config.plio(%plio0, 250)
     ```
   }];
 
-  let arguments = (ins PLIOType:$plio, PortWidth:$width, I32Attr:$frequency);
+  let arguments = (ins PLIOType:$plio, I32Attr:$frequency);
   let assemblyFormat = [{ 
-    `(` $plio `,` $width `,` $frequency `)` attr-dict `:` type($plio)
+    `(` $plio `,` $frequency `)` attr-dict `:` type($plio)
   }];
   let hasCanonicalizer = 1;
 }
