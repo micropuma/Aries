@@ -395,7 +395,7 @@ def IOWriteOp: ADF_Op<"io.write", []> {
   }];
 }
 
-def IOReadOp: ADF_Op<"io.Read", []> {
+def IOReadOp: ADF_Op<"io.read", []> {
   let summary = "Read one date from GraphIO";
   let description = [{
     This operation is used in the PL to read data from a GraphIO which is 
@@ -409,7 +409,9 @@ def IOReadOp: ADF_Op<"io.Read", []> {
   }];
   let arguments = (ins PLIOType:$src);
   let results = (outs AnyType:$result);
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = [{
+    `(` $src  `)`  attr-dict `:` functional-type($src, results)
+  }];
 }
 
 
