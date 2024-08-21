@@ -56,10 +56,7 @@ private:
 
     // Find the CellOp
     // TODO: Handle Multiple CellOps
-    CellOp cellOp;
-    topFunc.walk([&](CellOp op){
-      cellOp = op;
-    });
+    CellOp cellOp = getFirstOpOfType<CellOp>(topFunc.getBody());
     if(!cellOp)
       return true;
 
@@ -141,6 +138,11 @@ private:
       if(!dyn_cast<LauchCellOp>(op)&&!dyn_cast<ReturnOp>(op))
         op.moveBefore(endLaunchCell);
     }
+
+    // Move CreateGraphIOOp before adf.cell.launch
+    topFunc.walk([&](CreateGraphIOOp op){
+      op->moveBefore(&entryBlock, entryBlock.begin());
+    });
 
     return true;
   }

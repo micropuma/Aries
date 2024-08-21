@@ -2,6 +2,9 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Analysis/Liveness.h"
+#include "mlir/Dialect/Affine/Utils.h"
+#include "mlir/Dialect/Affine/LoopUtils.h"
+#include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "llvm/Support/Debug.h"
 #include "aries/Transform/Passes.h"
 #include "aries/Transform/Utils.h"
@@ -16,7 +19,7 @@ using namespace mlir::affine;
 
 namespace {
 
-struct AriesIOMaterialize : public AriesIOMaterializeBase<AriesIOMaterialize> {
+struct AriesGMIOMaterialize : public AriesGMIOMaterializeBase<AriesGMIOMaterialize> {
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
@@ -27,14 +30,6 @@ public:
   }
 
 private:
-  // Serialize the IOPushOp for GMIO
-  void GraphIOProcess(FuncOp topFunc){
-    auto &entryBlock = topFunc.getBody().front();
-    topFunc.walk([&](CreateGraphIOOp op){
-      op->moveBefore(&entryBlock, entryBlock.begin());
-    });
-  }
-
   // Serialize the IOPushOp for GMIO
   void GMIOPushOpProcess(OpBuilder builder, FuncOp topFunc, 
                        EndLauchCellOp endlauchCell){
@@ -129,99 +124,6 @@ private:
       return WalkResult::advance();
     });
   }
-  
-  //Collect and remove the adf.cells and erase adf.io.wait
-  void Preprocess(LauchCellOp lauchcell, SmallVectorImpl<CallOp>& calls){
-    lauchcell.walk([&](Operation *op){
-      if(auto call = dyn_cast<CallOp>(op)){
-        if(call->hasAttr("adf.cell"))
-          calls.push_back(call);
-        call->remove();
-      }else if(dyn_cast<IOWaitOp>(op) || dyn_cast<WaitLauchCellOp>(op)){
-        op->erase();
-      }
-    });
-  }
-
-  void ArguDetect(LauchCellOp lauchcell, SmallVectorImpl<Value> &inputs){
-    //Find all the liveness within LauchCellOp
-    auto liveness = Liveness(lauchcell);
-    //Check each liveinVal in the block
-    for (auto liveinVal: liveness.getLiveIn(&lauchcell.getBody().front())){
-      //Check if the liveinVal is defined in the AffineParallelOp 
-      if (!lauchcell->isProperAncestor(
-                            liveinVal.getParentBlock()->getParentOp())){
-        inputs.push_back(liveinVal);
-      }
-    }
-  }
-
-  // Create PL func.func and pl.launch. Create Callop inside pl.launch
-  void PLFuncCreation(OpBuilder builder, FuncOp topFunc, 
-                      LauchCellOp lauchcell, SmallVectorImpl<Value>& inputs){
-    auto loc = builder.getUnknownLoc();
-    // Define the dma function with the detected inputs as arguments
-    builder.setInsertionPoint(topFunc);
-    auto funcName = "dma_pl";
-    auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
-    auto newfunc = builder.create<FuncOp>(
-                                  builder.getUnknownLoc(), funcName, funcType);
-    newfunc->setAttr("adf.pl",builder.getUnitAttr());
-    auto destBlock = newfunc.addEntryBlock();
-    builder.setInsertionPointToEnd(destBlock);
-    auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
-    
-    // Move the operations in the adf.cell.lauch before the returnOp
-    builder.setInsertionPointToEnd(destBlock);
-    auto &entryBlock = lauchcell.getBody().front();
-    for(auto &op: llvm::make_early_inc_range(entryBlock)){
-      if(!dyn_cast<EndLauchCellOp>(op))
-        op.moveBefore(returnOp);
-    }
-
-    // Create LauchPLOp and insert the CallOp
-    builder.setInsertionPointAfter(lauchcell);
-    auto launchPLOp = builder.create<LauchPLOp>(loc,funcName);
-    auto *cellLaunchPLBlock = builder.createBlock(&launchPLOp.getBody());
-    builder.setInsertionPointToEnd(cellLaunchPLBlock);
-    auto endLaunchPL = builder.create<WaitLauchPLOp>(loc);
-    builder.setInsertionPoint(endLaunchPL);
-    auto callop = builder.create<CallOp>(loc, newfunc, inputs);
-    callop->setAttr("adf.pl",builder.getUnitAttr());
-
-    // Update the references in the newfunc after move
-    for (unsigned i = 0, num_arg = destBlock->getNumArguments(); 
-         i < num_arg; ++i) {
-        auto sourceArg = inputs[i];
-        auto destArg = destBlock->getArgument(i);
-        sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
-            return newfunc->isProperAncestor(use.getOwner());
-        });
-    }
-  }
-
-  // Move the collected adf.cell to adf.cell.launch
-  void UpdateCellLaunch(OpBuilder builder, LauchCellOp lauchcell, 
-                        SmallVectorImpl<CallOp>& calls){
-    auto &entryBlock = lauchcell.getBody().front();
-    builder.setInsertionPointToStart(&entryBlock);
-    for(auto call: calls)
-      builder.insert(call);
-  }
-
-  void ADFPLCreate(OpBuilder builder, FuncOp topFunc, LauchCellOp lauchcell){  
-    SmallVector<CallOp> calls;
-    SmallVector<Value> inputs;
-    Preprocess(lauchcell, calls);
-    ArguDetect(lauchcell, inputs);
-    PLFuncCreation(builder, topFunc, lauchcell, inputs);
-    UpdateCellLaunch(builder, lauchcell, calls);
-  }
-
-  void ADFPLAlloc(OpBuilder builder, FuncOp topFunc){
-    
-
-  }
 
   bool IOMaterialize (ModuleOp mod, StringRef topFuncName) {
     auto builder = OpBuilder(mod);
@@ -233,26 +135,18 @@ private:
     
     // Find the LauchCellOp
     // TODO: Handle Multiple LauchCellOps
-    LauchCellOp lauchcell;
-    topFunc.walk([&](LauchCellOp op){
-      lauchcell = op;
-    });
+    LauchCellOp lauchcell = getFirstOpOfType<LauchCellOp>(topFunc.getBody());
     if(!lauchcell)
       return true;
     
     auto &entryBlock = lauchcell.getBody().front();
     auto endlaunchCell = dyn_cast<EndLauchCellOp>(entryBlock.getTerminator());
 
-    GraphIOProcess(topFunc);
-
     // Materialize Push/Pop of GMIO
     auto boolGMIO = topFunc->getAttr("gmio");
-    auto boolPLIO = topFunc->getAttr("plio");
     if(dyn_cast<BoolAttr>(boolGMIO).getValue()){
       GMIOPushOpProcess(builder, topFunc, endlaunchCell);
       GMIOPopOpProcess(builder, topFunc, endlaunchCell);
-    }else if(dyn_cast<BoolAttr>(boolPLIO).getValue()){
-      ADFPLCreate(builder, topFunc, lauchcell);
     }
 
     return true;
@@ -266,8 +160,8 @@ private:
 namespace mlir {
 namespace aries {
 
-std::unique_ptr<Pass> createAriesIOMaterializePass() {
-  return std::make_unique<AriesIOMaterialize>();
+std::unique_ptr<Pass> createAriesGMIOMaterializePass() {
+  return std::make_unique<AriesGMIOMaterialize>();
 }
 
 } // namespace aries

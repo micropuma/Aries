@@ -42,7 +42,8 @@ private:
     for (auto func : mod.getOps<FuncOp>()) {
       func->setAttr("top_func", builder.getUnitAttr());
       SmallVector<AffineForOp, 6> band;
-      getLoopBands(func, band);
+      getNestedLoopBand(func.getBody(), band);
+      
 
       auto bandSize = band.size();
       // Set the default tiling fatctor
@@ -80,6 +81,8 @@ private:
           if (failed(tilePerfectlyNested(
                                 blocktileBandL2, L3tileSizes, &L3tileBand)))
               return false;
+          L3tileBand[bandSize-1]->setAttr(
+                                "Array_Partition", builder.getUnitAttr());
         }
       }
       

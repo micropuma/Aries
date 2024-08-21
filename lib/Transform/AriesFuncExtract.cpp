@@ -36,15 +36,13 @@ private:
 
     // Find the affineParallelOp
     // TODO: Handle Multiple affineParallelOps
-    AffineParallelOp parallelOp;
-    topFunc.walk([&](AffineParallelOp op){
-      parallelOp = op;
-    });
+    AffineParallelOp parallelOp 
+                     = getFirstOpOfType<AffineParallelOp>(topFunc.getBody());
     if(!parallelOp)
       return true;
 
     SmallVector<AffineForOp, 6> band;
-    getLoopBands(parallelOp, band);
+    getNestedLoopBand(parallelOp.getRegion(), band);
     
     // There should be at least one point loop
     unsigned width = band.size();
@@ -53,40 +51,23 @@ private:
       topFunc->emitOpError("The number of point loop is less than 1\n");
       return false;
     }
-
-    // Find the outermost point loop
-    auto outerPointLoop = band[0];
-
-    // The Arguments in the specified block is not a live-in variable
-    SmallVector<Value, 6> inputs(parallelOp.getBody()->getArguments());
-
-    //Detect all the arguments used in the AffineParallelOp
-    ArguDetect(parallelOp, inputs);
     
-    CallFuncCreation(builder, topFunc, outerPointLoop, inputs);
+    CallFuncCreation(builder, topFunc, band, parallelOp);
       
     return true;
   }
 
-  void ArguDetect(AffineParallelOp parallelOp,SmallVectorImpl<Value> &inputs){
-    //Find all the liveness within parallelOp
-    auto liveness = Liveness(parallelOp);
-
-    //Check each liveinVal in the block
-    for (auto liveinVal: liveness.getLiveIn(parallelOp.getBody())){
-      //Check if the liveinVal is defined in the AffineParallelOp 
-      if (!parallelOp->isProperAncestor(
-                            liveinVal.getParentBlock()->getParentOp())){
-        inputs.push_back(liveinVal);
-      }
-    }
-
-  }
-
   void CallFuncCreation(OpBuilder builder, FuncOp topFunc, 
-                    AffineForOp outerPointLoop, SmallVectorImpl<Value>& inputs){
+                        SmallVector<AffineForOp, 6> band, 
+                        AffineParallelOp parallelOp){
+    // The Arguments in the specified block is not a live-in variable
+    SmallVector<Value, 6> inputs(parallelOp.getBody()->getArguments());
+    auto liveness = Liveness(parallelOp);
+    for (auto livein: liveness.getLiveIn(parallelOp.getBody()))
+      if (!parallelOp->isProperAncestor(livein.getParentBlock()->getParentOp()))
+        inputs.push_back(livein);
+
     builder.setInsertionPoint(topFunc);
-    
     // Define the KNL function with the detected inputs as arguments
     auto symbol = topFunc.getSymName();
     auto funcName = "kernel_" + symbol.str();
@@ -99,6 +80,7 @@ private:
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
     
     // Create the function CallOp
+    auto outerPointLoop = band[0];
     builder.setInsertionPoint(outerPointLoop);
     builder.create<CallOp>(outerPointLoop.getLoc(), newfunc, inputs);
 

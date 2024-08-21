@@ -34,34 +34,37 @@ LogicalResult loopUnrollFull(AffineForOp forOp,
   return failure();
 }
 
-
-// Get all the affine.for loops within the FuncOp and return them in the band
-void getLoopBands(FuncOp f, SmallVector<AffineForOp, 6> &band, bool reverse) {
-  for (AffineForOp forOp : f.getOps<AffineForOp>()) {
-    getPerfectlyNestedLoops(band, forOp);
-  }
-  if (reverse)
-    std::reverse(band.begin(), band.end());
+unsigned getLoopNum(Operation *op, AffineForOp &loop) {
+  unsigned loopNum = 0;
+  for (auto &region : op->getRegions())
+    for (auto &block : region)
+      for (auto &op : block)
+        if (auto forOp = dyn_cast<AffineForOp>(op)){
+          loop = forOp;
+          loopNum++;
+        }
+  return loopNum;
 }
 
-// Get all the affine.for loops within the AffineParallelOp 
-// and return them in the band
-void getLoopBands(AffineParallelOp op, 
-                  SmallVector<AffineForOp, 6> &band, bool reverse) {
-  for (AffineForOp forOp : op.getOps<AffineForOp>()) {
-    getPerfectlyNestedLoops(band, forOp);
+// Extend getPerfectlyNestedLoops func to imperfect nested loops
+void getNestedLoops(
+    SmallVectorImpl<AffineForOp> &nestedLoops, AffineForOp root) {
+  SmallVector<AffineForOp> loops;
+  for (unsigned i = 0; i < std::numeric_limits<unsigned>::max(); ++i) {
+    nestedLoops.push_back(root);
+    AffineForOp loop;
+    auto loopNum = getLoopNum(root, loop);
+    if(loopNum != 1)
+      return;
+    root = loop;
   }
-  if (reverse)
-    std::reverse(band.begin(), band.end());
 }
 
-// Get all the affine.for loops within the adf::CellOp 
-// and return them in the band
-void getLoopBands(adf::CellOp op, 
-                  SmallVector<AffineForOp, 6> &band, bool reverse) {
-  for (AffineForOp forOp : op.getOps<AffineForOp>()) {
-    getPerfectlyNestedLoops(band, forOp);
-  }
+// Get all the affine.for loops within a region and return them in the band
+void getNestedLoopBand(Region &region, SmallVector<AffineForOp, 6> &band, 
+                       bool reverse) {
+  auto forOp = getFirstOpOfType<AffineForOp>(region);
+  getNestedLoops(band, forOp);
   if (reverse)
     std::reverse(band.begin(), band.end());
 }

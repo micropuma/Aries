@@ -49,19 +49,16 @@ private:
     
     // Find the CellOp
     // TODO: Handle Multiple CellOps
-    CellOp cellOp;
-    topFunc.walk([&](CellOp op){
-      cellOp = op;
-    });
+    CellOp cellOp = getFirstOpOfType<CellOp>(topFunc.getBody());
     if(!cellOp)
       return true;
 
-    SmallVector<AffineForOp, 6> bands;
-    getLoopBands(cellOp, bands, true);
+    SmallVector<AffineForOp, 6> band;
+    getNestedLoopBand(cellOp.getBody(), band, true);
     
-    //Start from the innermost band loop
-    for (auto band: bands) {
-      if (band->getAttr("flow")){
+    //Start from the innermost loop
+    for (auto loop: band) {
+      if (loop->getAttr("flow")){
         auto annotateFn = [](unsigned i, Operation *op, OpBuilder builder) {
           if (auto dmaop = dyn_cast<DmaOp>(op)){
             if(auto attr = dmaop->getAttr("write")){
@@ -73,11 +70,11 @@ private:
             }
           }
         };
-        if (failed(loopUnrollFull(band,annotateFn)))
+        if (failed(loopUnrollFull(loop,annotateFn)))
           return false;
       }
       else {
-        if (failed(loopUnrollFull(band)))
+        if (failed(loopUnrollFull(loop)))
           return false;
       }
     }

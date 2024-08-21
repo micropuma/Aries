@@ -685,7 +685,7 @@ void ModuleEmitter::emitADFWaitLaunchCell(adf::WaitLauchCellOp op){
 void ModuleEmitter::emitADFPLIOConf(adf::ConfigPLIOOp op){
   auto plio = op.getPlio();
   auto IOType = getTypeName(plio);
-  auto width = (int)op.getWidth();
+  auto width = (int)plio.getType().getWidth();
   auto freq = op.getFrequency();
   auto VName = getName(plio);
   std::string portName ="";
