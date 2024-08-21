@@ -58,7 +58,7 @@ private:
     auto funcName = "dma_pl";
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
     plFunc = builder.create<FuncOp>(builder.getUnknownLoc(),funcName,funcType);
-    plFunc->setAttr("adf.pl",builder.getUnitAttr());
+    plFunc->setAttr("adf.pl",builder.getBoolAttr(true));
     auto destBlock = plFunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
@@ -803,21 +803,25 @@ private:
   void PLFuncSplit(OpBuilder builder, FuncOp plFunc){
     auto loc = builder.getUnknownLoc();
     for (auto forOp: llvm::make_early_inc_range(plFunc.getOps<AffineForOp>())){
-      SmallVector<AllocOp, 4> allocOpL2s;
+      SmallVector<Operation*, 4> Ops;
       SmallVector<Value> inputs(forOp.getOperands());
       auto liveness = Liveness(forOp);
       for (auto livein: liveness.getLiveIn(forOp.getBody()))
         if (!forOp->isProperAncestor(livein.getParentBlock()->getParentOp())){
           auto definedOp = livein.getDefiningOp();
-          auto type = dyn_cast<MemRefType>(livein.getType());
-          if(definedOp && type){
-            auto allocOp = dyn_cast<AllocOp>(definedOp);
-            if(auto memorySpace = type.getMemorySpace()){
-              auto intAttr = dyn_cast<IntegerAttr>(memorySpace);
-              if(intAttr && intAttr.getInt() == (int)MemorySpace::L2){
-                allocOpL2s.push_back(allocOp);
-                continue;
+          if(definedOp){
+            if(auto allocOp = dyn_cast<AllocOp>(definedOp)){
+              auto type = dyn_cast<MemRefType>(livein.getType());
+              if(auto memorySpace = type.getMemorySpace()){
+                auto intAttr = dyn_cast<IntegerAttr>(memorySpace);
+                if(intAttr && intAttr.getInt() == (int)MemorySpace::L2){
+                  Ops.push_back(definedOp);
+                  continue;
+                }
               }
+            }else if(auto constOp = dyn_cast<arith::ConstantOp>(definedOp)){
+              Ops.push_back(definedOp);
+              continue;
             }
           }
           inputs.push_back(livein);
@@ -848,10 +852,13 @@ private:
       builder.setInsertionPointToEnd(destBlock);
       auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
 
-      // Move L2 buffer definition inside each function
+      // Move L2 buffer/Constant definition inside each function
       builder.setInsertionPointToStart(destBlock);
-      for(auto allocOp : allocOpL2s){
-        allocOp->moveBefore(returnOp);
+      SmallVector<Operation*, 4> newOps;
+      for(auto *op : Ops){
+        auto newOp = op->clone();
+        builder.insert(newOp);
+        newOps.push_back(newOp);
       }
 
       // Move the entire block of outerPointLoop before the returnOp
@@ -864,11 +871,19 @@ private:
       builder.create<CallOp>(loc, newfunc, inputs);
 
       // Update the references in the newfunc after move
-      for (unsigned i = 0, num_arg = destBlock->getNumArguments(); 
-           i < num_arg; ++i) {
+      auto numArg = destBlock->getNumArguments();
+      for (unsigned i = 0; i < numArg; ++i) {
         auto sourceArg = inputs[i];
         auto destArg = destBlock->getArgument(i);
         sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
+            return newfunc->isProperAncestor(use.getOwner());
+        });
+      }
+      auto opSize = newOps.size();
+      for (unsigned i = 0; i < opSize; ++i) {
+        auto oldVal = Ops[i]->getResult(0);
+        auto newVal = newOps[i]->getResult(0);
+        oldVal.replaceUsesWithIf(newVal,[&](OpOperand &use){
             return newfunc->isProperAncestor(use.getOwner());
         });
       }

@@ -78,23 +78,3 @@ LogicalResult DmaOp::verify(){
     return emitOpError()<<"the rank of dst in DmaOp is less than 1";
   return success();
 }
-
-//===----------------------------------------------------------------------===//
-// IOReadOp
-//===----------------------------------------------------------------------===//
-
-ParseResult IOReadOp::parse(OpAsmParser &parser, OperationState &result) {
-  OpAsmParser::UnresolvedOperand input;
-  PLIOType type;
-  Type resultType;
-  result.addTypes(resultType);
-  return failure(
-      parser.parseOperand(input) ||
-      parser.parseColonType(resultType) ||
-      parser.resolveOperand(input, type, result.operands));
-}
-
-void IOReadOp::print(OpAsmPrinter &printer) {
-  printer << " " << getOperation()->getOperand(0);
-  printer << " : " << getOperation()->getResult(0).getType();
-}
