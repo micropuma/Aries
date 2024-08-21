@@ -710,8 +710,9 @@ private:
     }
   }
 
-  // 
-  void PLFuncSplit(OpBuilder builder, FuncOp plFunc, AffineForOp plForOp){
+  // Split the loops marked by "load,store,send,receive" and then merge them
+  // into the outmost tileBand by identify there attributes
+  void PLLoopSplit(OpBuilder builder, FuncOp plFunc, AffineForOp plForOp){
     auto loc = builder.getUnknownLoc();
     SmallVector<AffineForOp, 6> tileBand;
     getNestedLoopBand(plFunc.getRegion(),tileBand);
@@ -720,7 +721,7 @@ private:
     DenseMap<StringRef, SmallVector<unsigned, 4>> groups;
     SmallVector<AffineForOp, 4> forOps;
     unsigned index = 0;
-    plForOp.walk([&](AffineForOp forOp){
+    for (auto forOp: llvm::make_early_inc_range(plForOp.getOps<AffineForOp>())){
       if(auto Attr = forOp->getAttrOfType<IntegerAttr>("load")){
         std::string str = "load" + std::to_string(Attr.getInt());
         StringRef strRef(str);
@@ -742,7 +743,7 @@ private:
         groups[strRef].push_back(index++);
         forOps.push_back(forOp);
       }
-    });
+    }
     // Move the forOps with the same attribute to the same tileBand
     for (const auto &group : groups) {
       SmallVector<AffineForOp, 4> newForOps;
@@ -795,8 +796,83 @@ private:
       }
     }
     outerTileBand.erase();
+  }
 
+  // Tranverse all the forOps marked by "load,store,send,receive" and split
+  // them into new functions marked by adf.pl
+  void PLFuncSplit(OpBuilder builder, FuncOp plFunc){
+    auto loc = builder.getUnknownLoc();
+    for (auto forOp: llvm::make_early_inc_range(plFunc.getOps<AffineForOp>())){
+      SmallVector<AllocOp, 4> allocOpL2s;
+      SmallVector<Value> inputs(forOp.getOperands());
+      auto liveness = Liveness(forOp);
+      for (auto livein: liveness.getLiveIn(forOp.getBody()))
+        if (!forOp->isProperAncestor(livein.getParentBlock()->getParentOp())){
+          auto definedOp = livein.getDefiningOp();
+          auto type = dyn_cast<MemRefType>(livein.getType());
+          if(definedOp && type){
+            auto allocOp = dyn_cast<AllocOp>(definedOp);
+            if(auto memorySpace = type.getMemorySpace()){
+              auto intAttr = dyn_cast<IntegerAttr>(memorySpace);
+              if(intAttr && intAttr.getInt() == (int)MemorySpace::L2){
+                allocOpL2s.push_back(allocOp);
+                continue;
+              }
+            }
+          }
+          inputs.push_back(livein);
+        }
+      
+      builder.setInsertionPoint(plFunc);
+      std::string funcName;
+      if(auto Attr = forOp->getAttrOfType<IntegerAttr>("load")){
+        funcName = "load" + std::to_string(Attr.getInt());
+        forOp->removeAttr("load");
+      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("store")){
+        funcName = "store" + std::to_string(Attr.getInt());
+        forOp->removeAttr("store");
+      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("send")){
+        funcName = "send" + std::to_string(Attr.getInt());
+        forOp->removeAttr("send");
+      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("receive")){
+        funcName = "receive" + std::to_string(Attr.getInt());
+        forOp->removeAttr("receive");
+      }else{
+       continue; 
+      }
+      auto funcType = builder.getFunctionType(ValueRange(inputs),TypeRange({}));
+      auto newfunc = builder.create<FuncOp>(
+                                  builder.getUnknownLoc(), funcName, funcType);
+      newfunc->setAttr("adf.pl",builder.getUnitAttr());
+      auto destBlock = newfunc.addEntryBlock();
+      builder.setInsertionPointToEnd(destBlock);
+      auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
 
+      // Move L2 buffer definition inside each function
+      builder.setInsertionPointToStart(destBlock);
+      for(auto allocOp : allocOpL2s){
+        allocOp->moveBefore(returnOp);
+      }
+
+      // Move the entire block of outerPointLoop before the returnOp
+      builder.setInsertionPointToEnd(destBlock);
+      forOp->moveBefore(returnOp);
+
+      // Create the function CallOp in plFunc
+      auto topReturnOp = plFunc.getBody().front().getTerminator();
+      builder.setInsertionPoint(topReturnOp);
+      builder.create<CallOp>(loc, newfunc, inputs);
+
+      // Update the references in the newfunc after move
+      for (unsigned i = 0, num_arg = destBlock->getNumArguments(); 
+           i < num_arg; ++i) {
+        auto sourceArg = inputs[i];
+        auto destArg = destBlock->getArgument(i);
+        sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
+            return newfunc->isProperAncestor(use.getOwner());
+        });
+      }
+    }
   }
 
   // Allocate L2 memory & add data movement
@@ -875,8 +951,11 @@ private:
     }
 
     // Post processes, move each loop marked by "load,store,receive,send" to the
-    // outermost temporal tileBand
-    PLFuncSplit(builder, plFunc, plForOp);
+    // outermost temporal tileBand 
+    PLLoopSplit(builder, plFunc, plForOp);
+
+    // Create each loop with a func marked by adf.pl
+    PLFuncSplit(builder, plFunc);
       
     return true;
   }
