@@ -45,7 +45,7 @@ private:
 
   // Create PL func.func and pl.launch. Create Callop inside pl.launch
   void PLFuncCreation(OpBuilder builder, FuncOp topFunc, FuncOp& plFunc,
-                      LauchCellOp lauchcell){
+                      CallOp& callop, LauchCellOp lauchcell){
     auto loc = builder.getUnknownLoc();
     SmallVector<Value> inputs;
     auto liveness = Liveness(lauchcell);
@@ -78,7 +78,7 @@ private:
     builder.setInsertionPointToEnd(cellLaunchPLBlock);
     auto endLaunchPL = builder.create<WaitLauchPLOp>(loc);
     builder.setInsertionPoint(endLaunchPL);
-    auto callop = builder.create<CallOp>(loc, plFunc, inputs);
+    callop = builder.create<CallOp>(loc, plFunc, inputs);
     callop->setAttr("adf.pl",builder.getUnitAttr());
 
     // Update the references in the plFunc after move
@@ -890,8 +890,74 @@ private:
     }
   }
 
+  // Replace IORead/IOWrite by AffineLoad/AffineStore, update the callee and
+  // caller function, create ConnectOp to connect IO with stream
+  void ArgUpdate(OpBuilder builder, FuncOp topFunc, FuncOp plFunc, 
+                 CallOp& caller){
+    auto loc = builder.getUnknownLoc();
+    SmallVector<OpFoldResult> allocSizes;
+    allocSizes.push_back(builder.getIndexAttr(1));
+    auto plioAttr = builder.getStringAttr("plio");
+    auto indexType = builder.getIndexType();
+    auto zeroAttr = builder.getIntegerAttr(indexType, 0);
+    builder.setInsertionPointToStart(&plFunc.getBody().front());
+    auto zeroValue = builder.create<arith::ConstantOp>(loc, zeroAttr);
+    SmallVector<Value> zeroValues(1, zeroValue);
+    auto inTypes =SmallVector<Type,8>(plFunc.getArgumentTypes().begin(),
+                                      plFunc.getArgumentTypes().end());
+    auto outTypes = plFunc.getResultTypes();
+    unsigned index = 0;
+    for (auto argOperand : caller.getArgOperands()) {
+      auto defineOp = argOperand.getDefiningOp();
+      if(!defineOp || !dyn_cast<CreateGraphIOOp>(defineOp)){
+        index++;
+        continue;
+      }
+      auto graphio = dyn_cast<CreateGraphIOOp>(defineOp);
+      auto calleeArg = plFunc.getArgument(index);
+      for(auto user : calleeArg.getUsers()){
+        builder.setInsertionPointToStart(&topFunc.getBody().front());
+        if(auto ioWrite = dyn_cast<IOWriteOp>(user)){
+          auto src = ioWrite.getSrc();
+          auto allocOp 
+            = builder.create<AllocOp>(loc, allocSizes, src.getType(), plioAttr);
+          // Replace the operands in the caller function to the allocOp
+          // Change the argument types of callee
+          caller.setOperand(index, allocOp);
+          inTypes[index] = allocOp.getType();
+          calleeArg.setType(allocOp.getType());
+          builder.setInsertionPoint(ioWrite);
+          builder.create<AffineStoreOp>(loc, src, calleeArg, zeroValues);
+          builder.setInsertionPointAfter(graphio);
+          builder.create<ConnectOp>(loc, allocOp, graphio);
+          ioWrite.erase();
+          break;
+        }else if(auto ioRead = dyn_cast<IOReadOp>(user)){
+          auto dst = ioRead.getResult();
+          auto allocOp 
+            = builder.create<AllocOp>(loc, allocSizes, dst.getType(), plioAttr);
+          caller.setOperand(index, allocOp);
+          inTypes[index] = allocOp.getType();
+          calleeArg.setType(allocOp.getType());
+          builder.setInsertionPoint(ioRead);
+          auto load = builder.create<AffineLoadOp>(loc, calleeArg, zeroValues);
+          auto result = load.getResult();
+          dst.replaceAllUsesWith(result);
+          builder.setInsertionPointAfter(graphio);
+          builder.create<ConnectOp>(loc, graphio, allocOp);
+          ioRead.erase();
+          break;
+        }
+      }
+      index++;
+    }
+    // Update the callee function type.
+    plFunc.setType(builder.getFunctionType(inTypes, outTypes));
+  }
+
   // Allocate L2 memory & add data movement
-  bool PLDataMovement(OpBuilder builder, FuncOp plFunc){
+  bool PLDataMovement(OpBuilder builder, FuncOp topFunc, FuncOp plFunc, 
+                      CallOp& callop){
     AffineForOp plForOp;
     plFunc.walk([&](AffineForOp forOp){
       if(forOp->hasAttr("Array_Partition"))
@@ -942,7 +1008,10 @@ private:
     });
     if (flag == WalkResult::interrupt()) 
       return false;
-    
+
+    // Replace arguments with PLIOType by memref arguments
+    ArgUpdate(builder, topFunc, plFunc, callop);
+    /*
     // Tranverse all the outer point dma loops(involve L3 mem) and change the
     // L2 buffer access with stream access
     for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
@@ -969,15 +1038,21 @@ private:
     // outermost temporal tileBand 
     PLLoopSplit(builder, plFunc, plForOp);
 
-    // Create each loop with a func marked by adf.pl
+    // For each loop, create with a func marked by adf.pl
     PLFuncSplit(builder, plFunc);
-      
+    */
     return true;
   }
 
-  // Move the collected adf.cell to adf.cell.launch
-  void UpdateCellLaunch(OpBuilder builder, LauchCellOp lauchcell, 
-                        SmallVectorImpl<CallOp>& calls){
+  // This PostProcess conduct three functions
+  // 1) Replace IORead/IOWrite by AffineLoad/AffineStore, update the callee and
+  //    caller function, create ConnectOp to connect IO with stream
+  // 2) Split adf.pl to multiple functions for HLS coding style purpose
+  // 3) Move the collected adf.cell to adf.cell.launch
+  void Postprocess(OpBuilder builder, LauchCellOp lauchcell, 
+                   SmallVectorImpl<CallOp>& calls){
+    // Step 1: Update func
+    // Step 3: Move the collected adf.cell to adf.cell.launch
     auto &entryBlock = lauchcell.getBody().front();
     builder.setInsertionPointToStart(&entryBlock);
     for(auto call: calls)
@@ -1002,12 +1077,13 @@ private:
     auto boolPLIO = topFunc->getAttr("plio");
     SmallVector<CallOp> calls;
     FuncOp plFunc;
+    CallOp callop;
     if(dyn_cast<BoolAttr>(boolPLIO).getValue()){
       Preprocess(lauchcell, calls);
-      PLFuncCreation(builder, topFunc, plFunc, lauchcell);
-      if(!PLDataMovement(builder, plFunc))
+      PLFuncCreation(builder, topFunc, plFunc, callop, lauchcell);
+      if(!PLDataMovement(builder, topFunc, plFunc, callop))
         return false;
-      UpdateCellLaunch(builder, lauchcell, calls);
+      Postprocess(builder, lauchcell, calls);
     }
     return true;
   }

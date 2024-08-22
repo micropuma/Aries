@@ -74,7 +74,7 @@ def LauchCellOp : ADF_Op<"cell.launch", [SingleBlock]> {
     }];
 }
 
-def WaitLauchCellOp : ADF_Op<"cell.launch.wait", [Pure]>{
+def WaitLauchCellOp : ADF_Op<"cell.launch.wait", []>{
   let summary = "An operation that wait for the adf.cell";
   let assemblyFormat = [{
     attr-dict
