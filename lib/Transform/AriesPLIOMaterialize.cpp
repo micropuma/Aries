@@ -30,8 +30,11 @@ public:
   }
 
 private:
-  //Collect and remove the adf.cells and erase adf.io.wait
-  void Preprocess(LauchCellOp lauchcell, SmallVectorImpl<CallOp>& calls){
+  // 1) Collect and remove the adf.cells and erase adf.io.wait
+  // 2) Tranversing IOPop and mark the output func.arg 
+  void Preprocess(OpBuilder builder, FuncOp& topFunc, 
+                  LauchCellOp lauchcell, SmallVectorImpl<CallOp>& calls){
+    SmallVector<Attribute, 4> attrs;
     lauchcell.walk([&](Operation *op){
       if(auto call = dyn_cast<CallOp>(op)){
         if(call->hasAttr("adf.cell"))
@@ -39,8 +42,21 @@ private:
         call->remove();
       }else if(dyn_cast<IOWaitOp>(op) || dyn_cast<WaitLauchCellOp>(op)){
         op->erase();
+      }else if(auto iopop = dyn_cast<IOPopOp>(op)){
+        auto dst = iopop.getDst();
+        unsigned index=0;
+        for(auto arg : topFunc.getArguments()){
+          if(arg == dst){
+            auto intAttr = builder.getI32IntegerAttr(index);
+            if(!llvm::is_contained(attrs, intAttr))
+              attrs.push_back(intAttr);
+          }
+          index++;
+        }
       }
     });
+    auto outAttrs = builder.getArrayAttr(attrs);
+    topFunc->setAttr("outArgs",outAttrs);
   }
 
   // Create PL func.func and pl.launch. Create Callop inside pl.launch
@@ -1075,7 +1091,7 @@ private:
     FuncOp plFunc;
     CallOp callop;
     if(dyn_cast<BoolAttr>(boolPLIO).getValue()){
-      Preprocess(lauchcell, calls);
+      Preprocess(builder, topFunc, lauchcell, calls);
       PLFuncCreation(builder, topFunc, plFunc, callop, lauchcell);
       if(!PLDataMovement(builder, topFunc, plFunc, callop))
         return false;
