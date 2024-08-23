@@ -59,6 +59,7 @@ private:
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
     plFunc = builder.create<FuncOp>(builder.getUnknownLoc(),funcName,funcType);
     plFunc->setAttr("adf.pl",builder.getBoolAttr(true));
+    plFunc->setAttr("dataflow",builder.getUnitAttr());
     auto destBlock = plFunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
@@ -929,7 +930,8 @@ private:
           builder.setInsertionPoint(ioWrite);
           builder.create<AffineStoreOp>(loc, src, calleeArg, zeroValues);
           builder.setInsertionPointAfter(graphio);
-          builder.create<ConnectOp>(loc, allocOp, graphio);
+          auto connect = builder.create<ConnectOp>(loc, allocOp, graphio);
+          connect->setAttr("top_config", builder.getUnitAttr());
           ioWrite.erase();
           break;
         }else if(auto ioRead = dyn_cast<IOReadOp>(user)){
@@ -944,7 +946,8 @@ private:
           auto result = load.getResult();
           dst.replaceAllUsesWith(result);
           builder.setInsertionPointAfter(graphio);
-          builder.create<ConnectOp>(loc, graphio, allocOp);
+          auto connect = builder.create<ConnectOp>(loc, graphio, allocOp);
+          connect->setAttr("top_config", builder.getUnitAttr());
           ioRead.erase();
           break;
         }
@@ -1011,7 +1014,7 @@ private:
 
     // Replace arguments with PLIOType by memref arguments
     ArgUpdate(builder, topFunc, plFunc, callop);
-    /*
+
     // Tranverse all the outer point dma loops(involve L3 mem) and change the
     // L2 buffer access with stream access
     for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
@@ -1040,19 +1043,12 @@ private:
 
     // For each loop, create with a func marked by adf.pl
     PLFuncSplit(builder, plFunc);
-    */
     return true;
   }
 
-  // This PostProcess conduct three functions
-  // 1) Replace IORead/IOWrite by AffineLoad/AffineStore, update the callee and
-  //    caller function, create ConnectOp to connect IO with stream
-  // 2) Split adf.pl to multiple functions for HLS coding style purpose
-  // 3) Move the collected adf.cell to adf.cell.launch
+  // Move the collected adf.cell to adf.cell.launch
   void Postprocess(OpBuilder builder, LauchCellOp lauchcell, 
                    SmallVectorImpl<CallOp>& calls){
-    // Step 1: Update func
-    // Step 3: Move the collected adf.cell to adf.cell.launch
     auto &entryBlock = lauchcell.getBody().front();
     builder.setInsertionPointToStart(&entryBlock);
     for(auto call: calls)
