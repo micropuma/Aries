@@ -364,6 +364,7 @@ private:
   void emitADFGraphFunction(FuncOp func);
   void emitADFMain(FuncOp func);
   void emitHLSFunction(func::FuncOp func);
+  void emitHostFunction(func::FuncOp func);
 };
 }
 
@@ -1789,15 +1790,38 @@ void ModuleEmitter::emitBlock(Block &block) {
 }
 
 void ModuleEmitter::emitADFMain(FuncOp func){
-  // Define graph
-  state.callTable.clear();
-  func.walk([&](CallOp call){
-    os << getTypeName(call) << " ";
-    os << addCall(call) << ";\n";
-  });
-  os << "\n";
+    std::string adf_cpp_header = R"XXX(
+//_aries_split_//adf_graph.cpp//_aries_split_//
+//===----------------------------------------------------------------------===//
+//
+// Automatically generated file for adf_graph.cpp
+//
+//===----------------------------------------------------------------------===//
+#include <adf.h>
+#include <stdio.h>
+#include <iostream>
+#include "adf_graph.h"
+)XXX";
 
-  std::string adf_main_head = R"XXX(
+  std::string adf_gmio_header = R"XXX(
+#if !defined(__AIESIM__) && !defined(__X86SIM__) && !defined(__ADF_FRONTEND__)
+    #include "adf/adf_api/XRTConfig.h"
+    #include "experimental/xrt_kernel.h"
+#endif
+)XXX";
+
+  std::string adf_main_plio_head = R"XXX(
+#ifdef __AIESIM__
+int main(int argc, char ** argv) {
+)XXX";
+
+  std::string adf_main_plio_tail = R"XXX(
+  return 0;
+}
+#endif
+)XXX";
+
+  std::string adf_main_gmio_head = R"XXX(
 int main(int argc, char ** argv) {
 #if !defined(__AIESIM__) && !defined(__X86SIM__) && !defined(__ADF_FRONTEND__)
   // Create XRT device handle for ADF API
@@ -1809,45 +1833,52 @@ int main(int argc, char ** argv) {
   adf::registerXRT(dhdl, uuid);
 #endif
 )XXX";
-  os << adf_main_head << "\n";
-  // Define cell arguments
-  addIndent();
-  for(auto arg: func.getArguments()){
-    indent();
-    if (arg.getType().isa<ShapedType>())
-      emitArrayDecl(arg);
-    else
-      emitValue(arg);
-    os << ";\n";
-  }
-  os << "\n";
 
-  auto boolAttr = func->getAttrOfType<BoolAttr>("gmio");
-  if(boolAttr && boolAttr.getValue()==true){
-    emitBlock(func.getBody().front());
-  }else{
-    func.walk([&](CallOp call){
-      indent();
-      os << getCall(call) << ".init();\n";
-    });
-    func.walk([&](CallOp call){
-      indent();
-      os << getCall(call) << ".run(4);\n";
-    });
-    func.walk([&](CallOp call){
-      indent();
-      os << getCall(call) << ".end();\n";
-    });
-  }
-
-  std::string adf_main_tail = R"XXX(
+  std::string adf_main_gmio_tail = R"XXX(
 #if !defined(__AIESIM__) && !defined(__X86SIM__) && !defined(__ADF_FRONTEND__)
   xrtDeviceClose(dhdl);
 #endif
   return 0;
 }
 )XXX";
-  os << adf_main_tail;
+
+  os << adf_cpp_header;
+
+  // Define graph
+  state.callTable.clear();
+  SmallVector<CallOp, 4> calls;
+  func.walk([&](CallOp call){
+    if(call->hasAttr("adf.cell")){
+      os << getTypeName(call) << " ";
+      os << addCall(call) << ";\n";
+      calls.push_back(call);
+    }
+  });
+  os << "\n";
+  
+  auto boolAttrGMIO = func->getAttrOfType<BoolAttr>("gmio");
+  auto boolAttrPLIO = func->getAttrOfType<BoolAttr>("plio");
+  if(boolAttrGMIO && boolAttrGMIO.getValue()==true){
+    os << adf_main_gmio_head << "\n";
+    emitBlock(func.getBody().front());
+    os << adf_main_gmio_tail;
+  }else if(boolAttrPLIO && boolAttrPLIO.getValue()==true){
+    os << adf_main_plio_head << "\n";
+    addIndent();
+    for(auto call: calls){
+      indent();
+      os << getCall(call) << ".init();\n";
+    }
+    for(auto call: calls){
+      indent();
+      os << getCall(call) << ".run(4);\n";
+    }
+    for(auto call: calls){
+      indent();
+      os << getCall(call) << ".end();\n";
+    }
+    os << adf_main_plio_tail;
+  }
 }
 
 void ModuleEmitter::emitArrayDirectives(Value memref) {
@@ -2049,6 +2080,10 @@ void ModuleEmitter::emitHLSFunction(func::FuncOp func){
   os << "}\n\n";
 }
 
+void ModuleEmitter::emitHostFunction(func::FuncOp func){
+
+}
+
 void ModuleEmitter::emitModule(ModuleOp module) {
   std::string adfh_header = R"XXX(
 //_aries_split_//adf_graph.h//_aries_split_//
@@ -2069,26 +2104,13 @@ using namespace adf;
 
 )XXX";
 
-  std::string adfcpp_header = R"XXX(
-//_aries_split_//adf_graph.cpp//_aries_split_//
-//===----------------------------------------------------------------------===//
-//
-// Automatically generated file for adf_graph.cpp
-//
-//===----------------------------------------------------------------------===//
-#include <adf.h>
-#include <stdio.h>
-#include <iostream>
-#include "adf_graph.h"
-#if !defined(__AIESIM__) && !defined(__X86SIM__) && !defined(__ADF_FRONTEND__)
-    #include "adf/adf_api/XRTConfig.h"
-    #include "experimental/xrt_kernel.h"
-#endif
-
-)XXX";
-
   std::string hls_hearder = R"XXX(
 //_aries_split_//hls.cpp//_aries_split_//
+//===----------------------------------------------------------------------===//
+//
+// Automatically generated file for hlc.cpp
+//
+//===----------------------------------------------------------------------===//
 #include <math.h>
 #include <stdint.h>
 #include <ap_int.h>
@@ -2097,20 +2119,48 @@ using namespace adf;
 #include <hls_stream.h>
 #include <hls_math.h>
 )XXX";
-  bool PL_FLGA = true;
+
+  std::string host_hearder = R"XXX(
+//_aries_split_//host.cpp//_aries_split_//
+//===----------------------------------------------------------------------===//
+//
+// Automatically generated file for host.cpp
+//
+//===----------------------------------------------------------------------===//
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <time.h>
+
+// vivado hls headers
+#include "kernel.h"
+#include <ap_fixed.h>
+#include <ap_int.h>
+#include <hls_stream.h>
+
+#include <ap_axi_sdata.h>
+#include <ap_fixed.h>
+#include <ap_int.h>
+#include <hls_math.h>
+#include <hls_stream.h>
+#include <math.h>
+#include <stdint.h>
+)XXX";
+
+  bool PL_FLAG = true;
   for (auto op : module.getOps<FuncOp>()) {
     if (op->hasAttr("adf.cell")){
       os << adfh_header;
       emitADFGraphFunction(op);
       os << "#endif //__GRAPH_H__\n";
     }else if(auto attr = op->getAttr("adf.pl")){
-      if(PL_FLGA){
+      if(PL_FLAG){
         os << hls_hearder;
-        PL_FLGA = false;
+        PL_FLAG = false;
       }
       emitHLSFunction(op);
     }else if(op->hasAttr("top_func")){
-      os << adfcpp_header;
       emitADFMain(op);
     }
       
