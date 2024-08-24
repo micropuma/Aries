@@ -1,17 +1,26 @@
-FUNC:=add
+FUNC:=gemm
 PROJECT_NAME:=adf_graph_${FUNC}
 KERNEL_NAME:=kernel_${FUNC}
 PROJECT_PATH=./${PROJECT_NAME}
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
+PROJECT_PL_PATH=${PROJECT_PATH}/kernel
+PROJECT_Host_PATH=${PROJECT_PATH}/host
+EN_PL = 0
+ifeq ($(EN_PL),1)
+	IOType=PLIO
+else
+	IOType=GMIO
+endif
 
-all: fileCreate copyFile pass translate
+all: fileCreate copyFile pass translate copyplhost
 
 fileCreate:
 	mkdir -p ${PROJECT_AIE_PATH}
+	mkdir -p ${PROJECT_PL_PATH}
+	mkdir -p ${PROJECT_Host_PATH}
 
 copyFile:
 	cp -r template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
-	cp -r template_files/system.cfg ${PROJECT_PATH}
 
 test: iomaterialize
 
@@ -73,7 +82,7 @@ ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/9_${FUNC}.unrollfun
 dmaio: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
 ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
 	aries-opt -o $@ $< \
-			-aries-dma-to-io="port-type=GMIO" \
+			-aries-dma-to-io="port-type=${IOType}" \
 			-canonicalize -cse
 
 adfgraph: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
@@ -107,7 +116,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-kernel-interface-create \
 			-aries-func-unroll \
 			-aries-local-data-forward \
-			-aries-dma-to-io="port-type=GMIO" \
+			-aries-dma-to-io="port-type=${IOType}" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
 			-aries-gmio-materialize \
@@ -123,6 +132,13 @@ adf_graph_temp: ${PROJECT_AIE_PATH}/adf_graph_temp.cpp
 ${PROJECT_AIE_PATH}/adf_graph_temp.cpp: ${PROJECT_PATH}/${FUNC}.adf.mlir
 	aries-translate -o $@ $< \
 		-emit-aie-adf
+
+copyplhost:
+ifeq ($(EN_PL),1)
+	mv ${PROJECT_AIE_PATH}/host.cpp ${PROJECT_Host_PATH}
+	mv ${PROJECT_AIE_PATH}/hls.cpp ${PROJECT_PL_PATH}
+	mv ${PROJECT_AIE_PATH}/system.cfg ${PROJECT_PATH}
+endif
 
 kernel_split: ${PROJECT_PATH}/${KERNEL_NAME}.mlir
 ${PROJECT_PATH}/${KERNEL_NAME}.mlir: ${PROJECT_PATH}/${FUNC}.adf.mlir
