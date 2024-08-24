@@ -40,7 +40,7 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
 
   /// Configure the DMAToIO pass.
   Option<int64_t> OptPortWidth{
-      *this, "plio-width", llvm::cl::init(128),
+      *this, "plio-width", llvm::cl::init(32),
       llvm::cl::desc("Specify the plio width of a port in bits (32,64,128)")};
   
   /// Configure the DMAToIO pass.
