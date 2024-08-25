@@ -2234,7 +2234,7 @@ int main(int argc, char **argv) {
       auto bytes = memrefType.getElementTypeBitWidth() / 8;
       auto size = memrefType.getNumElements();
       indent();
-      os << "auto " << getName(arg) << " xrt::bo(device, " << bytes * size
+      os << "auto " << getName(arg) << " = xrt::bo(device, " << bytes * size
          << ", "    << dmaName       << ".group_id(0));\n";
       indent();
       os << "auto " << outMapName    << " = "  << getName(arg)
@@ -2246,7 +2246,7 @@ int main(int argc, char **argv) {
       addName(arg, false, inHandleName);
       std::string inMapName = "in_bomapped" + std::to_string(indexIn++);
       indent();
-      os << "auto " << getName(arg) << " xrt::bo(device, " << bytes * size
+      os << "auto " << getName(arg) << " = xrt::bo(device, " << bytes * size
          << ", "    << dmaName      << ".group_id(0));\n";
       indent();
       os << "auto " << inMapName    << " = "  << getName(arg)
