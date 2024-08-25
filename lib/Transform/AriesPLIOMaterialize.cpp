@@ -163,8 +163,12 @@ private:
   // including load/store data from/to L3 mem (external)
   // send/receive data to/from L1 mem (AIE local)
   WalkResult IOProcesses(OpBuilder builder, FuncOp plFunc, Operation* op, 
-                         SmallVector<AffineForOp, 6> band, unsigned& loadIndex,
-                         unsigned& storeIndex, bool iopush){
+                         SmallVector<AffineForOp, 6> band, 
+                         unsigned& loadIdx, unsigned& storeIdx, 
+                         unsigned& sendIdx, unsigned& receiveIdx, 
+                         SmallVector<std::pair<Value, unsigned>, 4>& loadSrcs,
+                         SmallVector<std::pair<Value, unsigned>, 4>& storeDsts,
+                         bool iopush){
     auto loc = builder.getUnknownLoc();
     IOPushOp iopushOp;
     IOPopOp iopopOp;
@@ -305,16 +309,48 @@ private:
     // Anotate the outer new point loops with name and index
     auto newDMAOuterloop = newDMALoops[0];
     auto newIOOuterloop = newIOLoops[0];
-    auto loadAttr = builder.getIntegerAttr(builder.getIndexType(),loadIndex);
-    auto storeAttr = builder.getIntegerAttr(builder.getIndexType(),storeIndex);
+    auto sendAttr = builder.getIntegerAttr(indexType, sendIdx);
+    auto receiveAttr = builder.getIntegerAttr(indexType, receiveIdx);
     if(iopush){
-      newDMAOuterloop->setAttr("load",loadAttr);
-      newIOOuterloop->setAttr("send",loadAttr);
-      loadIndex++;
+      // Check if the external memory has been read, if so then find the loadIdx
+      // If not use the current loadIdx and increase it
+      auto it 
+          = llvm::find_if(loadSrcs, [&](const std::pair<Value, unsigned> &pair){
+        return pair.first == src;
+      });
+      unsigned index;
+      if (it != loadSrcs.end()) {
+        index = it->second;
+      }else{
+        index = loadIdx++;
+        std::pair newPair(src, index);
+        loadSrcs.push_back(newPair);
+      }
+      auto loadAttr = builder.getIntegerAttr(indexType, index);
+      newDMAOuterloop->setAttr("load", loadAttr);
+      newDMAOuterloop->setAttr("send", sendAttr);
+      newIOOuterloop->setAttr("send", sendAttr);
+      sendIdx++;
     }else{
-      newDMAOuterloop->setAttr("store",storeAttr);
-      newIOOuterloop->setAttr("receive",storeAttr);
-      storeIndex++;
+      // Check if the external memory has been written, if so then find the 
+      // storeIdx, if not use the current storeIdx and increase it
+      auto it 
+        = llvm::find_if(storeDsts, [&](const std::pair<Value, unsigned> &pair){
+        return pair.first == dst;
+      });
+      unsigned index;
+      if (it != storeDsts.end()) {
+        index = it->second;
+      }else{
+        index = storeIdx++;
+        std::pair newPair(dst, index);
+        storeDsts.push_back(newPair);
+      }
+      auto storeAttr = builder.getIntegerAttr(indexType, index);
+      newDMAOuterloop->setAttr("store", storeAttr);
+      newDMAOuterloop->setAttr("receive", receiveAttr);
+      newIOOuterloop->setAttr("receive", receiveAttr);
+      receiveIdx++;
     }
     // Create affine ApplyOps inside the innermost new loop
     auto newInnerDMALoop = newDMALoops[newDMALoops.size()-1];
@@ -699,14 +735,16 @@ private:
       auto newLoad = builder.create<AffineLoadOp>(loc, allocOp, zeroValues);
       builder.create<AffineStoreOp>(loc, newLoad, memref, indices);
       storeOp.erase();
-      auto Attr = outerLoop->getAttr("load");
+      auto Attr = outerLoop->getAttr("send");
       outerNewLoop->setAttr("send", Attr);
+      outerLoop->removeAttr("send");
     }else{
       auto newLoad = builder.create<AffineLoadOp>(loc, memref, indices);
       builder.create<AffineStoreOp>(loc, newLoad, allocOp, zeroValues);
       loadOp.erase();
-      auto Attr = outerLoop->getAttr("store");
+      auto Attr = outerLoop->getAttr("receive");
       outerNewLoop->setAttr("receive", Attr);
+      outerLoop->removeAttr("receive");
     }
     // Update the loop variables
     auto numVi = newForOps.size();
@@ -991,16 +1029,20 @@ private:
       return false;
 
     // Tranverse the IOPushOps/IOPopOps and allocate L2 buffers
-    unsigned loadIndex = 0;
-    unsigned storeIndex = 0;
+    unsigned loadIdx = 0;
+    unsigned storeIdx = 0;
+    unsigned sendIdx = 0;
+    unsigned receiveIdx = 0;
+    SmallVector<std::pair<Value, unsigned>, 4> loadSrcs;
+    SmallVector<std::pair<Value, unsigned>, 4> storeDsts;
     auto flag = plForOp.walk([&](Operation* op){
       WalkResult result;
       if(dyn_cast<IOPushOp>(op))
-        result = IOProcesses(builder, plFunc, op, band, 
-                             loadIndex, storeIndex, true);
+        result = IOProcesses(builder, plFunc, op, band, loadIdx, storeIdx,
+                             sendIdx, receiveIdx, loadSrcs, storeDsts, true);
       else if(dyn_cast<IOPopOp>(op))
-        result = IOProcesses(builder, plFunc, op, band, 
-                             loadIndex, storeIndex, false);
+        result = IOProcesses(builder, plFunc, op, band, loadIdx, storeIdx,
+                             sendIdx, receiveIdx, loadSrcs, storeDsts, false);
       else
         return WalkResult::advance();
       return result;
