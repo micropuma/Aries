@@ -1934,7 +1934,7 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
   }
   if (TOP_FLAG) {
     indent();
-    os << "#pragma HLS interface s_axilite port=return bundle=ctrl\n";
+    os << "#pragma HLS interface s_axilite port=return bundle=control\n";
     unsigned index = 0;
     for (auto &port : portList) {
       // Array ports and scalar ports are handled separately. Here, we only
@@ -1944,16 +1944,24 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
         os << "#pragma HLS interface";
         auto attr = memrefType.getMemorySpace();
         if(attr && dyn_cast<StringAttr>(attr) &&
-           dyn_cast<StringAttr>(attr).getValue().str().substr(0,4)=="plio")
+           dyn_cast<StringAttr>(attr).getValue().str().substr(0,4)=="plio"){
            os << " axis";
-        else{
+           os << " port=";
+           emitValue(port);
+           os << "\n";
+        }else{
           // For now, we set the offset of all m_axi interfaces as slave.
           os << " m_axi offset=slave";
           os << " bundle=gmem" << std::to_string(index++);
+          os << " port=";
+          emitValue(port);
+          os << "\n";
+          indent();
+          os << "#pragma HLS interface s_axilite bundle=control";
+          os << " port=";
+          emitValue(port);
+          os << "\n";
         }
-        os << " port=";
-        emitValue(port);
-        os << "\n";
       } else {
         indent();
         os << "#pragma HLS interface s_axilite";
@@ -1963,7 +1971,7 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
         if (name.front() == "*"[0])
           name.erase(name.begin());
         os << name;
-        os << " bundle=ctrl\n";
+        os << " bundle=control\n";
       }
     }
 
@@ -2083,7 +2091,7 @@ void ModuleEmitter::emitHLSFunction(func::FuncOp func){
     indent();
     auto arg = func.getArgument(i);
     if (arg.getType().isa<ShapedType>())
-      emitArrayDecl(arg);
+      emitArrayDecl(arg, true);
     else
       emitValue(arg);
     
