@@ -1866,6 +1866,17 @@ int main(int argc, char ** argv) {
   auto boolAttrGMIO = func->getAttrOfType<BoolAttr>("gmio");
   auto boolAttrPLIO = func->getAttrOfType<BoolAttr>("plio");
   if(boolAttrGMIO && boolAttrGMIO.getValue()==true){
+    // Emit cell arguments
+    addIndent();
+    for(auto arg: func.getArguments()){
+      indent();
+      if (arg.getType().isa<ShapedType>())
+        emitArrayDecl(arg);
+      else
+        emitValue(arg);
+      os << ";\n";
+    }
+    os << "\n";
     os << adf_main_gmio_head << "\n";
     emitBlock(func.getBody().front());
     os << adf_main_gmio_tail;
