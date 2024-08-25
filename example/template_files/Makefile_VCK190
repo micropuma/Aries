@@ -83,7 +83,9 @@ ifneq ($(TARGET), hw)
 	CLFLAGS += -g
 endif
 CLFLAGS += --hls.jobs 8
+ifeq ($(EN_PL),1)
 CLFLAGS += --config $(VPP_SPEC)
+endif
 CLFLAGS += --clock.defaultFreqHz 220000000
 
 LDCLFLAGS := --vivado.synth.jobs 8 --vivado.impl.jobs 8
