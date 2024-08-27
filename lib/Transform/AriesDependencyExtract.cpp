@@ -8,6 +8,8 @@
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
+#include "mlir/Dialect/Affine/Passes.h"
+#include "mlir/Pass/PassManager.h"
 
 using namespace mlir;
 using namespace aries;
@@ -97,6 +99,12 @@ private:
     auto innerloop = band[band.size()-1];
     SmallVector<DmaOp, 4> dmaOps;
     DMACollect(innerloop, dmaOps);
+
+    // Simplify the loop structure before analyze the dependency.
+    // There won't be any nested affine.apply ops
+    PassManager pm1(topFunc.getContext(), "func.func");
+    pm1.addPass(createSimplifyAffineStructuresPass());
+    (void)pm1.run(topFunc);
 
     // Find DmaWrite -> DmaRead pair that access the same mem
     for (auto dmaWrite : dmaOps){

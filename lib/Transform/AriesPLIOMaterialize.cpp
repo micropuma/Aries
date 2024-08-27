@@ -5,6 +5,8 @@
 #include "mlir/Dialect/Affine/Utils.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
+#include "mlir/Dialect/Affine/Passes.h"
+#include "mlir/Pass/PassManager.h"
 #include "llvm/Support/Debug.h"
 #include "aries/Transform/Passes.h"
 #include "aries/Transform/Utils.h"
@@ -152,7 +154,8 @@ private:
     }else if (auto applyop = dyn_cast<AffineApplyOp>(definedOp)){
       applyops.push_back(applyop);
       for (auto operand : applyop.getOperands())
-        resolveOffset(operand, operands, applyops);
+        operands.push_back(operand);
+        // resolveOffset(operand, operands, applyops);
     }else{
       operands.push_back(val);
       return;
@@ -1028,6 +1031,12 @@ private:
     if(!loopNormalize(plForOp, band))
       return false;
 
+    // Simplify the loop structure after loopNormalize.
+    // There won't be any nested affine.apply ops
+    PassManager pm(plFunc.getContext(), "func.func");
+    pm.addPass(createSimplifyAffineStructuresPass());
+    (void)pm.run(plFunc);
+
     // Tranverse the IOPushOps/IOPopOps and allocate L2 buffers
     unsigned loadIdx = 0;
     unsigned storeIdx = 0;
@@ -1073,6 +1082,10 @@ private:
     // Replace arguments with PLIOType by memref arguments
     ArgUpdate(builder, topFunc, plFunc, callop);
 
+    // Simplify the loop structure after ConvertToAffine.
+    // There won't be any nested affine.apply ops
+    pm.addPass(createSimplifyAffineStructuresPass());
+    (void)pm.run(plFunc);
     // Tranverse all the outer point dma loops(involve L3 mem) and change the
     // L2 buffer access with stream access
     for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
