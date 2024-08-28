@@ -35,8 +35,8 @@ private:
           dyn_cast<ConfigGMIOOp>(op)){
             GraphOps.push_back(op);
       }else if(auto graphio = dyn_cast<CreateGraphIOOp>(op)){
-          TopOps.push_back(op);
-          ArgIns.push_back(graphio.getResult());
+        TopOps.push_back(op);
+        ArgIns.push_back(graphio.getResult());
       }else if(auto iopopOp = dyn_cast<IOPopOp>(op)){
         IOPopOps.push_back(iopopOp);
       }else{
@@ -128,14 +128,15 @@ private:
     // are moved inside it. 
     //----------This part May need to change------------.
     Block &entryBlock = topFunc.getBody().front();
-    builder.setInsertionPointToStart(&entryBlock);
+    builder.setInsertionPoint(entryBlock.getTerminator());
     auto cellLaunchop = builder.create<LauchCellOp>(loc, callop.getCallee());
     Block *cellLaunchBlock = builder.createBlock(&cellLaunchop.getRegion());
     builder.setInsertionPointToEnd(cellLaunchBlock);
     auto endLaunchCell = builder.create<EndLauchCellOp>(loc);
 
     for (auto &op: llvm::make_early_inc_range(entryBlock)){
-      if(!dyn_cast<LauchCellOp>(op)&&!dyn_cast<ReturnOp>(op))
+      if(!dyn_cast<LauchCellOp>(op)&&!dyn_cast<ReturnOp>(op)
+       &&!dyn_cast<memref::AllocOp>(op))
         op.moveBefore(endLaunchCell);
     }
 
