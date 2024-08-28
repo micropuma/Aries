@@ -35,17 +35,44 @@ public:
   }
 
 private:
+  // Anotate the output arguments
+  void preProcesses(OpBuilder builder,FuncOp func){
+    SmallVector<Attribute, 4> attrs;
+    func.walk([&](AffineStoreOp op){
+      auto dst = op.getMemRef();
+      unsigned index = 0;
+      for(auto arg : func.getArguments()){
+        if(arg == dst){
+          auto intAttr = builder.getI32IntegerAttr(index);
+          if(!llvm::is_contained(attrs, intAttr))
+            attrs.push_back(intAttr);
+        }
+        index++;
+      }
+    });
+    auto outAttrs = builder.getArrayAttr(attrs);
+    func->setAttr("outArgs",outAttrs);
+  }
+
   bool applyLoopTiling(ModuleOp mod, unsigned defaultTileSizes){
     auto builder = OpBuilder(mod);
     auto loc = builder.getUnknownLoc();
     // TODO: Handle multiple funcs in the module
     for (auto func : mod.getOps<FuncOp>()) {
       func->setAttr("top_func", builder.getUnitAttr());
+      preProcesses(builder, func);
+
       SmallVector<AffineForOp, 6> band;
       getNestedLoopBand(func.getBody(), band);
-      
-
       auto bandSize = band.size();
+      SmallVector<unsigned ,6> redIndeices;
+      for(unsigned i=0; i < bandSize; i++){
+        auto loop = band[i];
+        if(loop->hasAttr("reduction")){
+          redIndeices.push_back(i);
+        }
+      }
+
       // Set the default tiling fatctor
       SmallVector<unsigned,6> L1tileSizes(bandSize,defaultTileSizes);
       SmallVector<unsigned,6> L2tileSizes(bandSize,defaultTileSizes);
@@ -72,6 +99,10 @@ private:
                               blockL1tileBand, L2tileSizes, &L2tileBand)))
             return false;
         
+        // Mark L2 reduction loops
+        for(auto idx : redIndeices)
+          L2tileBand[idx]->setAttr("reduction", builder.getUnitAttr());
+        
         // L3 tiling if specified
         if(L3TileSizes.size()){
           for (unsigned i = 0; i <std::min(bandSize,L3TileSizes.size());++i)
@@ -83,6 +114,12 @@ private:
               return false;
           L3tileBand[bandSize-1]->setAttr(
                                 "Array_Partition", builder.getUnitAttr());
+          // Mark L3 reduction loops
+          for(auto idx : redIndeices){
+            L3tileBand[idx]->setAttr("reduction", builder.getUnitAttr());
+            L3tileBand[idx + bandSize]->setAttr(
+                                        "reduction", builder.getUnitAttr());
+          }
         }
       }
       
