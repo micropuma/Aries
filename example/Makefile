@@ -5,7 +5,7 @@ PROJECT_PATH=./${PROJECT_NAME}
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
-EN_PL = 0
+EN_PL = 1
 ifeq ($(EN_PL),1)
 	IOType=PLIO
 else
@@ -27,7 +27,7 @@ test: iomaterialize
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=8,8,8 l2-tile-sizes=2,2,2 l3-tile-sizes=2,2,2"
+			-aries-tiling="l1-tile-sizes=8,8,8 l2-tile-sizes=1,1,2 l3-tile-sizes=1,1,1"
 
 exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
@@ -64,23 +64,23 @@ ${PROJECT_PATH}/7_${FUNC}.flow.mlir: ${PROJECT_PATH}/6_${FUNC}.adf.mlir
 	aries-opt -o $@ $< \
 			-aries-dependency-extract
 
-kernelio: ${PROJECT_PATH}/8_${FUNC}.kernelio.mlir
-${PROJECT_PATH}/8_${FUNC}.kernelio.mlir: ${PROJECT_PATH}/7_${FUNC}.flow.mlir
-	aries-opt -o $@ $< \
-			-aries-kernel-interface-create
-
-unrollfunc: ${PROJECT_PATH}/9_${FUNC}.unrollfunc.mlir
-${PROJECT_PATH}/9_${FUNC}.unrollfunc.mlir: ${PROJECT_PATH}/8_${FUNC}.kernelio.mlir
+unrollfunc: ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir
+${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir: ${PROJECT_PATH}/7_${FUNC}.flow.mlir
 	aries-opt -o $@ $< \
 			-aries-func-unroll
 
-dataforward: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
-${PROJECT_PATH}/10_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/9_${FUNC}.unrollfunc.mlir
+dataforward: ${PROJECT_PATH}/9_${FUNC}.dataforward.mlir
+${PROJECT_PATH}/9_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-local-data-forward
 
+kernelio: ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir
+${PROJECT_PATH}/10_${FUNC}.kernelio.mlir: ${PROJECT_PATH}/9_${FUNC}.dataforward.mlir
+	aries-opt -o $@ $< \
+			-aries-kernel-interface-create
+
 dmaio: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
-${PROJECT_PATH}/11_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
+${PROJECT_PATH}/11_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir
 	aries-opt -o $@ $< \
 			-aries-dma-to-io="port-type=${IOType}" \
 			-canonicalize -cse
@@ -113,9 +113,9 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-mem-copy \
 			-aries-lower-to-adf \
 			-aries-dependency-extract \
-			-aries-kernel-interface-create \
 			-aries-func-unroll \
 			-aries-local-data-forward \
+			-aries-kernel-interface-create \
 			-aries-dma-to-io="port-type=${IOType}" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \

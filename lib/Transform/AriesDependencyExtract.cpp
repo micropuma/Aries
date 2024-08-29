@@ -80,10 +80,8 @@ private:
     PassManager pm(&getContext());
     pm.addPass(createCSEPass());
     pm.addPass(createCanonicalizerPass());
-
-    if (failed(pm.run(topFunc))) {
+    if (failed(pm.run(topFunc)))
       return false;
-    }
 
     SmallVector<AffineForOp, 6> band;
 
@@ -106,6 +104,8 @@ private:
     pm1.addPass(createSimplifyAffineStructuresPass());
     (void)pm1.run(topFunc);
 
+    auto indexType = builder.getIndexType();
+    auto zeroAttr = builder.getIntegerAttr(indexType, 0);
     // Find DmaWrite -> DmaRead pair that access the same mem
     for (auto dmaWrite : dmaOps){
       unsigned opIndex=0;
@@ -129,6 +129,7 @@ private:
         // If the loop variable is not included inside the access then
         // it will cause loop-carried flow dependency
         unsigned bandIndex=0;
+        bool initial_flag = true;
         for(auto loop: band){
           auto vi = loop.getInductionVar();
           bool flag =false;
@@ -146,22 +147,27 @@ private:
             if(std::find(srcOffsets.begin(), srcOffsets.end(), temp) 
                !=  srcOffsets.end())
               continue;
-            if(getConstantTripCount(loop)>1){
-              if(opIndex>0){
-                llvm::outs() 
-                    << "More than one flow dependencies found\n";
-                return false;
-              }
-              if(bandIndex>0){
-                llvm::outs() 
-                  << "More than one parallel loop leads to flow dependency\n";
-                return false;
-              }  
+            if(opIndex>0){
+              llvm::outs() 
+                  << "More than one flow dependencies found\n";
+              return false;
+            }else if(bandIndex>1){
+              llvm::outs() 
+                << "More than two non-single parallel loops lead"
+                << "to a flow dependency\n";
+              return false;
+            }else if(initial_flag){
+            //Only set one loop, but can monitor more non-single loops
+              initial_flag = false;
               loop->setAttr("flow", builder.getUnitAttr());
-              dmaWrite->setAttr("write", builder.getUnitAttr());
-              dmaRead->setAttr("read", builder.getUnitAttr());
+              dmaWrite->setAttr("write", zeroAttr);
+              dmaRead->setAttr("read", zeroAttr);
               opIndex++;
-              bandIndex++;
+              if(getConstantTripCount(loop)>1)
+                bandIndex++; 
+            }else {
+              if(getConstantTripCount(loop)>1)
+                bandIndex++; 
             }
           }
         }

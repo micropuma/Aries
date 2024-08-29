@@ -9,7 +9,7 @@ module {
           %3 = affine.load %arg0[%arg3, %arg4] : memref<64x64xf32>
           %4 = arith.addf %3, %2 : f32
           affine.store %4, %arg0[%arg3, %arg4] : memref<64x64xf32>
-        }
+        } {reduction}
       }
     }
     return

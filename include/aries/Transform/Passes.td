@@ -102,7 +102,7 @@ def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
   let description = [{
     This pass detect the opportunities to do data forwarding between local buffers
     instead of writing to then reading back from memory out of L1. This pass
-    should reply on the annotation in AriesFuncUnroll pass.
+    relies on the annotation in AriesFuncUnroll pass.
   }];
   let constructor = "mlir::aries::createAriesLocalDataForwardPass()";
 }

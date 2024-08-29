@@ -60,14 +60,15 @@ private:
     for (auto loop: band) {
       if (loop->getAttr("flow")){
         auto annotateFn = [](unsigned i, Operation *op, OpBuilder builder) {
+          auto valueAttr = builder.getIntegerAttr(builder.getIndexType(),i);
           if (auto dmaop = dyn_cast<DmaOp>(op)){
-            if(auto attr = dmaop->getAttr("write")){
-              auto valueAttr = builder.getIntegerAttr(builder.getIndexType(),i);
+            if(auto attr = dmaop->getAttr("write"))
               dmaop->setAttr("write", valueAttr);
-            }else if(auto attr = dmaop->getAttr("read")){
-              auto valueAttr = builder.getIntegerAttr(builder.getIndexType(),i);
+            else if(auto attr = dmaop->getAttr("read"))
               dmaop->setAttr("read", valueAttr);
-            }
+          }
+          else if (auto callop = dyn_cast<CallOp>(op)){
+            callop->setAttr("kernel", valueAttr);
           }
         };
         if (failed(loopUnrollFull(loop,annotateFn)))
