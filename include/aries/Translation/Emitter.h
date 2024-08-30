@@ -8,11 +8,8 @@
 namespace mlir {
 namespace aries {
 
-LogicalResult emitADFCpp(ModuleOp module, llvm::raw_ostream &os);
-void registerEmitADFCppTranslation();
-
-LogicalResult emitKernelHeader(ModuleOp module, llvm::raw_ostream &os);
-void registeremitKernelHeaderTranslation();
+LogicalResult emitAriesCpp(ModuleOp module, llvm::raw_ostream &os);
+void registerEmitAriesCppTranslation();
 
 /// Translates the AIE vector dialect MLIR to C++ code for Vitis Flow.
 LogicalResult emitAIEVecToCpp(mlir::Operation *op, bool aieml,

@@ -20,7 +20,7 @@ target_link_libraries(aries-translate
   MLIRTranslateLib
   MLIRSupport
   MLIRADF
-  MLIRARIESEmitADFCpp
+  MLIRARIESEmitAriesCpp
   AIE
   AIETransforms
   AIETargets

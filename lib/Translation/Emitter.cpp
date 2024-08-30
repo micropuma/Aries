@@ -15,32 +15,30 @@ using namespace mlir;
 using namespace aries;
 
 
-void aries::registerEmitADFCppTranslation() {
+void aries::registerEmitAriesCppTranslation() {
   static TranslateFromMLIRRegistration registration(
-      "emit-aie-adf", "Emit AIE ADF Graph", emitADFCpp,
-      [&](DialectRegistry &registry) {
-        registry.insert<
-          mlir::aries::adf::ADFDialect,
-          mlir::func::FuncDialect,
-          mlir::affine::AffineDialect,
-          mlir::memref::MemRefDialect,
-          mlir::arith::ArithDialect
-        >();
-      });
-}
-
-void aries::registeremitKernelHeaderTranslation() {
-  static TranslateFromMLIRRegistration registration(
-      "emit-kenrel-header", "Emit ADF Kernel Header", emitKernelHeader,
-      [&](DialectRegistry &registry) {
-        registry.insert<
-          mlir::aries::adf::ADFDialect,
-          mlir::func::FuncDialect,
-          mlir::affine::AffineDialect,
-          mlir::memref::MemRefDialect,
-          mlir::arith::ArithDialect
-        >();
-      });
+  "emit-aries-kernels", "Emit AIE Single Kernel + AIE ADF Graph + Vitis HLS", 
+  emitAriesCpp,
+  [&](DialectRegistry &registry) {
+    registry.insert<
+      mlir::aries::adf::ADFDialect,
+      mlir::func::FuncDialect,
+      mlir::affine::AffineDialect,
+      mlir::memref::MemRefDialect,
+      mlir::arith::ArithDialect,
+      mlir::memref::MemRefDialect,
+      mlir::scf::SCFDialect,
+      mlir::vector::VectorDialect,
+      arith::ArithDialect,
+      emitc::EmitCDialect,
+      LLVM::LLVMDialect,
+      math::MathDialect,
+      cf::ControlFlowDialect,
+      DLTIDialect,
+      xilinx::aievec::AIEVecDialect,
+      index::IndexDialect
+    >();
+  });
 }
 
 void aries::registeremitKernelFuncTranslation() {
@@ -68,7 +66,6 @@ void aries::registeremitKernelFuncTranslation() {
 
 
 void aries::registerAriesEmitters() {
-  registerEmitADFCppTranslation();
-  registeremitKernelHeaderTranslation();
+  registerEmitAriesCppTranslation();
   registeremitKernelFuncTranslation();
 }

@@ -364,13 +364,15 @@ private:
   void emitBlock(Block &block);
   void emitArrayDirectives(Value memref);
   void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList);
-  void emitADFGraphFunction(FuncOp func);
-  void emitADFMain(FuncOp func);
-  void emitHLSFunction(func::FuncOp func);
-  void emitHostFunction(ModuleOp module, func::FuncOp func);
+  void emitKernelHeader(FuncOp func);      // AIE kernel header definition
+  void emitKernelFunc(FuncOp func);        // AIE kernel function
+  void emitADFGraphFunction(FuncOp func);  // ADF graph for AIE array
+  void emitADFMain(FuncOp func);           // AIE host if use GMIO
+  void emitHLSFunction(func::FuncOp func); // Vitis HLS for PL
+  void emitHostFunction(ModuleOp module, func::FuncOp func); // System host
   void emitConfig(ModuleOp module, func::FuncOp func,
                       SmallVector<CallOp, 4>& cellCalls,
-                      SmallVector<CallOp, 4>& plCalls);
+                      SmallVector<CallOp, 4>& plCalls);      // System config
 };
 }
 
@@ -1995,6 +1997,72 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
       emitArrayDirectives(port);
 }
 
+void ModuleEmitter::emitKernelHeader(FuncOp func){
+  auto KName = func.getName();
+  os << "void " << KName << "(";
+  unsigned index = 0;
+  for(auto arg: func.getArguments()){
+    auto argType = arg.getType();
+    if(auto memType = dyn_cast<MemRefType>(argType)){
+      auto size = memType.getNumElements();
+      os << "input_buffer<" << getTypeName(arg) << ", extents<" << size
+      <<">> &in" << std::to_string(index++) << ", "; 
+    }else{
+      os << getTypeName(arg) << "in" << std::to_string(index++) << ", ";
+    }
+  }
+  index = 0;
+  auto outNum = func.getNumResults();
+  if(outNum == 0)
+    assert("The kernel declration without any outputs is wrong");
+  for(auto outType: func.getResultTypes()){
+    if(auto memType = dyn_cast<MemRefType>(outType)){
+      auto size = memType.getNumElements();
+      os << "output_buffer<" << getTypeName(outType) <<", extents<" <<size
+      << ">> &out" << std::to_string(index++);
+      if(index != outNum)
+        os << ", ";
+      else
+        os << ");\n\n"; 
+      
+    }else{
+      os << getTypeName(outType) << "out" << std::to_string(index++) << ", ";
+      if(index != outNum)
+        os << ", ";
+      else
+        os << ");\n\n"; 
+    }
+  }
+}
+
+void ModuleEmitter::emitKernelFunc(FuncOp func){
+  auto funcName = func.getName();
+  std::string split_header = "//_aries_split_//" + funcName.str()
+                             + ".cc//_aries_split_//";
+  std::string kernel_header = R"XXX(
+//===------------------------------------------------------------*- C++ -*-===//
+//
+// Automatically generated file for AIE kernel supported by Vitis Flow.
+//
+//===----------------------------------------------------------------------===//
+
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <aie_api/aie.hpp>
+#include <aie_api/aie_adf.hpp>
+#include <aie_api/utils.hpp>
+#include <adf/io_buffer/io_buffer.h>
+using namespace adf;
+
+)XXX";
+  os << split_header;
+  os << kernel_header;
+  if (failed(aries::emitAIEVecToCpp(func,/*aieml=*/false,/*vitis=*/true, 
+                                        /*enres=*/false, os)))
+    assert("AIE kernel function emitting failed\n");
+}
+
 void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
   if (func.getBlocks().size() != 1)
     func->emitError("has zero or more than one basic blocks.");
@@ -2352,6 +2420,23 @@ prop=run.impl_1.STEPS.PLACE_DESIGN.ARGS.DIRECTIVE=EarlyBlockPlacement)XXX";
 }
 
 void ModuleEmitter::emitModule(ModuleOp module) {
+  std::string kernel_header = R"XXX(
+//_aries_split_//adf_kernel.h//_aries_split_//
+//===------------------------------------------------------------*- C++ -*-===//
+//
+// Automatically generated AIE kernel file supported by Vitis Flow.
+//
+//===----------------------------------------------------------------------===//
+#ifndef __KERNEL_H__
+#define __KERNEL_H__
+using namespace adf;
+
+)XXX";
+
+  std::string kernel_tail = R"XXX(
+#endif //__KERNEL_H__/
+)XXX";
+  
   std::string adfh_header = R"XXX(
 //_aries_split_//adf_graph.h//_aries_split_//
 //===----------------------------------------------------------------------===//
@@ -2416,9 +2501,22 @@ using namespace adf;
 using namespace std;
 )XXX";
 
+  
+  // Generate the kernel header separately
+  os << kernel_header;
+  for (auto op : module.getOps<FuncOp>()) {
+    if(op->hasAttr("adf.kernel")){
+      emitKernelHeader(op);
+    }
+  }
+  os << kernel_tail;
+
   bool PL_FLAG = true;
   for (auto op : module.getOps<FuncOp>()) {
-    if (op->hasAttr("adf.cell")){
+    if(op->hasAttr("adf.kernel")){
+      // Currently do nothing
+      // emitKernelFunc(op);
+    }else if (op->hasAttr("adf.cell")){
       os << adfh_header;
       emitADFGraphFunction(op);
       os << "#endif //__GRAPH_H__\n";
@@ -2436,12 +2534,10 @@ using namespace std;
         emitHostFunction(module, op);
       }
     }
-      
   }
-
 }
 
-LogicalResult aries::emitADFCpp(ModuleOp module, llvm::raw_ostream &os) {
+LogicalResult aries::emitAriesCpp(ModuleOp module, llvm::raw_ostream &os) {
   ADFEmitterState state(os);
   ModuleEmitter(state).emitModule(module);
   return failure(state.encounteredError);

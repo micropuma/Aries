@@ -27,7 +27,7 @@ test: iomaterialize
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=8,8,8 l2-tile-sizes=1,1,2 l3-tile-sizes=1,1,1"
+			-aries-tiling="l1-tile-sizes=8,8,8 l2-tile-sizes=2,2,2 l3-tile-sizes=2,2,2"
 
 exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
@@ -100,7 +100,7 @@ ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/12_${FUNC}.adfgra
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
 ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
 	aries-translate -o $@ $< \
-		-emit-aie-adf
+		-emit-aries-kernels
 
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
@@ -131,7 +131,7 @@ adf_graph: adf_graph_temp
 adf_graph_temp: ${PROJECT_AIE_PATH}/adf_graph_temp.cpp
 ${PROJECT_AIE_PATH}/adf_graph_temp.cpp: ${PROJECT_PATH}/${FUNC}.adf.mlir
 	aries-translate -o $@ $< \
-		-emit-aie-adf
+		-emit-aries-kernels
 
 copyplhost:
 ifeq ($(EN_PL),1)
@@ -158,11 +158,6 @@ ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir: ${PROJECT_PATH}/${KERNEL_NAME}.mlir
 	aries-opt -o $@ $< \
 		--affine-loop-unroll="unroll-full unroll-full-threshold=3" \
 		--canonicalize
-
-kernel_header: ${PROJECT_AIE_PATH}/kernel.h
-${PROJECT_AIE_PATH}/kernel.h: ${PROJECT_PATH}/${KERNEL_NAME}.mlir
-	aries-translate -o $@ $< \
-		-emit-kenrel-header
 
 kernel_cc: ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc
 ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir
