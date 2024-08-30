@@ -123,13 +123,13 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-plio-materialize \
 			-canonicalize -cse
 
-translate: adf_graph kernel_header kernel_cc
-adf_graph: adf_graph_temp
+translate: file_split kernel_file_split clean_kernel_vec
+file_split: tempfile
 	aries-opt <${FUNC}.mlir \
-		-aries-file-split="inputfile-name=adf_graph_temp.cpp path-name=${PROJECT_AIE_PATH}/" \
+		-aries-file-split="inputfile-name=temp.cpp path-name=${PROJECT_AIE_PATH}/" \
 		>/dev/null
-adf_graph_temp: ${PROJECT_AIE_PATH}/adf_graph_temp.cpp
-${PROJECT_AIE_PATH}/adf_graph_temp.cpp: ${PROJECT_PATH}/${FUNC}.adf.mlir
+tempfile: ${PROJECT_AIE_PATH}/temp.cpp
+${PROJECT_AIE_PATH}/temp.cpp: ${PROJECT_PATH}/${FUNC}.adf.mlir
 	aries-translate -o $@ $< \
 		-emit-aries-kernels
 
@@ -159,10 +159,17 @@ ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir: ${PROJECT_PATH}/${KERNEL_NAME}.mlir
 		--affine-loop-unroll="unroll-full unroll-full-threshold=3" \
 		--canonicalize
 
-kernel_cc: ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc
-${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir
+kernel_file_split: kernel_cc
+	aries-opt <${FUNC}.mlir \
+		-aries-file-split="inputfile-name=temp.cc path-name=${PROJECT_AIE_PATH}/" \
+		>/dev/null
+kernel_cc: ${PROJECT_AIE_PATH}/temp.cc
+${PROJECT_AIE_PATH}/temp.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir
 	aries-translate -o $@ $< \
 		-emit-kenrel-func
+
+clean_kernel_vec:
+	rm -rf ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir ${PROJECT_PATH}/${KERNEL_NAME}.mlir
 
 clean_test:
 	rm -rf ${PROJECT_PATH}/*_${FUNC}.*
