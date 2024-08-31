@@ -97,6 +97,11 @@ ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/12_${FUNC}.adfgra
 			-aries-plio-materialize \
 			-canonicalize -cse
 
+doublebuffer: ${PROJECT_PATH}/14_${FUNC}.doublebuffer.mlir
+${PROJECT_PATH}/14_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
+	aries-opt -o $@ $< \
+			-aries-pl-double-buffer
+
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
 ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
 	aries-translate -o $@ $< \

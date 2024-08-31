@@ -800,6 +800,8 @@ private:
                                            loop.getUpperBoundMap(),
                                            loop.getStepAsInt());
         newForOps.push_back(newForOp);
+        if(loop->hasAttr("Array_Partition"))
+          newForOp->setAttr("Array_Partition",builder.getUnitAttr());
         builder.setInsertionPointToStart(newForOp.getBody());
       }
       auto outerNewloop = newForOps[0];

@@ -139,6 +139,16 @@ def AriesPLIOMaterialize : Pass<"aries-plio-materialize"> {
   let constructor = "mlir::aries::createAriesPLIOMaterializePass()";
 }
 
+def AriesPLDoubleBuffer : Pass<"aries-pl-double-buffer"> {
+  let summary = "Apply double buffer for the data mover between PL and AIE";
+  let description = [{
+    This pass tranverses all the "module" in the adf.pl, extract them to
+    separate functions and use double buffer. 
+  }];
+  let constructor = "mlir::aries::createAriesPLDoubleBufferPass()";
+  let dependentDialects = ["mlir::scf::SCFDialect"];
+}
+
 def AriesADFTest : Pass<"aries-adf-test"> {
   let summary = "Test ADF Dialect Ops";
   let constructor = "mlir::aries::createAriesADFTestPass()";

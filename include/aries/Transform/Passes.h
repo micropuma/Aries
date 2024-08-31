@@ -1,6 +1,7 @@
 #ifndef ARIES_TRANSFORM_PASSES_H
 #define ARIES_TRANSFORM_PASSES_H
 
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -84,6 +85,7 @@ std::unique_ptr<Pass> createAriesADFCellCreatePass();
 std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesGMIOMaterializePass();
 std::unique_ptr<Pass> createAriesPLIOMaterializePass();
+std::unique_ptr<Pass> createAriesPLDoubleBufferPass();
 std::unique_ptr<Pass> createAriesADFTestPass();
 std::unique_ptr<Pass> createAriesFileSplitPass();
 std::unique_ptr<Pass> createAriesFileSplitPass(const AriesOptions &opts);

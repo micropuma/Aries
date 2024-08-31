@@ -103,6 +103,8 @@ private:
         for(auto idx : redIndeices)
           L2tileBand[idx]->setAttr("reduction", builder.getUnitAttr());
         
+       
+        
         // L3 tiling if specified
         if(L3TileSizes.size()){
           for (unsigned i = 0; i <std::min(bandSize,L3TileSizes.size());++i)
@@ -119,6 +121,19 @@ private:
             L3tileBand[idx]->setAttr("reduction", builder.getUnitAttr());
             L3tileBand[idx + bandSize]->setAttr(
                                         "reduction", builder.getUnitAttr());
+          }
+          //Noralize L3 loops
+          for(unsigned i =0; i < bandSize; i++){
+            auto forOp = L3tileBand[i];
+            if(failed(normalizeAffineFor(forOp)))
+              return false;
+          }
+        }else{
+          //Noralize L2 loops
+          for(unsigned i =0; i < bandSize; i++){
+            auto forOp = L2tileBand[i];
+            if(failed(normalizeAffineFor(forOp)))
+              return false;
           }
         }
       }
