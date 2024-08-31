@@ -22,7 +22,7 @@ fileCreate:
 copyFile:
 	cp -r template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
 
-test: iomaterialize
+test: doublebuffer
 
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
@@ -103,7 +103,7 @@ ${PROJECT_PATH}/14_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/13_${FUNC}.iomater
 			-aries-pl-double-buffer
 
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
-${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
+${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/14_${FUNC}.doublebuffer.mlir
 	aries-translate -o $@ $< \
 		-emit-aries-kernels
 
@@ -126,7 +126,8 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-adf-cell-create \
 			-aries-gmio-materialize \
 			-aries-plio-materialize \
-			-canonicalize -cse
+			-canonicalize -cse \
+			-aries-pl-double-buffer
 
 translate: file_split kernel_file_split clean_kernel_vec
 file_split: tempfile
