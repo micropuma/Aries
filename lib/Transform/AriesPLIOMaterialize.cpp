@@ -729,6 +729,18 @@ private:
     }else{
       auto newLoad = builder.create<AffineLoadOp>(loc, memref, indices);
       builder.create<AffineStoreOp>(loc, newLoad, allocOp, zeroValues);
+      // Then initialize local buffer with zero
+      Value value;
+      if (elementType.isa<IntegerType>()) {
+        auto intType = builder.getI32Type();
+        auto intAttr = builder.getIntegerAttr(intType, 0);
+        value = builder.create<arith::ConstantOp>(loc, intType, intAttr);
+      }else{
+        auto floatType = builder.getF32Type();
+        auto floatAttr = builder.getF32FloatAttr(0.0);
+        value = builder.create<arith::ConstantOp>(loc, floatType, floatAttr);
+      }
+      builder.create<AffineStoreOp>(loc, value, memref, indices);
       loadOp.erase();
       auto Attr = outerLoop->getAttr("receive");
       outerNewLoop->setAttr("receive", Attr);
