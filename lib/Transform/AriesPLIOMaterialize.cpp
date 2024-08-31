@@ -732,6 +732,7 @@ private:
       loadOp.erase();
       auto Attr = outerLoop->getAttr("receive");
       outerNewLoop->setAttr("receive", Attr);
+      outerNewLoop->setAttr("hoist", builder.getUnitAttr());
       outerLoop->removeAttr("receive");
     }
     // Update the loop variables
@@ -802,6 +803,8 @@ private:
         newForOps.push_back(newForOp);
         if(loop->hasAttr("Array_Partition"))
           newForOp->setAttr("Array_Partition",builder.getUnitAttr());
+        if(loop->hasAttr("reduction"))
+          newForOp->setAttr("reduction",builder.getUnitAttr());
         builder.setInsertionPointToStart(newForOp.getBody());
       }
       auto outerNewloop = newForOps[0];
@@ -827,7 +830,6 @@ private:
         }else if(auto Attr = forOp->getAttr("receive")){
           outerNewloop->setAttr("receive", Attr);
           forOp->removeAttr("receive");
-          forOp->setAttr("module", newAttr);
         }
       }
       // Update the loop variables
@@ -1104,6 +1106,44 @@ private:
     return true;
   }
 
+  // Hoist the loops beyond loops marked by reduction, 
+  // this is to implement the output stationary dataflow
+  void hoistBufferStore(ModuleOp mod, OpBuilder builder){
+    mod.walk([&](FuncOp func){
+      auto rootLoop = getFirstOpOfType<AffineForOp>(func.getBody());
+      if(!func->hasAttr("adf.pl") || !rootLoop)
+        return WalkResult::advance();
+      SmallVector<AffineForOp, 6> tileBand;
+      getPerfectlyNestedLoops(tileBand,rootLoop);
+      auto innerloop = tileBand[tileBand.size()-1];
+      auto reverseBand = tileBand;
+      std::reverse(reverseBand.begin(), reverseBand.end());
+      // Check forOps marked by hoist
+      SmallVector<AffineForOp, 2> forOps;
+      for(auto forOp : innerloop.getOps<AffineForOp>())
+        if(forOp->hasAttr("hoist"))
+          forOps.push_back(forOp);
+      if(!forOps.size())
+        return WalkResult::advance();
+      // Check and find the outmost reduction loop
+      AffineForOp finalLoop;
+      unsigned index = 0;
+      unsigned indexRed = 0;
+      for(auto loop : reverseBand){
+        if(loop->hasAttr("reduction")){
+          finalLoop = loop;
+          if(index>indexRed)
+            assert("Detected loop doesn't support output stationary");
+          indexRed++;
+        }
+        index++;
+      }
+      for(auto forOp : forOps)
+        forOp->moveAfter(finalLoop);
+      return WalkResult::advance();
+    });
+  }
+
   // Move the collected adf.cell to adf.cell.launch
   void Postprocess(OpBuilder builder, LauchCellOp lauchcell, 
                    SmallVectorImpl<CallOp>& calls){
@@ -1137,6 +1177,7 @@ private:
       PLFuncCreation(builder, topFunc, plFunc, callop, lauchcell);
       if(!PLDataMovement(builder, topFunc, plFunc, callop))
         return false;
+      hoistBufferStore(mod, builder);
       Postprocess(builder, lauchcell, calls);
     }
     return true;
