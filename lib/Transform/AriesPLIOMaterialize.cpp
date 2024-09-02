@@ -852,6 +852,7 @@ private:
         }else if(auto Attr = forOp->getAttr("store")){
           outerNewloop->setAttr("store", Attr);
           forOp->removeAttr("store");
+          forOp->setAttr("hoist",builder.getUnitAttr());
         }else if(auto Attr = forOp->getAttr("send")){
           outerNewloop->setAttr("send", Attr);
           forOp->removeAttr("send");
@@ -1141,11 +1142,18 @@ private:
   void hoistBufferStore(ModuleOp mod, OpBuilder builder){
     auto loc = builder.getUnknownLoc();
     mod.walk([&](FuncOp func){
-      auto rootLoop = getFirstOpOfType<AffineForOp>(func.getBody());
-      if(!func->hasAttr("adf.pl") || !rootLoop)
+      AffineForOp plforOp; 
+      func.walk([&](AffineForOp op){
+        if(op->hasAttr("Array_Partition")){
+          plforOp = op;
+          return WalkResult::interrupt();
+        }
+        return WalkResult::advance();
+      });
+      if(!func->hasAttr("adf.pl") || !plforOp)
         return WalkResult::advance();
       SmallVector<AffineForOp, 6> tileBand;
-      getPerfectlyNestedLoops(tileBand,rootLoop);
+      getLoopBandFromInnermost(plforOp, tileBand);
       auto innerloop = tileBand[tileBand.size()-1];
       auto reverseBand = tileBand;
       std::reverse(reverseBand.begin(), reverseBand.end());

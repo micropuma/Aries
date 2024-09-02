@@ -32,6 +32,9 @@ OpType getFirstOpOfType(Region &region) {
 
 unsigned getLoopNum(Operation *op, AffineForOp &loop);
 
+void getLoopBandFromInnermost(AffineForOp forOp, 
+                              SmallVector<AffineForOp, 6> &band);
+
 // Extend getPerfectlyNestedLoops func to imperfect nested loops
 void getNestedLoops(SmallVectorImpl<AffineForOp> &nestedLoops, 
                     AffineForOp root);
