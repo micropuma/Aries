@@ -14,10 +14,15 @@ using namespace mlir::func;
 using namespace mlir::affine;
 
 bool elimDMA(DmaOp op, Value val){
+  // Check if it is the result of CallOp
+  auto defineOp = val.getDefiningOp();
+  if(defineOp && dyn_cast<CallOp>(defineOp))
+    return false;
+  // Check if it is used by CallOp
   for (auto user : val.getUsers())
     if(dyn_cast<CallOp>(user))
-      return true;
-  return false;
+      return false;
+  return true;
 }
 
 struct DmaConvert : public OpConversionPattern<DmaOp> {
