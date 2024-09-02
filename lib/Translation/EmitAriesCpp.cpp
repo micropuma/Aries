@@ -2435,6 +2435,8 @@ int main(int argc, char **argv) {
     os << getName(outMem) << ".sync(XCL_BO_SYNC_BO_FROM_DEVICE , " 
        << bytes * size    << ", "    << "0);\n\n";
   }
+  indent();
+  os << "std::cout << \"Kernel run finished\\n\";\n"; 
 
   indent();
   os << "//////// Add post processes here/////////\n\n";
@@ -2451,11 +2453,11 @@ int main(int argc, char **argv) {
   //Emit Connection between PL and AIE
   std::string config_header = R"XXX(
 //_aries_split_//system.cfg//_aries_split_//
-//===----------------------------------------------------------------------===//
-//
-// Automatically generated file for system.cfg
-//
-//===----------------------------------------------------------------------===//
+#===----------------------------------------------------------------------===
+#
+# Automatically generated file for system.cfg
+#
+#===----------------------------------------------------------------------===
 [connectivity]
 )XXX";
 
@@ -2499,7 +2501,7 @@ using namespace adf;
 #include <adf.h>
 #include <stdio.h>
 #include <iostream>
-#include "kernel.h"
+#include "adf_kernel.h"
 using namespace adf;
 
 
@@ -2538,9 +2540,9 @@ using namespace adf;
 #include <string>
 
 // This is used for the PL Kernels
-#include "xrt/experimental/xrt_bo.h"
-#include "xrt/experimental/xrt_device.h"
-#include "xrt/experimental/xrt_kernel.h"
+#include "experimental/xrt_bo.h"
+#include "experimental/xrt_device.h"
+#include "experimental/xrt_kernel.h"
 
 
 // Using the ADF API that call XRT API
