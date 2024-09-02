@@ -925,6 +925,7 @@ private:
       auto newfunc = builder.create<FuncOp>(
                                   builder.getUnknownLoc(), funcName, funcType);
       newfunc->setAttr("adf.pl",builder.getUnitAttr());
+      newfunc->setAttr("inline",builder.getBoolAttr(false));
       auto destBlock = newfunc.addEntryBlock();
       builder.setInsertionPointToEnd(destBlock);
       auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());

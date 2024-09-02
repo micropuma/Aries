@@ -2035,9 +2035,13 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
     os << "#pragma HLS dataflow\n";
   }
 
-  if (func->hasAttr("inline")) {
+  if (auto attr = func->getAttr("inline")) {
+    auto boolAttr = dyn_cast<BoolAttr>(attr);
     indent();
-    os << "#pragma HLS inline\n";
+    os << "#pragma HLS inline";
+    if(!boolAttr.getValue())
+      os << " OFF";
+    os << "\n";
   }
 
   // Emit other pragmas for function ports.

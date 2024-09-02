@@ -46,8 +46,9 @@ private:
       ivs.push_back(loop.getInductionVar());
     }
     AffineExpr finalExpr = builder.getAffineDimExpr(0);
+    AffineExpr upExpr = builder.getAffineConstantExpr(1);
     for (unsigned i = 1; i < ivs.size(); ++i) {
-      auto upExpr = affineMaps[i-1].getResult(0);
+      upExpr = upExpr * affineMaps[i-1].getResult(0);
       finalExpr = finalExpr + builder.getAffineDimExpr(i) * upExpr;
     }
     auto affineMap = AffineMap::get(ivs.size(), 0, finalExpr, context);
@@ -109,6 +110,7 @@ private:
            = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
       auto newfunc = builder.create<FuncOp>(loc, newName, funcType);
       newfunc->setAttr("adf.pl", builder.getUnitAttr());
+      newfunc->setAttr("inline",builder.getBoolAttr(false));
       auto destBlock = newfunc.addEntryBlock();
       builder.setInsertionPointToEnd(destBlock);
       auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
