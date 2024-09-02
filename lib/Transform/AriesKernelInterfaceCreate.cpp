@@ -26,6 +26,189 @@ public:
   }
 
 private:
+  void classifyArgs(OpBuilder builder, FuncOp calleeFunc,
+                    SmallVector<unsigned, 4>& inArgs,
+                    SmallVector<unsigned, 4>& outArgs,
+                    SmallVector<unsigned, 4>& moveArgs,
+                    SmallVector<unsigned, 4>& edgeInArgs,
+                    SmallVector<unsigned, 4>& wrBuffers,
+                    SmallVector<MemRefType, 4>& newOutTypes){
+    auto &entryBlock = calleeFunc.getBody().front();
+    unsigned index = 0;
+    unsigned bufIndex = 0;
+    for (auto arg : calleeFunc.getArguments()) {
+      if(!dyn_cast<MemRefType>(arg.getType()))
+        continue;
+      auto type = dyn_cast<MemRefType>(arg.getType());
+      bool isWrite = false;
+      bool isRead = false;
+      for (auto user : arg.getUsers()){
+        if (dyn_cast<AffineStoreOp>(user))
+          isWrite=true;
+        if (dyn_cast<AffineLoadOp>(user))
+          isRead=true;
+      }
+      //If the mem has been read and written
+      //then alloc and copy to a new buffer and return it
+      builder.setInsertionPointToStart(&entryBlock);
+      if(isWrite && isRead){
+        inArgs.push_back(index);
+        outArgs.push_back(index);
+        // Record the newly created buffer that has been both W & R
+        wrBuffers.push_back(bufIndex++);
+        newOutTypes.push_back(type);
+      }else if(isWrite){
+        //If it has only been written 
+        //then move it from Argument list to return value
+        outArgs.push_back(index);
+        moveArgs.push_back(index);
+        newOutTypes.push_back(type);
+        bufIndex++;
+      }else{
+        inArgs.push_back(index);
+        edgeInArgs.push_back(index);
+      }
+      index++;
+    }
+  }
+
+  void updateCallee(OpBuilder builder, FuncOp& newFunc,
+                    SmallVector<unsigned, 4>& inArgs,
+                    SmallVector<unsigned, 4>& outArgs,
+                    SmallVector<unsigned, 4>& moveArgs,
+                    SmallVector<unsigned, 4>& wrBuffers,
+                    SmallVector<MemRefType, 4>& newOutTypes,
+                    bool edgeKernel){
+    auto loc = builder.getUnknownLoc();
+    // Create new kernel
+    SmallVector<Type,8> newInTypes;
+    auto &newBlock = newFunc.getBody().front();
+    auto newReturn = dyn_cast<ReturnOp>(newBlock.getTerminator());
+    auto inTypes =SmallVector<Type,8>(newFunc.getArgumentTypes().begin(),
+                                      newFunc.getArgumentTypes().end());
+    auto outTypes =SmallVector<Type, 8>(newFunc.getResultTypes().begin(),
+                                        newFunc.getResultTypes().end());
+    SmallVector<Value, 4> returnOperands(newReturn.getOperands().begin(), 
+                                         newReturn.getOperands().end());
+    auto returnNum = newReturn.getNumOperands();
+    for(auto type : newOutTypes){
+      builder.setInsertionPointToStart(&newBlock);
+      auto buffer = builder.create<AllocOp>(loc,MemRefType::get(
+                                            type.getShape(),
+                                            type.getElementType(),
+                                            AffineMap(),
+                                            type.getMemorySpaceAsInt()));
+      outTypes.push_back(type);
+      returnOperands.push_back(buffer.getResult());
+    }
+
+    SmallVector<Value, 4> initBuffers;
+    SmallVector<Value, 4> loadBuffers;
+    // The buffers that has been both W & R should be initialized
+    for(auto idx : wrBuffers){
+      initBuffers.push_back(returnOperands[returnNum + idx]);
+      auto idxArg = outArgs[idx];
+      loadBuffers.push_back(newFunc.getArgument(idxArg));
+    }
+
+    // Update the argument types
+    for(auto i : inArgs)
+      newInTypes.push_back(inTypes[i]);
+    auto newFuncType = builder.getFunctionType(newInTypes, outTypes);
+    newFunc.setType(newFuncType);
+    // Replace all the output arguments by the newly created buffers
+    unsigned index = 0;
+    for (auto i : outArgs){
+      auto arg = newFunc.getArgument(i);
+      auto newArg = returnOperands[returnNum + index];
+      arg.replaceUsesWithIf(newArg, [&](OpOperand &use){
+          return newFunc->isProperAncestor(use.getOwner());
+      });
+      index++;
+    }
+    // Delete the block arguments
+    // For edge kernels move all the output arguments
+    // For other kernels move the write only arguments
+    BitVector bv(newFunc.getArguments().size());
+    for (auto i : moveArgs)
+      bv.set(i);
+    newBlock.eraseArguments(bv);
+    // Init the W&R buffers
+    // For edge kernels, initialize with zero
+    // For other kernels, initialize with its corresponding input buffer
+    for (unsigned i =0; i < initBuffers.size(); i++){
+      auto memref = initBuffers[i];
+      auto src = loadBuffers[i];
+      auto type = dyn_cast<MemRefType>(memref.getType());
+      //Create nested for loops
+      builder.setInsertionPointAfter(memref.getDefiningOp());
+      SmallVector<Value, 4> ivs;
+      for (int i = 0, e = type.getRank(); i < e; ++i) {
+        auto ub = type.getDimSize(i);
+        auto loop = builder.create<AffineForOp>(loc, 0, ub);
+        ivs.push_back(loop.getInductionVar());
+        builder.setInsertionPointToStart(loop.getBody());
+      }
+      // Load from source and store to destination
+      Value value;
+      if(edgeKernel){
+        auto eleType = type.getElementType();
+        if (eleType.isa<IntegerType>()) {
+          auto intType = builder.getI32Type();
+          auto zeroAttr = builder.getIntegerAttr(intType, 0);
+          value = builder.create<arith::ConstantOp>(loc, intType, zeroAttr);
+        }else{
+          auto floatType = builder.getF32Type();
+          auto floatAttr = builder.getF32FloatAttr(0.0);
+          value = builder.create<arith::ConstantOp>(loc, floatType, floatAttr);
+        }
+      }else{
+        value = builder.create<AffineLoadOp>(loc, src, ivs);
+      }
+      builder.setInsertionPointAfter(value.getDefiningOp());
+      builder.create<AffineStoreOp>(loc, value, memref, ivs);
+    }
+    // Create returned value
+    builder.setInsertionPoint(newReturn);
+    builder.create<ReturnOp>(loc, returnOperands);
+    newReturn.erase();
+  }
+
+  void updateCaller(OpBuilder builder, FuncOp func, CallOp caller, 
+                    SmallVector<unsigned, 4>& inArgs,
+                    SmallVector<unsigned, 4>& outArgs){
+    auto loc = builder.getUnknownLoc();
+    auto outTypes =SmallVector<Type, 8>(func.getResultTypes().begin(),
+                                        func.getResultTypes().end());
+    SmallVector<Value,8> callerOps; 
+    for(auto i : inArgs)
+      callerOps.push_back(caller.getOperand(i));
+    builder.setInsertionPoint(caller);
+    auto newCallOp 
+         = builder.create<func::CallOp>(loc, SymbolRefAttr::get(func), outTypes, 
+                                        callerOps);
+    // Update the uses of the old call results to use the new call results
+    unsigned index = 0;
+    for (auto argIndex : outArgs) {
+      auto arg = caller.getArgOperands()[argIndex];
+      // Replace the touched memref by the return value if it appears after 
+      // the new caller function
+      arg.replaceUsesWithIf(newCallOp.getResult(index++), [&](OpOperand &use){
+        if(newCallOp->isBeforeInBlock(use.getOwner()))
+          return true;
+        else
+          return false;
+      });
+    }
+    // Erase the old call operation
+    newCallOp->setAttr("adf.kernel", builder.getUnitAttr());
+    auto calleeName = caller.getCallee();
+    auto intAttr = dyn_cast<IntegerAttr>(caller->getAttr(calleeName));
+    auto newCalleeName = newCallOp.getCallee();
+    newCallOp->setAttr(newCalleeName, intAttr);
+    caller.erase();
+  };
+
   // This is an experimental pass to create the output buffer
   // TODO: Tensor may be a proper representation for the arguments in adf.kernel
   bool KernelInterfaceCreate (ModuleOp mod, StringRef topFuncName) {
@@ -35,148 +218,68 @@ private:
       topFunc->emitOpError("Top function not found\n");
       return false;
     }
-
     PassManager pm(&getContext());
     pm.addPass(createLoopFusionPass());
-    auto loc = builder.getUnknownLoc();
-    auto result = topFunc.walk([&](CallOp caller){
-      auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
-      auto &entryBlock = calleeFuncOp.getBody().front();
-      auto returnOpOld = dyn_cast<ReturnOp>(entryBlock.getTerminator());
-      auto inTypes =SmallVector<Type,8>(calleeFuncOp.getArgumentTypes().begin(),
-                                        calleeFuncOp.getArgumentTypes().end());
-      SmallVector<Type,8> inTypesNew;
-      SmallVector<Value,8> inCallerNew;
-      auto outTypes =SmallVector<Type,8>(calleeFuncOp.getResultTypes().begin(),
-                                         calleeFuncOp.getResultTypes().end());
-      SmallVector<Value, 4> returnOperands(returnOpOld.getOperands().begin(), 
-                                           returnOpOld.getOperands().end());
+    
+    // First walk, tranverse the non-repeated callees and update them
+    
+    for(auto calleeFunc : mod.getOps<FuncOp>()){
+      if (!calleeFunc->hasAttr("adf.kernel"))
+        continue;
+      // Get the info of original callee
+      // auto &entryBlock = calleeFunc.getBody().front();
       
+
       // check if the callee memref type arguments have been touched or not 
-      unsigned index = 0;
-      SmallVector<unsigned, 4> OutargIndeices;
-      SmallVector<unsigned, 4> InargIndeices;
-      SmallVector<unsigned, 4> MoveargIndeices;
-      for (auto arg : calleeFuncOp.getArguments()) {
-        if(auto type = dyn_cast<MemRefType>(arg.getType())){
-          bool isWrite = false;
-          bool isRead = false;
-          for (auto user : arg.getUsers()){
-            if (dyn_cast<AffineStoreOp>(user))
-              isWrite=true;
-            if (dyn_cast<AffineLoadOp>(user))
-              isRead=true;
-          }
-          //If the mem has been read and written
-          //then alloc and copy to a new buffer and return it
-          if(isWrite && isRead){
-            builder.setInsertionPoint(returnOpOld);
-            auto buffer = builder.create<AllocOp>(loc,MemRefType::get(
-                                                  type.getShape(),
-                                                  type.getElementType(),
-                                                  AffineMap(),
-                                                  type.getMemorySpaceAsInt()));
-            builder.setInsertionPointAfter(buffer);
-            
-            //Create nested for loops
-            SmallVector<Value, 4> ivs;
-            for (int i = 0, e = type.getRank(); i < e; ++i) {
-              auto ub = type.getDimSize(i);
-              auto loop = builder.create<AffineForOp>(loc, 0, ub);
-              ivs.push_back(loop.getInductionVar());
-              builder.setInsertionPointToStart(loop.getBody());
-            }
+      SmallVector<unsigned, 4> inArgs;
+      SmallVector<unsigned, 4> outArgs;
+      SmallVector<unsigned, 4> moveArgs;
+      SmallVector<unsigned, 4> edgeInArgs;
+      SmallVector<unsigned, 4> wrBuffers;
+      SmallVector<MemRefType, 4> newOutTypes;
+      classifyArgs(builder, calleeFunc, inArgs, outArgs, moveArgs, edgeInArgs, 
+                   wrBuffers, newOutTypes);
 
-            // Load from source and store to destination
-            auto value = builder.create<AffineLoadOp>(loc, arg, ivs);
-            builder.create<AffineStoreOp>(loc, value, buffer, ivs);
-            outTypes.push_back(type);
-            returnOperands.push_back(buffer);
-            InargIndeices.push_back(index);
-            OutargIndeices.push_back(index++);
-          }else if(isWrite){
-            //If it has only been written 
-            //then move it from Argument list to return value
-            builder.setInsertionPointToStart(&entryBlock);
-            auto buffer = builder.create<AllocOp>(loc,MemRefType::get(
-                                                  type.getShape(),
-                                                  type.getElementType(),
-                                                  AffineMap(),
-                                                  type.getMemorySpaceAsInt()));
-            outTypes.push_back(type);
-            returnOperands.push_back(buffer);
-            OutargIndeices.push_back(index);
-            MoveargIndeices.push_back(index++);
-          }else{
-            InargIndeices.push_back(index++);
-          }
-        }
-      }
+      // Update edge callee
+      auto op = calleeFunc->clone();
+      auto oldName = calleeFunc.getName();
+      auto newName = oldName.str() + "0";
+      auto newFunc =  dyn_cast<FuncOp>(op);
+      newFunc.setName(newName);
+      newFunc->setAttr("edge_kernel", builder.getUnitAttr());
+      builder.setInsertionPoint(calleeFunc);
+      builder.insert(newFunc);
+      updateCallee(builder, newFunc, edgeInArgs, outArgs, outArgs, 
+                   wrBuffers, newOutTypes, true);
 
-      //////////Handle callee
-      // Update the new inTypes for callee
-      for(auto i: InargIndeices){
-        inTypesNew.push_back(inTypes[i]);
-        inCallerNew.push_back(caller.getOperand(i));
-      }
-
-      //Update the callee function type and erase the old returnOp
-      auto newFuncType 
-          = FunctionType::get(calleeFuncOp.getContext(), inTypesNew, outTypes);
-      calleeFuncOp.setType(newFuncType);
-
-      //Update the use of the callee arguments need to be removed
-      index = 0;
-      for (auto i:MoveargIndeices){
-        auto arg = calleeFuncOp.getArgument(i);
-        arg.replaceAllUsesWith(returnOperands[index++]);
-      }
-
-      //Erase the unsed block arguments in the callee
-      BitVector bv(calleeFuncOp.getArguments().size());
-      for (auto i:MoveargIndeices)
-        bv.set(i);
-      entryBlock.eraseArguments(bv);
-
-      //Update the return values
-      builder.setInsertionPoint(returnOpOld);
-      builder.create<ReturnOp>(loc, returnOperands);
-      returnOpOld.erase();
-
-      //////////Handle caller
-      OpBuilder builder(caller);
-      auto newCallOp 
-           = builder.create<func::CallOp>(caller.getLoc(), 
-                                          SymbolRefAttr::get(calleeFuncOp), 
-                                          outTypes, inCallerNew);
-
-      // Update the uses of the old call results to use the new call results
-      index = 0;
-      for (auto argIndex : OutargIndeices) {
-        auto arg = caller.getArgOperands()[argIndex];
-        //Replace the touched memref by the return value if it appears after 
-        // the new caller function
-        arg.replaceUsesWithIf(newCallOp.getResult(index++), [&](OpOperand &use){
-          if(newCallOp->isBeforeInBlock(use.getOwner()))
-            return true;
-          else
-            return false;
-        });
-      }
-
-      // Erase the old call operation
-      caller.erase();
+      // Update normal callee
+      updateCallee(builder, calleeFunc, inArgs, outArgs, moveArgs, 
+                   wrBuffers, newOutTypes, false);
+      if(failed(pm.run(calleeFunc)))
+        return false;
       
-      //Apply Loop funsion to the kernel func
-      if(failed(pm.run(calleeFuncOp)))
-        return WalkResult::interrupt(); 
+      // Tranverse all the old callers and replace with the new callers
+      topFunc.walk([&](CallOp caller){
+        auto calleeName = caller.getCallee();
+        if(calleeName != oldName)
+          return WalkResult::advance();
+        bool flag = false;
+        // Change the first 
+        if(auto attr = caller->getAttr("kernel")){
+          if(auto intAttr = dyn_cast<IntegerAttr>(attr))
+            if(intAttr.getInt() == 0)
+              flag = true;
+        }else{
+          flag = true;
+        }
+        if(flag)
+          updateCaller(builder, newFunc, caller, edgeInArgs, outArgs);
+        else
+          updateCaller(builder, calleeFunc, caller, inArgs, outArgs);
 
-      return WalkResult::advance();
-    });
-
-    if (result.wasInterrupted())
-      return false;
-
+        return WalkResult::advance();
+      });
+    }
     return true;
   }
 

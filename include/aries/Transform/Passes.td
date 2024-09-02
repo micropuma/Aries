@@ -102,7 +102,7 @@ def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
   let description = [{
     This pass detect the opportunities to do data forwarding between local buffers
     instead of writing to then reading back from memory out of L1. This pass
-    should reply on the annotation in AriesFuncUnroll pass.
+    relies on the annotation in AriesFuncUnroll pass.
   }];
   let constructor = "mlir::aries::createAriesLocalDataForwardPass()";
 }
@@ -137,6 +137,16 @@ def AriesPLIOMaterialize : Pass<"aries-plio-materialize"> {
     and materialize the IOPush/IOPop Ops with specific DMA.
   }];
   let constructor = "mlir::aries::createAriesPLIOMaterializePass()";
+}
+
+def AriesPLDoubleBuffer : Pass<"aries-pl-double-buffer"> {
+  let summary = "Apply double buffer for the data mover between PL and AIE";
+  let description = [{
+    This pass tranverses all the "module" in the adf.pl, extract them to
+    separate functions and use double buffer. 
+  }];
+  let constructor = "mlir::aries::createAriesPLDoubleBufferPass()";
+  let dependentDialects = ["mlir::scf::SCFDialect"];
 }
 
 def AriesADFTest : Pass<"aries-adf-test"> {

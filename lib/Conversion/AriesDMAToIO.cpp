@@ -13,6 +13,18 @@ using namespace adf;
 using namespace mlir::func;
 using namespace mlir::affine;
 
+bool elimDMA(DmaOp op, Value val){
+  // Check if it is the result of CallOp
+  auto defineOp = val.getDefiningOp();
+  if(defineOp && dyn_cast<CallOp>(defineOp))
+    return false;
+  // Check if it is used by CallOp
+  for (auto user : val.getUsers())
+    if(dyn_cast<CallOp>(user))
+      return false;
+  return true;
+}
+
 struct DmaConvert : public OpConversionPattern<DmaOp> {
     std::string portType;
     int64_t portWidth;
@@ -79,6 +91,11 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
 
       //if the DmaOp is copied to L1 mem
       if(SrcSpace !=(int)MemorySpace::L1 && DstSpace == (int)MemorySpace::L1){
+        // Elim dead DMAs
+        if(elimDMA(op, DmaDst)){
+          rewriter.eraseOp(op);
+          return success();
+        }
         rewriter.setInsertionPoint(op);
         auto port 
              = rewriter.create<CreateGraphIOOp>(op->getLoc(), portIn, portName);
@@ -102,6 +119,11 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         return success();
       }else if(SrcSpace == (int)MemorySpace::L1 && 
                DstSpace != (int)MemorySpace::L1){
+        // Elim dead DMAs
+        if(elimDMA(op, DmaSrc)){
+          rewriter.eraseOp(op);
+          return success();
+        }
         rewriter.setInsertionPoint(op);
         auto port 
              = rewriter.create<CreateGraphIOOp>(op->getLoc(),portOut,portName);

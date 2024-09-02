@@ -38,11 +38,11 @@ DMAForward(MLIRContext *context)
 
     if(auto readAttr = op->getAttr("read")){
       auto intRAttr = dyn_cast<IntegerAttr>(readAttr);
-      auto RIndex = intRAttr.getInt();
-      if(RIndex<=0){
-        op->removeAttr("read");
+      if(!intRAttr)
         return success();
-      }
+      auto RIndex = intRAttr.getInt();
+      if(RIndex<=0)
+        return success();
       for(auto use: ConSrc.getUsers()){
         if(auto dmaop = dyn_cast<DmaOp>(use)){
           auto writeAttr = dmaop->getAttr("write");
@@ -73,6 +73,8 @@ DMAForward(MLIRContext *context)
       }
     }else if(auto writeAttr = op->getAttr("write")){
       auto intWAttr = dyn_cast<IntegerAttr>(writeAttr);
+      if(!intWAttr)
+        return success();
       auto WIndex = intWAttr.getInt();
       for(auto use: ConDst.getUsers()){
         if(auto dmaop = dyn_cast<DmaOp>(use)){

@@ -1,6 +1,7 @@
 #ifndef ARIES_TRANSFORM_PASSES_H
 #define ARIES_TRANSFORM_PASSES_H
 
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -40,7 +41,7 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
 
   /// Configure the DMAToIO pass.
   Option<int64_t> OptPortWidth{
-      *this, "plio-width", llvm::cl::init(128),
+      *this, "plio-width", llvm::cl::init(32),
       llvm::cl::desc("Specify the plio width of a port in bits (32,64,128)")};
   
   /// Configure the DMAToIO pass.
@@ -84,6 +85,7 @@ std::unique_ptr<Pass> createAriesADFCellCreatePass();
 std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesGMIOMaterializePass();
 std::unique_ptr<Pass> createAriesPLIOMaterializePass();
+std::unique_ptr<Pass> createAriesPLDoubleBufferPass();
 std::unique_ptr<Pass> createAriesADFTestPass();
 std::unique_ptr<Pass> createAriesFileSplitPass();
 std::unique_ptr<Pass> createAriesFileSplitPass(const AriesOptions &opts);

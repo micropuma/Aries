@@ -21,7 +21,15 @@ struct AllocConvert : public OpConversionPattern<AllocOp> {
       AllocOp op, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
       
+    auto memrefType = dyn_cast<MemRefType>(op.getMemref().getType());
+    auto memSpace = memrefType.getMemorySpace();
+    if (!memSpace || !dyn_cast<IntegerAttr>(memSpace))
+      return failure();
+    if (memrefType.getMemorySpaceAsInt() == (int)MemorySpace::L1){
       rewriter.replaceOpWithNewOp<BufferOp>(op, op.getType());
+      return success();
+    }else
+      return failure();
     return success();
   }
 };
@@ -32,7 +40,7 @@ struct DeallocConvert : public OpConversionPattern<DeallocOp> {
       DeallocOp op, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
       
-      rewriter.eraseOp(op);
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -43,7 +51,7 @@ struct SubViewConvert : public OpConversionPattern<SubViewOp> {
       SubViewOp op, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
       
-      rewriter.eraseOp(op);
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -244,7 +252,6 @@ private:
     unsigned index = 0;
     ConversionTarget target(context);
     target.addIllegalOp<AffineParallelOp>();
-    target.addIllegalOp<AllocOp>();
     target.addIllegalOp<DeallocOp>();
     target.addIllegalOp<CopyOp>();
     target.addIllegalOp<SubViewOp>();

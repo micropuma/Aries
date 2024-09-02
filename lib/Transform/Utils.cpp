@@ -46,6 +46,28 @@ unsigned getLoopNum(Operation *op, AffineForOp &loop) {
   return loopNum;
 }
 
+/// Get the whole loop band given the innermost loop and return it in "band".
+void getLoopBandFromInnermost(AffineForOp forOp, 
+                              SmallVector<AffineForOp, 6> &band) {
+  band.clear();
+  SmallVector<AffineForOp, 6> reverseBand;
+
+  auto currentLoop = forOp;
+  while (true) {
+    reverseBand.push_back(currentLoop);
+
+    auto parentLoop = currentLoop->getParentOfType<AffineForOp>();
+    if (!parentLoop)
+      break;
+    AffineForOp emptyForOp;
+    if (getLoopNum(parentLoop, emptyForOp) == 1)
+      currentLoop = parentLoop;
+    else
+      break;
+  }
+  band.append(reverseBand.rbegin(), reverseBand.rend());
+}
+
 // Extend getPerfectlyNestedLoops func to imperfect nested loops
 void getNestedLoops(
     SmallVectorImpl<AffineForOp> &nestedLoops, AffineForOp root) {

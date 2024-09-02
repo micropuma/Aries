@@ -30,6 +30,7 @@ public:
             EndLauchCellOp, WaitLauchCellOp, KernelOp, CreateGraphIOOp, 
             ConfigPLIOOp, ConfigGMIOOp, BufferOp, StreamOp, CascadeOp, 
             CreateKernelIOOp, DmaOp, ConnectOp, IOPushOp, IOPopOp, IOWaitOp,
+            IOWriteOp, IOReadOp,
 
             // Function operations.
             func::CallOp, func::ReturnOp,
@@ -119,6 +120,8 @@ public:
   HANDLE(IOPushOp);
   HANDLE(IOPopOp);
   HANDLE(IOWaitOp);
+  HANDLE(IOWriteOp);
+  HANDLE(IOReadOp);
 
   // Control flow operations.
   HANDLE(func::CallOp);

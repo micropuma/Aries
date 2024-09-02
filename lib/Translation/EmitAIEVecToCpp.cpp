@@ -3505,7 +3505,10 @@ CppEmitter::genCppTypeName(Type type, bool stdintType, bool isAcc,
       auto vShape = tType.getShape();
       int64_t numElems = std::accumulate(vShape.begin(), vShape.end(), 1,
                                          std::multiplies<int64_t>());
-      ss << "aie::vector<"; 
+      if(isAcc)
+        ss << "aie::accum<";
+      else
+        ss << "aie::vector<"; 
 
       int64_t iElTyBitWidth = 0;
       auto iElTy = dyn_cast<IntegerType>(eltType);
@@ -3535,6 +3538,8 @@ CppEmitter::genCppTypeName(Type type, bool stdintType, bool isAcc,
           return ss.str();
         }
       }
+      if (isAcc && dyn_cast<FloatType>(eltType))
+        ss << "acc";
       auto elTyNameOpt = genCppTypeName(eltType, false);
       if (!elTyNameOpt)
         return {};
