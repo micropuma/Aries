@@ -241,7 +241,12 @@ private:
          = builder.create<AllocOp>(loc, MemRefType::get(bufSizes,
                                    type.getElementType(), AffineMap(),
                                    (int)mlir::aries::adf::MemorySpace::L2));
-    
+    if(iopush)
+      allocOp->setAttr("buffer_type", builder.getStringAttr("bram_1p"));
+    else{
+      allocOp->setAttr("buffer_type", builder.getStringAttr("uram_t2p"));
+      allocOp->setAttr("init", builder.getUnitAttr());
+    }
     // Create static size and strides for dma & IOPush/IOPop
     auto indexType = builder.getIndexType();
     auto oneAttr = builder.getIntegerAttr(indexType, 1);
@@ -466,6 +471,8 @@ private:
     return WalkResult::advance();
   }
 
+  // Convert adf.io.push/pop that moves data between memrefs and ios to 
+  // affine load&store
   WalkResult ConvertIOToAffine(OpBuilder builder, Operation* op,  bool iopush){
     auto loc = builder.getUnknownLoc();
     IOPushOp iopushOp;
@@ -493,6 +500,8 @@ private:
     } // Create for loops for IOPush/Pop Ops
     SmallVector<AffineForOp, 4> newIOLoops;
     auto rank = offsets.size();
+    auto indexType = builder.getIndexType();
+    auto oneAttr = builder.getIntegerAttr(indexType, 1);
     for(unsigned i = 0; i < rank; i++){
       auto size = sizes[i];
       auto constantSize = dyn_cast<arith::ConstantOp>(size.getDefiningOp());
@@ -506,6 +515,7 @@ private:
       builder.setInsertionPointToStart(newIOForOp.getBody());
     }// Get the access operands of affine load/store
     auto newInnerIOLoop = newIOLoops[newIOLoops.size()-1];
+    newInnerIOLoop->setAttr("pipeline_ii", oneAttr);
     auto newInnerIOYiled = newInnerIOLoop.getBody()->getTerminator();
     auto d0 = builder.getAffineDimExpr(0);
     auto d1 = builder.getAffineDimExpr(1);
@@ -544,6 +554,7 @@ private:
     return WalkResult::advance();
   }
 
+  // Convert adf.dma that moves data between two memrefs to affine load&store
   WalkResult ConvertDMAToAffine(OpBuilder builder, Operation* op){
     auto loc = builder.getUnknownLoc();
     auto context = builder.getContext();
@@ -552,6 +563,8 @@ private:
     auto srcType = dyn_cast<MemRefType>(src.getType());
     auto dst = dmaOp.getDst();
     auto dstType = dyn_cast<MemRefType>(dst.getType());
+    auto indexType = builder.getIndexType();
+    auto oneAttr = builder.getIntegerAttr(indexType, 1);
     SmallVector<Value> L2Sizes;
     SmallVector<Value> L2Offsets;
     SmallVector<Value> L3Offsets;
@@ -589,6 +602,7 @@ private:
       builder.setInsertionPointToStart(newDMAForOp.getBody());
     }
     auto newInnerDMALoop = newDMALoops[newDMALoops.size()-1];
+    newInnerDMALoop->setAttr("pipeline_ii", oneAttr);
     auto newInnerDMAYiled = newInnerDMALoop.getBody()->getTerminator();
     // Create mem access for L2 buffer
     SmallVector<Value> newApplyopL2DMAs;
@@ -639,6 +653,7 @@ private:
     return WalkResult::advance();
   }
 
+  // Change direct L2 buffer access to read from/write to a stream
   void L2BufferProcess(OpBuilder builder, FuncOp plFunc, AffineStoreOp storeOp,
                        AffineLoadOp loadOp, SmallVector<AffineForOp, 6> band, 
                        bool load){
@@ -650,6 +665,7 @@ private:
     auto streamAttr = builder.getStringAttr("stream");
     auto indexType = builder.getIndexType();
     auto zeroAttr = builder.getIntegerAttr(indexType, 0);
+    auto oneAttr = builder.getIntegerAttr(indexType, 1);
     Value memref, val;
     SmallVector<Value> indices;
     if(load){
@@ -708,6 +724,7 @@ private:
     // Clone and move the used affine apply ops inside newForOps
     auto outerNewLoop = newForOps[0];
     auto innerNewLoop = newForOps[newForOps.size()-1];
+    innerNewLoop->setAttr("pipeline_ii", oneAttr);
     auto innerNewYiled = innerNewLoop.getBody()->getTerminator();
     SmallVector<AffineApplyOp, 4> newApplyops;
     std::reverse(applyops.begin(), applyops.end());
@@ -1120,7 +1137,9 @@ private:
 
   // Hoist the loops beyond loops marked by reduction, 
   // this is to implement the output stationary dataflow
+  // If has reduction, then need to initialize L2 buffer marked by init
   void hoistBufferStore(ModuleOp mod, OpBuilder builder){
+    auto loc = builder.getUnknownLoc();
     mod.walk([&](FuncOp func){
       auto rootLoop = getFirstOpOfType<AffineForOp>(func.getBody());
       if(!func->hasAttr("adf.pl") || !rootLoop)
@@ -1152,6 +1171,41 @@ private:
       }
       for(auto forOp : forOps)
         forOp->moveAfter(finalLoop);
+      // Initialize output buffer as zero
+      for(auto alloc : func.getOps<AllocOp>()){
+        if(alloc->hasAttr("init")){
+          alloc->removeAttr("init");
+          auto memref = alloc.getResult();
+          auto type = dyn_cast<MemRefType>(memref.getType());
+          auto eleType = type.getElementType();
+          auto rank = type.getRank();
+          SmallVector<Value> sizes;
+          SmallVector<AffineForOp, 4> newLoops;
+          builder.setInsertionPointAfter(alloc);
+          SmallVector<Value, 4> ivs;
+          for(unsigned i = 0; i < rank; i++){
+            auto size = type.getDimSize(i);
+            auto newForOp = builder.create<AffineForOp>(loc, 0, size, 1);
+            newLoops.push_back(newForOp);
+            ivs.push_back(newForOp.getInductionVar());
+            builder.setInsertionPointToStart(newForOp.getBody());
+          }
+          auto newInnerLoop = newLoops[newLoops.size()-1];
+          auto newInnerYiled = newInnerLoop.getBody()->getTerminator();
+          builder.setInsertionPoint(newInnerYiled);
+          Value value;
+          if (eleType.isa<IntegerType>()) {
+            auto intType = builder.getI32Type();
+            auto zeroAttr = builder.getIntegerAttr(intType, 0);
+            value = builder.create<arith::ConstantOp>(loc, intType, zeroAttr);
+          }else{
+            auto floatType = builder.getF32Type();
+            auto floatAttr = builder.getF32FloatAttr(0.0);
+            value = builder.create<arith::ConstantOp>(loc, floatType, floatAttr);
+          }
+          builder.create<AffineStoreOp>(loc, value, memref, ivs);
+        }
+      }
       return WalkResult::advance();
     });
   }

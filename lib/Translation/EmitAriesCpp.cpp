@@ -363,6 +363,7 @@ private:
   /// MLIR component and ADF emitters.
   void emitBlock(Block &block);
   void emitArrayDirectives(Value memref);
+  void emitLoopDirectives(Operation *op);
   void emitFunctionDirectives(func::FuncOp func, ArrayRef<Value> portList);
   void emitKernelHeader(FuncOp func);      // AIE kernel header definition
   void emitKernelFunc(FuncOp func);        // AIE kernel function
@@ -944,6 +945,7 @@ void ModuleEmitter::emitScfFor(scf::ForOp op) {
 
   addIndent();
 
+  emitLoopDirectives(op);
   emitBlock(*op.getBody());
   reduceIndent();
 
@@ -1081,6 +1083,7 @@ void ModuleEmitter::emitAffineFor(AffineForOp op) {
 
   addIndent();
 
+  emitLoopDirectives(op);
   emitBlock(*op.getBody());
   reduceIndent();
 
@@ -1476,6 +1479,7 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
   emitArrayDecl(result, false, name);
   os << ";";
   emitInfoAndNewLine(op);
+  emitArrayDirectives(result);
 }
 
 void ModuleEmitter::emitLoad(memref::LoadOp op) {
@@ -1920,6 +1924,51 @@ void ModuleEmitter::emitArrayDirectives(Value memref) {
       // so directly return
       return;
     }
+  }
+  if (auto defineOp = memref.getDefiningOp()){
+    if (auto defineAttr = defineOp->getAttr("buffer_type")){
+      std::string attrStr = defineAttr.cast<StringAttr>().getValue().str();
+      auto ramType = attrStr.substr(1, 8);
+      auto ramImp = attrStr.substr(0, 4);
+      indent();
+      os << "#pragma HLS bind_storage variable=";
+      emitValue(memref);
+      os << " type=" << ramType;
+      os << " impl=" << ramImp << "\n";
+    }
+  }
+}
+
+
+void ModuleEmitter::emitLoopDirectives(Operation *op) {
+  if (auto ii = op->getAttr("pipeline_ii")) {
+    reduceIndent();
+    indent();
+    os << "#pragma HLS pipeline II=" << ii.cast<IntegerAttr>().getValue();
+    // https://docs.xilinx.com/r/en-US/ug1399-vitis-hls/Rewinding-Pipelined-Loops-for-Performance
+    if (op->hasAttr("rewind"))
+      os << " rewind";
+    os << "\n";
+    addIndent();
+  }
+
+  if (auto factor = op->getAttr("unroll")) {
+    reduceIndent();
+    indent();
+    auto val = factor.cast<IntegerAttr>().getValue();
+    if (val == 0)
+      os << "#pragma HLS unroll"
+         << "\n";
+    else
+      os << "#pragma HLS unroll factor=" << val << "\n";
+    addIndent();
+  }
+
+  if (auto dataflow = op->getAttr("dataflow")) {
+    reduceIndent();
+    indent();
+    os << "#pragma HLS dataflow\n";
+    addIndent();
   }
 }
 
