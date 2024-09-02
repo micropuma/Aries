@@ -108,6 +108,7 @@ private:
       auto funcType 
            = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
       auto newfunc = builder.create<FuncOp>(loc, newName, funcType);
+      newfunc->setAttr("adf.pl", builder.getUnitAttr());
       auto destBlock = newfunc.addEntryBlock();
       builder.setInsertionPointToEnd(destBlock);
       auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
