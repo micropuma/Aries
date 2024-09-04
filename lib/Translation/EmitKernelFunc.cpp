@@ -33,7 +33,7 @@ static int iteration = 0;
       os << kernel_header;
 
       if (failed(aries::emitAIEVecToCpp(func,/*aieml=*/false,/*vitis=*/true, 
-                                        /*enres=*/false, os)))
+                                        /*enres=*/true, os)))
         return failure();
     }
   }
