@@ -2059,7 +2059,7 @@ void ModuleEmitter::emitKernelHeader(FuncOp func){
     if(auto memType = dyn_cast<MemRefType>(argType)){
       auto size = memType.getNumElements();
       os << "input_buffer<" << getTypeName(arg) << ", extents<" << size
-      <<">> &in" << std::to_string(index++) << ", "; 
+      <<">>& __restrict in" << std::to_string(index++) << ", "; 
     }else{
       os << getTypeName(arg) << "in" << std::to_string(index++) << ", ";
     }
@@ -2072,7 +2072,7 @@ void ModuleEmitter::emitKernelHeader(FuncOp func){
     if(auto memType = dyn_cast<MemRefType>(outType)){
       auto size = memType.getNumElements();
       os << "output_buffer<" << getTypeName(outType) <<", extents<" <<size
-      << ">> &out" << std::to_string(index++);
+      << ">>& __restrict out" << std::to_string(index++);
       if(index != outNum)
         os << ", ";
       else

@@ -2662,7 +2662,7 @@ static LogicalResult printOperation(CppEmitter &emitter,
     unsigned out_index = 0;
     for(auto arg : functionOp.getArguments()){
       if (failed(emitter.emitType(functionOp.getLoc(), arg.getType(),
-                                  true, false, true, false, 0)))
+                                  true, false, true, emitter.enres(), 0)))
         return failure();
       os << "in" << std::to_string(in_index++);
       emitter.getOrCreateName(arg);
@@ -2680,15 +2680,15 @@ static LogicalResult printOperation(CppEmitter &emitter,
     auto funcreturnOp = dyn_cast<func::ReturnOp>(entryBlock.getTerminator());
 
     if (failed(interleaveCommaWithError(
-            funcreturnOp.getOperands(), os,
-            [&](Value res) -> LogicalResult {
-              if (failed(emitter.emitType(functionOp.getLoc(), res.getType(),
-                                           true, false, true, false, 1)))
-                return failure();
-              os << "out" << std::to_string(out_index++);
-              emitter.getOrCreateName(res);
-              return success();
-            })))
+        funcreturnOp.getOperands(), os,
+        [&](Value res) -> LogicalResult {
+          if (failed(emitter.emitType(functionOp.getLoc(), res.getType(),
+                                       true, false, true, emitter.enres(), 1)))
+            return failure();
+          os << "out" << std::to_string(out_index++);
+          emitter.getOrCreateName(res);
+          return success();
+        })))
       return failure();
 
     os << ") {\n";
@@ -3443,7 +3443,7 @@ CppEmitter::genCppTypeName(Type type, bool stdintType, bool isAcc,
       if (!elemTyStrOpt)
         return {};
       if(enres)
-        ss << *elemTyStrOpt << " * restrict";
+        ss << *elemTyStrOpt << " * __restrict";
       else
         ss << *elemTyStrOpt << " *";
       return ss.str();
@@ -3458,7 +3458,10 @@ CppEmitter::genCppTypeName(Type type, bool stdintType, bool isAcc,
       else
         return {};
       ss << *elemTyStrOpt ;
-      ss << ", adf::extents<" << tType.getNumElements() << ">> &";
+      ss << ", adf::extents<" << tType.getNumElements() << ">>& ";
+      if(enres){
+        ss << " __restrict ";
+      }
       return ss.str();
     }
   }
