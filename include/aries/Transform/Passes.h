@@ -81,6 +81,8 @@ std::unique_ptr<Pass> createAriesDependencyExtractPass();
 std::unique_ptr<Pass> createAriesFuncUnrollPass();
 std::unique_ptr<Pass> createAriesKernelInterfaceCreatePass();
 std::unique_ptr<Pass> createAriesLocalDataForwardPass();
+std::unique_ptr<Pass> createAriesDMAToIOPass();
+std::unique_ptr<Pass> createAriesDMAToIOPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesADFCellCreatePass();
 std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesGMIOMaterializePass();

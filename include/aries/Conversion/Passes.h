@@ -15,8 +15,6 @@ namespace aries {
 namespace adf {
 
 std::unique_ptr<Pass> createAriesLowerToADFPass();
-std::unique_ptr<Pass> createAriesDMAToIOPass();
-std::unique_ptr<Pass> createAriesDMAToIOPass(const AriesOptions &opts);
 void registerConvertToADFPasses();
 
 #define GEN_PASS_CLASSES

@@ -23,19 +23,20 @@ def AriesTiling : Pass<"aries-tiling"> {
 }
 
 def AriesFuncExtract : Pass<"aries-func-extract"> {
-  let summary = "Extract out the operations within the innermost block loop as a function";
+  let summary = "Extract the function of the tile";
   let description = [{
-    This pass extracts the operations within the block loop as a function call by using livess
-    analysis and replacing the arguments in the new function.
+    This pass extracts the operations within the block loop as a function call 
+    by using livess analysis and replacing the arguments in the new function.
   }];
   let constructor = "mlir::aries::createAriesFuncExtractPass()";
 }
 
 def AriesLoopSimplify : Pass<"aries-loop-simplify"> {
-  let summary = "Simplify the boundray of the nested loops in kernel to constant values";
+  let summary = "A customized loop normalization pass";
   let description = [{
-    This pass simplifies the nested loops in the extracted function from affineMap to constant
-    values by checking its recutangularity and using affine.apply.
+    This pass simplifies the nested loops in the extracted function from 
+    affineMap to constant values by checking its recutangularity and using 
+    affine.apply.
   }];
   let constructor = "mlir::aries::createAriesLoopSimplifyPass()";
 }
@@ -82,7 +83,8 @@ def AriesDependencyExtract : Pass<"aries-dependency-extract"> {
 def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let summary = "Unroll all the block loops as seperated function calls";
   let description = [{
-    This pass unrolls all the block loops to function calls with different arguments.
+    This pass unrolls all the block loops to function calls with different 
+    arguments.
   }];
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
@@ -90,8 +92,9 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
 def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
   let summary = "Create new kenrel with interface compatable with ADF kernels";
   let description = [{
-    This pass creates the new kernel function that returns the buffers be touched.
-    This identifies the direction of the buffer which is required by ADF kernels.
+    This pass creates the new kernel function that returns the buffers be 
+    touched. This identifies the direction of the buffer which is required 
+    by ADF kernels.
   }];
   let constructor = "mlir::aries::createAriesKernelInterfaceCreatePass()";
   let dependentDialects = ["mlir::memref::MemRefDialect"];
@@ -100,11 +103,31 @@ def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
 def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
   let summary = "Forward the data from local buffer to another local buffer";
   let description = [{
-    This pass detect the opportunities to do data forwarding between local buffers
-    instead of writing to then reading back from memory out of L1. This pass
-    relies on the annotation in AriesFuncUnroll pass.
+    This pass detect the opportunities to do data forwarding between local 
+    buffers instead of writing to then reading back from memory out of L1. 
+    This pass relies on the annotation in AriesFuncUnroll pass.
   }];
   let constructor = "mlir::aries::createAriesLocalDataForwardPass()";
+}
+
+def AriesDMAToIO : Pass<"aries-dma-to-io"> {
+  let summary = "Convert DmaOp to GraphIOs";
+  let description = [{
+    This pass converts the DmaOps to the GraphIOs(PORT,GMIO,PLIO).
+  }];
+  let constructor = "mlir::aries::createAriesDMAToIOPass()";
+  let options = [
+    Option<"PortType", "port-type", "std::string", /*default=*/"\"PLIO\"", 
+           "Specify the type of the ports(PORT,GMIO,PLIO)">,
+    Option<"PortWidth", "plio-width", "int64_t", /*default=*/"32",
+           "Specify the plio width of a port in bits (32,64,128)">,
+    Option<"PLIOFreq", "plio-freq", "int64_t", /*default=*/"250",
+           "Specify the plio frequency in MHz">,
+    Option<"PortBurst", "gmio-burst", "int64_t", /*default=*/"64",
+           "Specify the gmio burst in bytes (64,128,256)">,
+    Option<"GMIOBW", "gmio-bw", "int64_t", /*default=*/"1000",
+           "Specify the required gmio bandwidth in MB/s">
+  ];
 }
 
 def AriesADFCellCreate : Pass<"aries-adf-cell-create"> {

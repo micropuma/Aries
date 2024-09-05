@@ -13,6 +13,7 @@
 #include "mlir/IR/Types.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
+#include "mlir/Interfaces/InferTypeOpInterface.h"
 
 #include "aries/Dialect/ADF/ADFDialect.h.inc"
 #include "aries/Dialect/ADF/ADFEnums.h.inc"

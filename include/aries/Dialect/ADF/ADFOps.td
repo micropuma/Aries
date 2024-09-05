@@ -414,5 +414,54 @@ def IOReadOp: ADF_Op<"io.read", []> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// Bitwise operations used in hcl-dialect. TODO need to consider how to 
+// leverage the existing dialects to construct the PL logic
+//===----------------------------------------------------------------------===//
+
+def GetIntBitOp : ADF_Op<"get_bit"> {
+    let summary = "get bit of an integer";
+    let arguments = (ins SignlessIntegerLike:$num, Builtin_Index:$index);
+    let results = (outs BoolLike:$result);
+    let assemblyFormat = [{
+        `(` $num `:` type($num) `,` $index `)` attr-dict `->` type($result)
+    }];
+}
+
+def SetIntBitOp : ADF_Op<"set_bit"> {
+    let summary = "set bit of an integer";
+    let arguments = (ins SignlessIntegerLike:$num, Builtin_Index:$index, BoolLike:$val);
+    let results = (outs SignlessIntegerLike:$result);
+    let assemblyFormat = [{
+        `(` $num `:` type($num) `,` $index `,` $val `:` type($val) `)` attr-dict `->` type($result)
+    }];
+}
+
+def GetIntSliceOp : ADF_Op<"get_slice"> {
+    let summary = "get slice of an integer";
+    let arguments = (ins SignlessIntegerLike:$num, Builtin_Index:$hi, Builtin_Index:$lo);
+    let results = (outs SignlessIntegerLike:$result);
+    let assemblyFormat = [{
+        `(` $num `:` type($num) `,` $hi `,` $lo `)` attr-dict `->` type($result)
+    }];
+}
+
+def SetIntSliceOp : ADF_Op<"set_slice"> {
+    let summary = "set slice of an integer";
+    let arguments = (ins SignlessIntegerLike:$num, Builtin_Index:$hi, Builtin_Index:$lo, SignlessIntegerLike:$val);
+    let results = (outs SignlessIntegerLike:$result);
+    let assemblyFormat = [{
+        `(` $num `:` type($num) `,` $hi `,` $lo `,` $val `:` type($val) `)` attr-dict `->` type($result)
+    }];
+}
+
+def BitReverseOp : ADF_Op<"bit_reverse", [SameOperandsAndResultType]> {
+    let summary = "reverse bits of an integer";
+    let arguments = (ins SignlessIntegerLike:$num);
+    let results = (outs SignlessIntegerLike:$result);
+    let assemblyFormat = [{
+        `(` $num `:` type($num) `)` attr-dict
+    }];
+}
 
 #endif  // ARIES_DIALECT_ARIES_ADF_OPS_TD

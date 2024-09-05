@@ -9,6 +9,7 @@ add_mlir_library(MLIRAriesPasses
     AriesFuncUnroll.cpp
     AriesKernelInterfaceCreate.cpp
     AriesLocalDataForward.cpp
+    AriesDMAToIO.cpp
     AriesADFCellCreate.cpp
     AriesKernelSplit.cpp
     AriesGMIOMaterialize.cpp
