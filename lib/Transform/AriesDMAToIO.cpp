@@ -218,6 +218,7 @@ private:
         SmallVector<Value> src_offsets=op.getSrcOffsets();
         SmallVector<Value> src_sizes=op.getSrcSizes();
         SmallVector<Value> src_strides=op.getSrcStrides();
+        builder.setInsertionPoint(op);
         auto newOp = builder.create<ConnectOp>(loc, port, DmaDst);
         op.erase();
         if(readAttr){
@@ -253,6 +254,7 @@ private:
         SmallVector<Value> dst_offsets=op.getDstOffsets();
         SmallVector<Value> dst_sizes=op.getDstSizes();
         SmallVector<Value> dst_strides=op.getDstStrides();
+        builder.setInsertionPoint(op);
         auto newOp = builder.create<ConnectOp>(loc, DmaSrc, port);
         op.erase();
         if(writeAttr){
@@ -272,6 +274,7 @@ private:
         return WalkResult::advance();
       }else if(SrcSpace == (int)MemorySpace::L1 && 
                DstSpace == (int)MemorySpace::L1){
+        builder.setInsertionPoint(op);
         builder.create<ConnectOp>(loc, DmaSrc, DmaDst);
         op.erase();
         return WalkResult::advance();
