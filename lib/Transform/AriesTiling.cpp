@@ -122,8 +122,8 @@ private:
             L3tileBand[idx + bandSize]->setAttr(
                                         "reduction", builder.getUnitAttr());
           }
-          //Noralize L3 loops
-          for(unsigned i =0; i < bandSize; i++){
+          //Noralize L3 & L2 loops
+          for(unsigned i =0; i < L3tileBand.size(); i++){
             auto forOp = L3tileBand[i];
             if(failed(normalizeAffineFor(forOp)))
               return false;

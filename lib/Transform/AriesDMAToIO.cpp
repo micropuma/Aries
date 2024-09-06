@@ -52,7 +52,8 @@ private:
   // mem is always row major
   bool dataPacking(OpBuilder builder, FuncOp topFunc, MemRefType type, 
                    int64_t portWidth, Value val, Value& finalVal, 
-                   SmallVector<Value>& sizes, SmallVector<Type,8>& inTypes){
+                   SmallVector<Value>& sizes, SmallVector<Value>& offsets, 
+                   SmallVector<Type,8>& inTypes){
     auto loc = builder.getUnknownLoc();
     auto &entryBlock = topFunc.getBody().front();
     auto indexType = builder.getIndexType();
@@ -65,6 +66,7 @@ private:
     finalVal = val;
     if (packNum!=1){
       builder.setInsertionPointToStart(&entryBlock);
+      // Change the size of the DMA src/dst
       auto sizeNum = sizes.size();
       auto size = sizes[sizeNum-1];
       auto sizeDefineOp = size.getDefiningOp();
@@ -83,6 +85,26 @@ private:
       auto sizeValue 
            = builder.create<arith::ConstantOp>(loc, indexType, sizeAttr);
       sizes[sizeNum-1] = sizeValue;
+      // Change the offset of the DMA src/dst
+      auto offset = offsets[sizeNum-1];
+      auto offsetDefineOp = offset.getDefiningOp();
+      auto applyOp = dyn_cast<AffineApplyOp>(offsetDefineOp);
+      if(!applyOp)
+        return false;
+      auto originalMap = applyOp.getAffineMap();
+      SmallVector<AffineExpr, 4> modifiedExprs;
+      for (auto expr : originalMap.getResults()) {
+          auto dividedExpr = expr.floorDiv(2);
+          modifiedExprs.push_back(dividedExpr);
+      }
+      auto newMap = AffineMap::get(originalMap.getNumDims(), 
+                                   originalMap.getNumSymbols(), modifiedExprs, 
+                                   applyOp.getContext());
+      auto operands = applyOp.getOperands();
+      builder.setInsertionPoint(applyOp);
+      auto newApplyOp = builder.create<AffineApplyOp>(loc, newMap, operands);
+      offsets[sizeNum-1] = newApplyOp.getResult();
+      // Change the memref type of the val defined by AllocOp or in the Argus
       auto defineOp = val.getDefiningOp();
       if(defineOp){ // If the memref is defined by AllocOp
         if(auto allocOp = dyn_cast<AllocOp>(defineOp)){
@@ -204,11 +226,14 @@ private:
         }
         Value src;
         if(!dataPacking(builder, topFunc, srcType, portWidth, 
-                        DmaSrc, src, src_sizes, inTypes))
+                        DmaSrc, src, src_sizes, src_offsets, inTypes))
           return WalkResult::interrupt();
         builder.setInsertionPoint(newOp);
-        builder.create<IOPushOp>(loc, src, src_offsets,
-                                 src_sizes, src_strides, dst);
+        auto iopushOp = builder.create<IOPushOp>(loc, src, src_offsets,
+                                                 src_sizes, src_strides, dst);
+        auto elementType = srcType.getElementType();
+        auto elementTypeAttr = TypeAttr::get(elementType);
+        iopushOp->setAttr("type", elementTypeAttr);
         return WalkResult::advance();
       }else if(SrcSpace == (int)MemorySpace::L1 && 
                DstSpace != (int)MemorySpace::L1){
@@ -236,11 +261,14 @@ private:
         }
         Value dst;
         if(!dataPacking(builder, topFunc, dstType, portWidth, 
-                        DmaDst, dst, dst_sizes, inTypes))
+                        DmaDst, dst, dst_sizes, dst_offsets, inTypes))
           return WalkResult::interrupt();
         builder.setInsertionPointAfter(newOp);
-        builder.create<IOPopOp>(loc, port, DmaDst, 
-                                 dst_offsets, dst_sizes, dst_strides);
+        auto iopopOp = builder.create<IOPopOp>(loc, port, DmaDst, dst_offsets, 
+                                               dst_sizes, dst_strides);
+        auto elementType = dstType.getElementType();
+        auto elementTypeAttr = TypeAttr::get(elementType);
+        iopopOp->setAttr("type", elementTypeAttr);
         return WalkResult::advance();
       }else if(SrcSpace == (int)MemorySpace::L1 && 
                DstSpace == (int)MemorySpace::L1){

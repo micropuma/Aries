@@ -18,6 +18,7 @@ using namespace adf;
 using namespace mlir::memref;
 using namespace mlir::func;
 using namespace mlir::affine;
+using namespace mlir::arith;
 
 namespace {
 
@@ -240,7 +241,7 @@ private:
     auto allocOp 
          = builder.create<AllocOp>(loc, MemRefType::get(bufSizes,
                                    type.getElementType(), AffineMap(),
-                                   (int)mlir::aries::adf::MemorySpace::L2));
+                                   (int)MemorySpace::L2));
     if(iopush)
       allocOp->setAttr("buffer_type", builder.getStringAttr("bram_1p"));
     else{
@@ -403,8 +404,10 @@ private:
       builder.create<DmaOp>(loc, src,      offsets,      sizes,      strides,
                              allocOp, localOffsets, localSizes, localStrides);
       builder.setInsertionPoint(newInnerIOYiled);
-      builder.create<IOPushOp>(loc, allocOp, IOOffsets, localSizes, 
-                               localStrides, dst);
+      auto pushOp = builder.create<IOPushOp>(loc, allocOp, IOOffsets, 
+                                             localSizes, localStrides, dst);
+      auto attr = iopushOp->getAttr("type");
+      pushOp->setAttr("type", attr);
     }else{
       // Create dma op to store data from L2 buffer to external mem
       // Replace IOPop: Receive data from L1 buffer to L2 buffer
@@ -414,6 +417,8 @@ private:
       builder.setInsertionPoint(newInnerIOYiled);
       auto popOp = builder.create<IOPopOp>(loc, src, allocOp, 
                                            IOOffsets, localSizes, localStrides);
+      auto attr = iopopOp->getAttr("type");
+      popOp->setAttr("type", attr);
       // check if there is output buffer reuse and set an Attr
       if (loopIndices.size()!=band.size())
         popOp->setAttr("reduction", builder.getUnitAttr());
@@ -453,7 +458,7 @@ private:
     for (unsigned i = 0; i < rank; i++) {
       auto oldOffset = offsets[i];
       auto definedOp = oldOffset.getDefiningOp();
-      if(!definedOp || dyn_cast<ConstantOp>(definedOp))
+      if(!definedOp || dyn_cast<arith::ConstantOp>(definedOp))
         continue;
       auto applyop = dyn_cast<AffineApplyOp>(definedOp);
       auto it = llvm::find(applyops, applyop);
@@ -498,10 +503,12 @@ private:
       sizes = iopopOp.getDstSizes();
       builder.setInsertionPoint(iopopOp);
     } // Create for loops for IOPush/Pop Ops
+    auto elementType = type.getElementType();
+    auto width = elementType.getIntOrFloatBitWidth();
     SmallVector<AffineForOp, 4> newIOLoops;
     auto rank = offsets.size();
-    auto indexType = builder.getIndexType();
-    auto oneAttr = builder.getIntegerAttr(indexType, 1);
+    auto idxType = builder.getIndexType();
+    auto oneAttr = builder.getIntegerAttr(idxType, 1);
     for(unsigned i = 0; i < rank; i++){
       auto size = sizes[i];
       auto constantSize = dyn_cast<arith::ConstantOp>(size.getDefiningOp());
@@ -537,16 +544,56 @@ private:
       builder.create<IOWriteOp>(loc, loadOp, dst);
       iopushOp.erase();
     }else{
-      auto result = builder.create<IOReadOp>(loc, type.getElementType(), src);
+      auto result = builder.create<IOReadOp>(loc, elementType, src);
       if(iopopOp->hasAttr("reduction")){
         auto loadOp = builder.create<AffineLoadOp>(loc, dst, newApplyopIOs);
-        Value addOp;
-        if (type.getElementType().isa<FloatType>())
-          addOp = builder.create<arith::AddFOp>(loc, loadOp, result);
-        else
-          addOp = builder.create<arith::AddIOp>(loc, loadOp, result);
-        builder.create<AffineStoreOp>(loc, addOp, dst, newApplyopIOs);
-      }else{
+        auto typeAttr = dyn_cast<TypeAttr>(iopopOp->getAttr("type"));
+        auto originType = typeAttr.getValue();
+        auto originWidth = originType.getIntOrFloatBitWidth();
+        auto newType = builder.getIntegerType(originWidth);
+        auto splitNum = (unsigned)(width/originWidth);
+        if(splitNum==1){
+          Value addOp;
+          if (elementType.isa<FloatType>())
+            addOp = builder.create<arith::AddFOp>(loc, loadOp, result);
+          else
+            addOp = builder.create<arith::AddIOp>(loc, loadOp, result);
+          builder.create<AffineStoreOp>(loc, addOp, dst, newApplyopIOs);
+        }else{
+          auto castL = builder.create<IntToAPInt>(loc, elementType, result);
+          auto castR = builder.create<IntToAPInt>(loc, elementType, loadOp);
+          auto zeroAttr = builder.getIntegerAttr(elementType, 0);
+          auto zeroVal
+               = builder.create<arith::ConstantOp>(loc, elementType, zeroAttr);
+          auto temp = builder.create<IntToAPInt>(loc, elementType, zeroVal);
+          for (unsigned i = 0; i < splitNum; i++){
+            auto hiAttr = builder.getIntegerAttr(idxType,originWidth*(i+1)-1);
+            auto hiVal= builder.create<arith::ConstantOp>(loc,idxType,hiAttr);
+            auto loAttr = builder.getIntegerAttr(idxType,originWidth*i);
+            auto loVal= builder.create<arith::ConstantOp>(loc,idxType,loAttr);
+            auto sliceL = builder.create<GetIntSliceOp>(loc, newType, castL,
+                                                        hiVal, loVal);
+            auto sliceR = builder.create<GetIntSliceOp>(loc, newType, castR,
+                                                        hiVal, loVal);
+            if(auto floatType = dyn_cast<FloatType>(originType)){                                       
+              auto castlhs = builder.create<BitcastOp>(loc, floatType, sliceL);                                            
+              auto castrhs = builder.create<BitcastOp>(loc, floatType, sliceR);
+              auto addOp = builder.create<arith::AddFOp>(loc, castlhs, castrhs);
+              auto castout = builder.create<BitcastOp>(loc, newType, addOp);
+              builder.create<SetIntSliceOp>(loc, temp, hiVal, loVal, castout);
+            }else if(auto intType = dyn_cast<IntegerType>(originType)){
+              auto addOp = builder.create<arith::AddIOp>(loc, sliceL, sliceR);
+              builder.create<SetIntSliceOp>(loc, temp, hiVal, loVal, addOp);
+            }else{
+              llvm::outs() << "Find IOPop marked by non-float/int type\n";
+              return WalkResult::interrupt();
+            }
+          }
+          auto castO = builder.create<APIntToInt>(loc, elementType, temp);
+          builder.create<AffineStoreOp>(loc, castO, dst, newApplyopIOs);
+        }
+      }
+      else{
         builder.create<AffineStoreOp>(loc, result, dst, newApplyopIOs);
       }
       iopopOp.erase();
@@ -746,12 +793,11 @@ private:
     }else{
       auto newLoad = builder.create<AffineLoadOp>(loc, memref, indices);
       builder.create<AffineStoreOp>(loc, newLoad, allocOp, zeroValues);
-      // Then initialize local buffer with zero
+      // After data store back to L2, initialize local buffer with zero
       Value value;
       if (elementType.isa<IntegerType>()) {
-        auto intType = builder.getI32Type();
-        auto intAttr = builder.getIntegerAttr(intType, 0);
-        value = builder.create<arith::ConstantOp>(loc, intType, intAttr);
+        auto intAttr = builder.getIntegerAttr(elementType, 0);
+        value = builder.create<arith::ConstantOp>(loc, elementType, intAttr);
       }else{
         auto floatType = builder.getF32Type();
         auto floatAttr = builder.getF32FloatAttr(0.0);
@@ -1204,9 +1250,8 @@ private:
           builder.setInsertionPoint(newInnerYiled);
           Value value;
           if (eleType.isa<IntegerType>()) {
-            auto intType = builder.getI32Type();
-            auto zeroAttr = builder.getIntegerAttr(intType, 0);
-            value = builder.create<arith::ConstantOp>(loc, intType, zeroAttr);
+            auto zeroAttr = builder.getIntegerAttr(eleType, 0);
+            value = builder.create<arith::ConstantOp>(loc, eleType, zeroAttr);
           }else{
             auto floatType = builder.getF32Type();
             auto floatAttr = builder.getF32FloatAttr(0.0);
