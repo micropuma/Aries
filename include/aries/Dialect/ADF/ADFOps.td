@@ -415,9 +415,27 @@ def IOReadOp: ADF_Op<"io.read", []> {
 }
 
 //===----------------------------------------------------------------------===//
-// Bitwise operations used in hcl-dialect. TODO need to consider how to 
+// Bitwise operations proposed in hcl-dialect. TODO need to consider how to 
 // leverage the existing dialects to construct the PL logic
 //===----------------------------------------------------------------------===//
+
+def IntToAPInt : ADF_Op<"int_to_apint"> {
+  let summary = "int to ap_int cast operation";
+  let arguments = (ins SignlessIntegerLike:$input);
+  let results = (outs SignlessIntegerLike:$result);
+  let assemblyFormat = [{
+      `(` $input `)` attr-dict `:` functional-type($input, results)
+  }];
+}
+
+def APIntToInt : ADF_Op<"apint_to_int"> {
+  let summary = "ap_int to int cast operation";
+  let arguments = (ins SignlessIntegerLike:$input);
+  let results = (outs SignlessIntegerLike:$result);
+  let assemblyFormat = [{
+      `(` $input `)` attr-dict `:` functional-type($input, results)
+  }];
+}
 
 def GetIntBitOp : ADF_Op<"get_bit"> {
     let summary = "get bit of an integer";
@@ -449,9 +467,8 @@ def GetIntSliceOp : ADF_Op<"get_slice"> {
 def SetIntSliceOp : ADF_Op<"set_slice"> {
     let summary = "set slice of an integer";
     let arguments = (ins SignlessIntegerLike:$num, Builtin_Index:$hi, Builtin_Index:$lo, SignlessIntegerLike:$val);
-    let results = (outs SignlessIntegerLike:$result);
     let assemblyFormat = [{
-        `(` $num `:` type($num) `,` $hi `,` $lo `,` $val `:` type($val) `)` attr-dict `->` type($result)
+        `(` $num `:` type($num) `,` $hi `,` $lo `,` $val `:` type($val) `)` attr-dict
     }];
 }
 

@@ -27,6 +27,12 @@ def GMIOType : ADF_Type<"GMIO", "gmio"> {
   let assemblyFormat = "`<` $dir `>`";
 }
 
+// def APIntType : ADF_Type<"APInt", "ap_int"> {
+//   let summary = "abitrary precision integer type";
+//   let parameters = (ins "std::size_t":$width);
+//   let assemblyFormat = "`<` $width `>`";
+// }
+
 def GraphIOType : AnyTypeOf<[PLIOType, GMIOType, PortType]>;
 
 def StreamType : ADF_Type<"Stream", "stream"> {
@@ -43,5 +49,6 @@ def KernelIOType : AnyTypeOf<[StreamType, CascadeType, AnyScalarType,
                               AnyMemRef]>;
 
 def ConnectType : AnyTypeOf<[KernelIOType, GraphIOType]>;
+
 
 #endif  // ARIES_DIALECT_ARIES_ADF_TYPES_TD

@@ -30,7 +30,8 @@ public:
             EndLauchCellOp, WaitLauchCellOp, KernelOp, CreateGraphIOOp, 
             ConfigPLIOOp, ConfigGMIOOp, BufferOp, StreamOp, CascadeOp, 
             CreateKernelIOOp, DmaOp, ConnectOp, IOPushOp, IOPopOp, IOWaitOp,
-            IOWriteOp, IOReadOp,
+            IOWriteOp, IOReadOp, IntToAPInt, APIntToInt, GetIntBitOp, 
+            SetIntBitOp, GetIntSliceOp, SetIntSliceOp, BitReverseOp,
 
             // Function operations.
             func::CallOp, func::ReturnOp,
@@ -73,7 +74,8 @@ public:
             // Special expressions.
             arith::SelectOp, arith::ConstantOp, arith::TruncIOp,
             arith::TruncFOp, arith::ExtUIOp, arith::ExtSIOp, arith::IndexCastOp,
-            arith::UIToFPOp, arith::SIToFPOp, arith::FPToSIOp, arith::FPToUIOp>(
+            arith::UIToFPOp, arith::SIToFPOp, arith::FPToSIOp, arith::FPToUIOp,
+            arith::BitcastOp>(
             [&](auto opNode) -> ResultType {
               return thisCast->visitOp(opNode, args...);
             })
@@ -122,6 +124,13 @@ public:
   HANDLE(IOWaitOp);
   HANDLE(IOWriteOp);
   HANDLE(IOReadOp);
+  HANDLE(IntToAPInt);
+  HANDLE(APIntToInt);
+  HANDLE(GetIntBitOp);
+  HANDLE(SetIntBitOp);
+  HANDLE(GetIntSliceOp);
+  HANDLE(SetIntSliceOp);
+  HANDLE(BitReverseOp);
 
   // Control flow operations.
   HANDLE(func::CallOp);
@@ -223,6 +232,7 @@ public:
   HANDLE(arith::SIToFPOp);
   HANDLE(arith::FPToUIOp);
   HANDLE(arith::FPToSIOp);
+  HANDLE(arith::BitcastOp);
 #undef HANDLE
 };
 } // namespace aries

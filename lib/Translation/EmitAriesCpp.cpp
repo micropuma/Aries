@@ -128,7 +128,7 @@ static Value getCalleeArg(Value val, CallOp& call){
   auto gmio = calleeFuncOp.getArgument(index_final);
   return gmio;
 }
-
+static bool BIT_FLAG = false; 
 static SmallString<16> getTypeName(Type valType) {
   bool PLIO_FLAG = false;
   if (auto memType = dyn_cast<MemRefType>(valType)){
@@ -164,7 +164,11 @@ static SmallString<16> getTypeName(Type valType) {
       std::string signedness = "";
       if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
         signedness = "u";
-      if(!PLIO_FLAG){
+      if(PLIO_FLAG){
+        return SmallString<16>("ap_axiu<" + std::to_string(intType.getWidth()) 
+                                + ", 0 ,0 ,0>");
+      }
+      if(!BIT_FLAG){
         switch (intType.getWidth()) {
         case 8:
         case 16:
@@ -173,12 +177,12 @@ static SmallString<16> getTypeName(Type valType) {
           return SmallString<16>(signedness + "int" +
                                  std::to_string(intType.getWidth()) + "_t");
         default:
-          return SmallString<16>(signedness + "int" +
-                                 std::to_string(intType.getWidth()) + "_t");
+          return SmallString<16>("ap_" + signedness + "int<" +
+                                 std::to_string(intType.getWidth()) + ">");
         }
       }else{
-        return SmallString<16>("ap_axiu<" + std::to_string(intType.getWidth()) 
-                                + ", 0 ,0 ,0>");
+        return SmallString<16>("ap_" + signedness + "int<" +
+                               std::to_string(intType.getWidth()) + ">");
       }
     }
   }
@@ -348,6 +352,15 @@ public:
   void emitADFIOWait(adf::IOWaitOp op);
   void emitADFIOWrite(adf::IOWriteOp op);
   void emitADFIORead(adf::IOReadOp op);
+  void emitIntToAP(adf::IntToAPInt op);
+  void emitAPToInt(adf::APIntToInt op);
+  void emitGetBit(adf::GetIntBitOp op);
+  void emitSetBit(adf::SetIntBitOp op);
+  void emitGetSlice(adf::GetIntSliceOp op);
+  void emitSetSlice(adf::SetIntSliceOp op);
+  void emitBitReverse(adf::BitReverseOp op);
+  void emitBitcast(arith::BitcastOp op);
+
 
   /// Top-level MLIR module emitter.
   void emitModule(ModuleOp module);
@@ -499,6 +512,9 @@ public:
   bool visitOp(adf::IOWaitOp op) { return emitter.emitADFIOWait(op), true; };
   bool visitOp(adf::IOWriteOp op) { return emitter.emitADFIOWrite(op), true;};
   bool visitOp(adf::IOReadOp op) { return emitter.emitADFIORead(op), true; };
+  bool visitOp(adf::IntToAPInt op) { return emitter.emitIntToAP(op), true; };
+  bool visitOp(adf::APIntToInt op) { return emitter.emitAPToInt(op), true; };
+  bool visitOp(arith::BitcastOp op) { return emitter.emitBitcast(op), true; };
 
   /// Function operations.
   bool visitOp(func::CallOp op) { return emitter.emitCall(op), true; }
@@ -585,6 +601,13 @@ public:
   bool visitOp(arith::ShLIOp op) { return emitter.emitBinary(op, "<<"), true; }
   bool visitOp(arith::ShRSIOp op) { return emitter.emitBinary(op, ">>"), true; }
   bool visitOp(arith::ShRUIOp op) { return emitter.emitBinary(op, ">>"), true; }
+  bool visitOp(adf::GetIntBitOp op) { return emitter.emitGetBit(op), true; }
+  bool visitOp(adf::SetIntBitOp op) { return emitter.emitSetBit(op), true; }
+  bool visitOp(adf::GetIntSliceOp op) { return emitter.emitGetSlice(op), true; }
+  bool visitOp(adf::SetIntSliceOp op) { return emitter.emitSetSlice(op), true; }
+  bool visitOp(adf::BitReverseOp op) {
+    return emitter.emitBitReverse(op), true;
+  }
 
   /// Unary expressions.
   bool visitOp(math::AbsFOp op) { return emitter.emitUnary(op, "abs"), true; }
@@ -857,7 +880,7 @@ void ModuleEmitter::emitADFIOWrite(adf::IOWriteOp op){
   emitValue(stream);
   os << ".write(";
   emitValue(val);
-  os << ");";
+  os << ");\n";
 }
 
 void ModuleEmitter::emitADFIORead(adf::IOReadOp op){
@@ -867,7 +890,54 @@ void ModuleEmitter::emitADFIORead(adf::IOReadOp op){
   emitValue(result);
   os << " = ";
   emitValue(val);
-  os << ".read();";
+  os << ".read();\n";
+}
+
+void ModuleEmitter::emitIntToAP(adf::IntToAPInt op){
+  indent();
+  auto val = op.getInput();
+  auto result = op.getResult();
+  BIT_FLAG = true;
+  emitValue(result);
+  BIT_FLAG = false;
+  os << " = ";
+  emitValue(val);
+  os << ";\n";
+}
+
+void ModuleEmitter::emitAPToInt(adf::APIntToInt op){
+  indent();
+  auto val = op.getInput();
+  auto result = op.getResult();
+  emitValue(result);
+  os << " = ";
+  emitValue(val);
+  os << ";\n";
+}
+
+void ModuleEmitter::emitBitcast(arith::BitcastOp op) {
+  indent();
+  emitValue(op.getResult());
+  os << ";\n";
+  indent();
+  os << "union { ";
+  os << getTypeName(op.getOperand());
+  os << " from; ";
+  os << getTypeName(op.getResult());
+  os << " to;} ";
+  auto name = SmallString<32>("_converter_") + getName(op.getOperand()) +
+              SmallString<32>("_to_") + getName(op.getResult());
+  os << name << ";\n";
+  indent();
+  os << name << ".from";
+  os << " = ";
+  emitValue(op.getOperand());
+  os << ";\n";
+  indent();
+  emitValue(op.getResult());
+  os << " = ";
+  os << name << ".to;";
+  emitInfoAndNewLine(op);
 }
 
 void ModuleEmitter::emitCall(func::CallOp op) {
@@ -1585,6 +1655,87 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
   os << ");";
   emitInfoAndNewLine(op);
   emitNestedLoopTail(rank);
+}
+
+void ModuleEmitter::emitGetBit(adf::GetIntBitOp op) {
+  indent();
+  Value result = op.getResult();
+  // generate ap_int types
+  os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
+  emitValue(op.getNum());
+  os << "_tmp = ";
+  emitValue(op.getNum());
+  os << ";\n";
+  // generate bit indexing
+  indent();
+  emitValue(result);
+  os << " = ";
+  emitValue(op.getNum());
+  os << "_tmp[";
+  emitValue(op.getIndex());
+  os << "];";
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitSetBit(adf::SetIntBitOp op) {
+  indent();
+  // generate ap_int types
+  os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
+  emitValue(op.getNum());
+  os << "_tmp = ";
+  emitValue(op.getNum());
+  os << ";\n";
+  // generate bit indexing
+  indent();
+  emitValue(op.getNum());
+  os << "_tmp[";
+  emitValue(op.getIndex());
+  os << "] = ";
+  emitValue(op.getVal());
+  os << ";";
+  // write back
+  indent();
+  emitValue(op.getResult());
+  os << " = ";
+  emitValue(op.getNum());
+  os << "_tmp;";
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitGetSlice(adf::GetIntSliceOp op) {
+  indent();
+  emitValue(op.getResult());
+  os << " = ";
+  emitValue(op.getNum());
+  os << "(";
+  emitValue(op.getHi());
+  os << ", ";
+  emitValue(op.getLo());
+  os << ");";
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitSetSlice(adf::SetIntSliceOp op) {
+  indent();
+  emitValue(op.getNum());
+  os << "(";
+  emitValue(op.getHi());
+  os << ", ";
+  emitValue(op.getLo());
+  os << ") = ";
+  emitValue(op.getVal());
+  os << ";";
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitBitReverse(adf::BitReverseOp op) {
+  indent();
+  Value result = op.getResult();
+  emitValue(result);
+  os << " = ";
+  emitValue(op.getNum());
+  os << ".reverse();";
+  emitInfoAndNewLine(op);
 }
 
 void ModuleEmitter::emitSelect(arith::SelectOp op) {
