@@ -6,6 +6,7 @@ PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
 EN_PL = 1
+PORTWidth = 128
 ifeq ($(EN_PL),1)
 	IOType=PLIO
 else
@@ -27,7 +28,7 @@ test: doublebuffer
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=8,8,8 l2-tile-sizes=2,2,2 l3-tile-sizes=2,2,2"
+			-aries-tiling="l1-tile-sizes=32,32,32 l2-tile-sizes=1,1,1 l3-tile-sizes=2,2,2"
 
 exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
@@ -82,7 +83,7 @@ ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir: ${PROJECT_PATH}/9_${FUNC}.dataforward.
 dmaio: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
 ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir
 	aries-opt -o $@ $< \
-			-aries-dma-to-io="port-type=${IOType}" \
+			-aries-dma-to-io="port-type=${IOType} plio-width=${PORTWidth}" \
 			-canonicalize -cse
 
 adfgraph: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
@@ -110,7 +111,7 @@ ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/14_${FUNC}.doublebuffer.
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=8,8,8 l2-tile-sizes=2,2,2 l3-tile-sizes=2,2,2" \
+			-aries-tiling="l1-tile-sizes=32,32,32 l2-tile-sizes=1,1,1 l3-tile-sizes=2,2,2" \
 			-aries-func-extract \
 			-aries-loop-simplify \
 			-aries-mem-subview \
@@ -121,7 +122,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-func-unroll \
 			-aries-local-data-forward \
 			-aries-kernel-interface-create \
-			-aries-dma-to-io="port-type=${IOType}" \
+			-aries-dma-to-io="port-type=${IOType} plio-width=${PORTWidth}" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
 			-aries-gmio-materialize \
@@ -155,7 +156,8 @@ kernel_vec: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir
 ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir: ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir
 	aries-opt -o $@ $< \
 		--aie-vectorize \
-		-unaligned-loads-check=false
+		-unaligned-loads-check=false \
+		-canonicalize -cse
 ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir: ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir
 	aries-opt -o $@ $< \
 		--affine-super-vectorize="virtual-vector-size=8 vectorize-reductions" \
