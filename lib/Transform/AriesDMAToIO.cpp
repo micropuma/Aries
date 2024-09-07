@@ -1,6 +1,8 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
 #include "llvm/Support/Debug.h"
 #include "aries/Transform/Passes.h"
 #include "aries/Transform/Utils.h"
@@ -51,9 +53,10 @@ private:
   // Here need to deal with the data packing, and we assume the AIE local
   // mem is always row major
   bool dataPacking(OpBuilder builder, FuncOp topFunc, MemRefType type, 
-                   int64_t portWidth, Value val, Value& finalVal, 
-                   SmallVector<Value>& sizes, SmallVector<Value>& offsets, 
-                   SmallVector<Type,8>& inTypes){
+                   int64_t portWidth, Value val, SmallVector<Value>& sizes, 
+                   SmallVector<Value>& offsets,
+                   SmallVector<std::pair<AllocOp, AllocOp>, 4>& allocPairs,
+                   SmallVector<std::pair<MemRefType, unsigned>, 4>& typePairs){
     auto loc = builder.getUnknownLoc();
     auto &entryBlock = topFunc.getBody().front();
     auto indexType = builder.getIndexType();
@@ -63,7 +66,6 @@ private:
     auto packNum = (int)(portWidth / typeWidth);
     auto newTypeWidth = typeWidth * packNum;
     auto newType = builder.getIntegerType(newTypeWidth);
-    finalVal = val;
     if (packNum!=1){
       builder.setInsertionPointToStart(&entryBlock);
       // Change the size of the DMA src/dst
@@ -94,7 +96,7 @@ private:
       auto originalMap = applyOp.getAffineMap();
       SmallVector<AffineExpr, 4> modifiedExprs;
       for (auto expr : originalMap.getResults()) {
-          auto dividedExpr = expr.floorDiv(2);
+          auto dividedExpr = expr.floorDiv(packNum);
           modifiedExprs.push_back(dividedExpr);
       }
       auto newMap = AffineMap::get(originalMap.getNumDims(), 
@@ -113,9 +115,12 @@ private:
           builder.setInsertionPoint(allocOp);
           auto newMemRefType = MemRefType::get(sizesInt, newType);
           auto newAllocOp = builder.create<AllocOp>(loc, newMemRefType);
-          finalVal = newAllocOp.getResult();
-          val.replaceAllUsesWith(finalVal);
-          allocOp.erase();
+          auto it = std::find_if(allocPairs.begin(), allocPairs.end(),
+              [&](const std::pair<AllocOp, AllocOp> &pair) {
+                  return pair.second == allocOp;
+              });
+          if(it == allocPairs.end())
+            allocPairs.push_back(std::pair(newAllocOp, allocOp));
         }
         else{
           llvm::outs() << "Memref not defined by AllocOp\n";
@@ -128,8 +133,12 @@ private:
             SmallVector<int64_t> sizesInt(shape.begin(),shape.end());
             sizesInt[rank-1] = sizesInt[rank-1] / packNum;
             auto newMemRefType = MemRefType::get(sizesInt, newType);
-            inTypes[idx] = newMemRefType;
-            arg.setType(newMemRefType);
+            auto it = std::find_if(typePairs.begin(), typePairs.end(),
+                [&](const std::pair<MemRefType, unsigned> &pair) {
+                    return pair.second == idx;
+                });
+            if(it == typePairs.end())
+              typePairs.push_back(std::pair(newMemRefType, idx));
             break;
           }
           idx++;
@@ -148,6 +157,8 @@ private:
     auto inTypes =SmallVector<Type,8>(topFunc.getArgumentTypes().begin(),
                                       topFunc.getArgumentTypes().end());
     auto outTypes = topFunc.getResultTypes();
+    SmallVector<std::pair<AllocOp, AllocOp>, 4> allocPairs; //(new,old)
+    SmallVector<std::pair<MemRefType, unsigned>, 4> typePairs;
     auto flag = topFunc.walk([&](DmaOp op){
       auto DmaSrc = op.getSrc();
       auto DmaDst = op.getDst();
@@ -225,12 +236,11 @@ private:
           auto intRAttr = dyn_cast<IntegerAttr>(readAttr);
           newOp->setAttr("read", intRAttr);
         }
-        Value src;
         if(!dataPacking(builder, topFunc, srcType, portWidth, 
-                        DmaSrc, src, src_sizes, src_offsets, inTypes))
+                        DmaSrc, src_sizes, src_offsets, allocPairs, typePairs))
           return WalkResult::interrupt();
         builder.setInsertionPoint(newOp);
-        auto iopushOp = builder.create<IOPushOp>(loc, src, src_offsets,
+        auto iopushOp = builder.create<IOPushOp>(loc, DmaSrc, src_offsets,
                                                  src_sizes, src_strides, dst);
         auto elementType = srcType.getElementType();
         auto elementTypeAttr = TypeAttr::get(elementType);
@@ -261,9 +271,8 @@ private:
           auto intWAttr = dyn_cast<IntegerAttr>(writeAttr);
           newOp->setAttr("write", intWAttr);
         }
-        Value dst;
         if(!dataPacking(builder, topFunc, dstType, portWidth, 
-                        DmaDst, dst, dst_sizes, dst_offsets, inTypes))
+                        DmaDst, dst_sizes, dst_offsets, allocPairs, typePairs))
           return WalkResult::interrupt();
         builder.setInsertionPointAfter(newOp);
         auto iopopOp = builder.create<IOPopOp>(loc, port, DmaDst, dst_offsets, 
@@ -281,6 +290,21 @@ private:
       }
       return WalkResult::advance();
     });
+    // Replace old AllocOp with new AllocOp
+    for(auto pair : allocPairs){
+      auto newAllocOp = pair.first;
+      auto oldAllocOp = pair.second;
+      newAllocOp.getResult().replaceAllUsesWith(oldAllocOp.getResult());
+      oldAllocOp.erase();
+    }
+    // Update topFunc InputTypes
+    for(auto pair : typePairs){
+      auto newMemRefType = pair.first;
+      auto idx = pair.second;
+      auto arg = topFunc.getArgument(idx);
+      inTypes[idx] = newMemRefType;
+      arg.setType(newMemRefType);
+    }
     topFunc.setType(builder.getFunctionType(inTypes, outTypes));
 
     if (flag == WalkResult::interrupt())
@@ -346,6 +370,15 @@ private:
 
     if (failed(LowerDMAToIO(builder, topFunc, PortType, PortWidth, PLIOFreq, 
                             PortBurst, GMIOBW)))
+      return false;
+    
+    MLIRContext &context = getContext();
+    RewritePatternSet patterns(&context);
+    PassManager pm(&getContext());
+    pm.addPass(createCSEPass());
+    pm.addPass(createCanonicalizerPass());
+
+    if (failed(pm.run(topFunc)))
       return false;
 
     if (failed(BroadcastDetect(topFunc)))
