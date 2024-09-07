@@ -51,11 +51,24 @@ private:
   void PLFuncCreation(OpBuilder builder, FuncOp topFunc, FuncOp& plFunc,
                       CallOp& callop, LauchCellOp lauchcell){
     auto loc = builder.getUnknownLoc();
-    SmallVector<Value> inputs;
+    SmallVector<Value> liveins;
     auto liveness = Liveness(lauchcell);
     for (auto livein: liveness.getLiveIn(&lauchcell.getBody().front()))
       if (!lauchcell->isProperAncestor(livein.getParentBlock()->getParentOp()))
+        liveins.push_back(livein);
+    
+    //reorder inputs to be correspond with the topfunc arguments
+    SmallVector<Value, 6> inputs;
+    for(auto arg : topFunc.getArguments()){
+      auto it = llvm::find(liveins,arg);
+      if(it != liveins.end())
+        inputs.push_back(arg);
+    }
+    for(auto livein : liveins){
+      auto it = llvm::find(inputs, livein);
+      if(it == inputs.end())
         inputs.push_back(livein);
+    }
 
     // Define the dma function with the detected inputs as arguments
     builder.setInsertionPoint(topFunc);
