@@ -59,9 +59,9 @@ void kernel_gemm(input_buffer<int32_t, adf::extents<1024>>& __restrict in0, inpu
         jump_out = out_jump0;
       }
       aie::accum<acc80,8> acc0 = lups(aie::load_v<8>(accin), 0);
-      acc_in += w2;
+      accin += w2;
 			aie::accum<acc80,8> acc1 = lups(aie::load_v<8>(accin), 0);
-      acc_in -= jump_out;
+      accin -= jump_out;
       for (unsigned int k=0;k<boundary_k;k++)
 			chess_prepare_for_pipelining
 			chess_loop_range(boundary_k,boundary_k)
