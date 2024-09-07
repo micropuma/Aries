@@ -234,6 +234,27 @@ static SmallString<16> getTypeName(Value val) {
   return getTypeName(valType);
 }
 
+void fixUnsignedType(Value &result, bool isUnsigned) {
+  if (isUnsigned) { // unsigned type
+    if (result.getType().isa<MemRefType>()) {
+      auto arrayType = result.getType().dyn_cast<MemRefType>();
+      Type elt = IntegerType::get(
+          arrayType.getContext(),
+          arrayType.getElementType().cast<IntegerType>().getWidth(),
+          IntegerType::SignednessSemantics::Unsigned);
+      result.setType(MemRefType::get(arrayType.getShape(), elt,
+                                     arrayType.getLayout(),
+                                     arrayType.getMemorySpace()));
+    } else if (result.getType().isa<IntegerType>()) {
+      Type type =
+          IntegerType::get(result.getType().getContext(),
+                           result.getType().cast<IntegerType>().getWidth(),
+                           IntegerType::SignednessSemantics::Unsigned);
+      result.setType(type);
+    }
+  }
+}
+
 SmallString<16> ADFEmitterBase::getDMAAccess(adf::DmaOp op, unsigned rank, 
                                              bool isSrc, bool dir){
   
@@ -1301,6 +1322,7 @@ void ModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
 
 void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   auto memref = op.getMemRef();
   auto affineMap = op.getAffineMap();
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
@@ -1546,6 +1568,7 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
 
   indent();
   Value result = op.getResult(); // memref
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitArrayDecl(result, false, name);
   os << ";";
   emitInfoAndNewLine(op);
@@ -1554,7 +1577,9 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
 
 void ModuleEmitter::emitLoad(memref::LoadOp op) {
   indent();
-  emitValue(op.getResult());
+  Value result = op.getResult(); 
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
   os << " = ";
   emitValue(op.getMemRef());
   for (auto index : op.getIndices()) {
@@ -1607,6 +1632,7 @@ void ModuleEmitter::emitBinary(Operation *op, const char *syntax) {
   auto rank = emitNestedLoopHead(op->getResult(0));
   indent();
   Value result = op->getResult(0);
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result, rank);
   os << " = ";
   emitValue(op->getOperand(0), rank);
@@ -1621,6 +1647,7 @@ void ModuleEmitter::emitUnary(Operation *op, const char *syntax) {
   auto rank = emitNestedLoopHead(op->getResult(0));
   indent();
   Value result = op->getResult(0);
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result, rank);
   os << " = " << syntax << "(";
   emitValue(op->getOperand(0), rank);
@@ -1647,6 +1674,7 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
   auto rank = emitNestedLoopHead(op->getResult(0));
   indent();
   Value result = op->getResult(0);
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result, rank);
   os << " = " << syntax << "(";
   emitValue(op->getOperand(0), rank);
@@ -1660,6 +1688,7 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
 void ModuleEmitter::emitGetBit(adf::GetIntBitOp op) {
   indent();
   Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   // generate ap_int types
   os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
   emitValue(op.getNum());
@@ -1704,7 +1733,9 @@ void ModuleEmitter::emitSetBit(adf::SetIntBitOp op) {
 
 void ModuleEmitter::emitGetSlice(adf::GetIntSliceOp op) {
   indent();
-  emitValue(op.getResult());
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
   os << " = ";
   emitValue(op.getNum());
   os << "(";
@@ -1731,6 +1762,7 @@ void ModuleEmitter::emitSetSlice(adf::SetIntSliceOp op) {
 void ModuleEmitter::emitBitReverse(adf::BitReverseOp op) {
   indent();
   Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result);
   os << " = ";
   emitValue(op.getNum());
@@ -1745,15 +1777,18 @@ void ModuleEmitter::emitSelect(arith::SelectOp op) {
     conditionRank = 0;
   indent();
   Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result, rank);
   os << " = ";
   emitValue(op.getCondition(), conditionRank);
   os << " ? ";
   Value true_val = op.getTrueValue();
+  fixUnsignedType(true_val, op->hasAttr("unsigned"));
   os << "(" << getTypeName(true_val) << ")";
   emitValue(true_val, rank);
   os << " : ";
   Value false_val = op.getFalseValue();
+  fixUnsignedType(false_val, op->hasAttr("unsigned"));
   os << "(" << getTypeName(false_val) << ")";
   emitValue(false_val, rank);
   os << ";";
@@ -1769,6 +1804,7 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
   if (auto denseAttr = dyn_cast<DenseElementsAttr>(op.getValue())) {
     indent();
     Value result = op.getResult(); // memref
+    fixUnsignedType(result, op->hasAttr("unsigned"));
     emitArrayDecl(result);
     os << " = {";
     auto type = op.getResult().getType().cast<ShapedType>().getElementType();
