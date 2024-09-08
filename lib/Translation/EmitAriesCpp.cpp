@@ -2370,6 +2370,14 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
          << calleeName.str() << ".cc\";\n";
       indent();
       os <<  "adf::runtime<ratio>(" << KName << ") = 1;\n" ;
+      if(!op->hasAttr("col, row"))
+        return;
+      auto arrayAttr = dyn_cast<ArrayAttr>(op->getAttr("col, row"));
+      auto col = dyn_cast<IntegerAttr>(arrayAttr[0]).getInt();
+      auto row = dyn_cast<IntegerAttr>(arrayAttr[1]).getInt();
+      indent();
+      os <<  "adf::location<kernel>(" << KName << ") = " << "adf::tile(" 
+         << std::to_string(col) << ", " << std::to_string(row) << ");\n";
       return;
     }
   });
