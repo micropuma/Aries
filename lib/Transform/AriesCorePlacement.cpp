@@ -36,9 +36,9 @@ private:
                       int64_t ISize, bool flow_flag, 
                       SmallVector<int64_t, 3> ivIdeices){
     auto indexType = builder.getIndexType();
-    int64_t kSize = 1;
-    int64_t jSize = 1;
-    int64_t iSize = 1;
+    int64_t kSize = 0;
+    int64_t jSize = 0;
+    int64_t iSize = 0;
     if(flow_flag){
       kSize = ivIdeices[0];
       if(ivIdeices.size()>2){
@@ -58,13 +58,12 @@ private:
     int64_t curCol =  std::ceil(tempRow / height) * KSize + kSize;
     int64_t col = colStart + curCol;
     int64_t row = rowStart + curRow;
-    if((col > colNum-1) || (row > rowNum-1)){
-      llvm::outs() << "Col = " << col << ", Row = " << row << "\n";
-      llvm::outs() << "KSize, JSize, ISize = (" << KSize << ", " << JSize << ", " << ISize << ")\n";
-      llvm::outs() << "kSize, jSize, iSize = (" << kSize << ", " << jSize << ", " << iSize << ")\n";
-      llvm::outs() << "colNum, rowNum, colStart, rowStart, height = (" << colNum << ", " << rowNum << ", " << colStart << ", " << rowStart << ", " << height << ")\n";
+    llvm::outs() << "Col = " << col << ", Row = " << row << "\n";
+    llvm::outs() << "KSize, JSize, ISize = (" << KSize << ", " << JSize << ", " << ISize << ")\n";
+    llvm::outs() << "kSize, jSize, iSize = (" << kSize << ", " << jSize << ", " << iSize << ")\n";
+    llvm::outs() << "colNum, rowNum, colStart, rowStart, height = (" << colNum << ", " << rowNum << ", " << colStart << ", " << rowStart << ", " << height << ")\n";
+    if((col > colNum-1) || (row > rowNum-1))
       return false;
-    }
     auto colAttr = builder.getIntegerAttr(indexType, col);
     auto rowAttr = builder.getIntegerAttr(indexType, row);
     auto arrayAttr = builder.getArrayAttr({colAttr, rowAttr});
