@@ -109,7 +109,7 @@ ${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/14_${FUNC}.iomater
 			-aries-pl-double-buffer
 
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
-${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/14_${FUNC}.doublebuffer.mlir
+${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir
 	aries-translate -o $@ $< \
 		-emit-aries-kernels
 
