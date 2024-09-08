@@ -8,6 +8,7 @@
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/ADT/StringMap.h"
 #include "aries/Transform/Passes.h"
 #include "aries/Transform/Utils.h"
 #include "aries/Dialect/ADF/ADFDialect.h"
@@ -850,7 +851,7 @@ private:
     getNestedLoopBand(plFunc.getRegion(),tileBand);
     auto outerTileBand = tileBand[0];
     // Tranverse the forOps and group then by the attribute 
-    DenseMap<StringRef, SmallVector<unsigned, 4>> groups;
+    llvm::StringMap<SmallVector<unsigned, 4>> groups;
     SmallVector<AffineForOp, 4> forOps;
     unsigned index = 0;
     for (auto forOp: llvm::make_early_inc_range(plForOp.getOps<AffineForOp>())){
