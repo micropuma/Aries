@@ -1202,6 +1202,8 @@ private:
   // If has reduction, then need to initialize L2 buffer marked by init
   void hoistBufferStore(ModuleOp mod, OpBuilder builder){
     auto loc = builder.getUnknownLoc();
+    auto indexType = builder.getIndexType();
+    auto oneAttr = builder.getIntegerAttr(indexType, 1);
     mod.walk([&](FuncOp func){
       AffineForOp plforOp; 
       func.walk([&](AffineForOp op){
@@ -1260,6 +1262,7 @@ private:
             builder.setInsertionPointToStart(newForOp.getBody());
           }
           auto newInnerLoop = newLoops[newLoops.size()-1];
+          newInnerLoop->setAttr("pipeline_ii", oneAttr);
           auto newInnerYiled = newInnerLoop.getBody()->getTerminator();
           builder.setInsertionPoint(newInnerYiled);
           Value value;

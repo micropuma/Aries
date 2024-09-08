@@ -103,8 +103,8 @@ ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgra
 			-aries-plio-materialize \
 			-canonicalize -cse
 
-doublebuffer: ${PROJECT_PATH}/14_${FUNC}.doublebuffer.mlir
-${PROJECT_PATH}/14_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
+doublebuffer: ${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir
+${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir
 	aries-opt -o $@ $< \
 			-aries-pl-double-buffer
 
