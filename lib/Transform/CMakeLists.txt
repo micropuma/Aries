@@ -7,8 +7,9 @@ add_mlir_library(MLIRAriesPasses
     AriesMemCopy.cpp
     AriesDependencyExtract.cpp
     AriesFuncUnroll.cpp
-    AriesKernelInterfaceCreate.cpp
+    AriesCorePlacement.cpp
     AriesLocalDataForward.cpp
+    AriesKernelInterfaceCreate.cpp
     AriesDMAToIO.cpp
     AriesADFCellCreate.cpp
     AriesKernelSplit.cpp

@@ -70,29 +70,34 @@ ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir: ${PROJECT_PATH}/7_${FUNC}.flow.mlir
 	aries-opt -o $@ $< \
 			-aries-func-unroll
 
-dataforward: ${PROJECT_PATH}/9_${FUNC}.dataforward.mlir
-${PROJECT_PATH}/9_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir
+coreplacement: ${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir
+${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir: ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir
+	aries-opt -o $@ $< \
+			-aries-core-placement
+
+dataforward: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
+${PROJECT_PATH}/10_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir
 	aries-opt -o $@ $< \
 			-aries-local-data-forward
 
-kernelio: ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir
-${PROJECT_PATH}/10_${FUNC}.kernelio.mlir: ${PROJECT_PATH}/9_${FUNC}.dataforward.mlir
+kernelio: ${PROJECT_PATH}/11_${FUNC}.kernelio.mlir
+${PROJECT_PATH}/11_${FUNC}.kernelio.mlir: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
 	aries-opt -o $@ $< \
 			-aries-kernel-interface-create
 
-dmaio: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
-${PROJECT_PATH}/11_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir
+dmaio: ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir
+${PROJECT_PATH}/12_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/11_${FUNC}.kernelio.mlir
 	aries-opt -o $@ $< \
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PORTWidth}" \
 			-canonicalize -cse
 
-adfgraph: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
-${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/11_${FUNC}.dmaio.mlir
+adfgraph: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
+${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir
 	aries-opt -o $@ $< \
 			-aries-adf-cell-create
 
-iomaterialize: ${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir
-${PROJECT_PATH}/13_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/12_${FUNC}.adfgraph.mlir
+iomaterialize: ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir
+${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
 	aries-opt -o $@ $< \
 			-aries-gmio-materialize \
 			-aries-plio-materialize \
@@ -120,6 +125,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-lower-to-adf \
 			-aries-dependency-extract \
 			-aries-func-unroll \
+			-aries-core-placement \
 			-aries-local-data-forward \
 			-aries-kernel-interface-create \
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PORTWidth}" \

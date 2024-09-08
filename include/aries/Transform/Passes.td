@@ -89,15 +89,9 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
-def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
-  let summary = "Create new kenrel with interface compatable with ADF kernels";
-  let description = [{
-    This pass creates the new kernel function that returns the buffers be 
-    touched. This identifies the direction of the buffer which is required 
-    by ADF kernels.
-  }];
-  let constructor = "mlir::aries::createAriesKernelInterfaceCreatePass()";
-  let dependentDialects = ["mlir::memref::MemRefDialect"];
+def AriesCorePlacement : Pass<"aries-core-placement"> {
+  let summary = "Place the AIE cores";
+  let constructor = "mlir::aries::createAriesCorePlacementPass()";
 }
 
 def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
@@ -108,6 +102,17 @@ def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
     This pass relies on the annotation in AriesFuncUnroll pass.
   }];
   let constructor = "mlir::aries::createAriesLocalDataForwardPass()";
+}
+
+def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
+  let summary = "Create new kenrel with interface compatable with ADF kernels";
+  let description = [{
+    This pass creates the new kernel function that returns the buffers be 
+    touched. This identifies the direction of the buffer which is required 
+    by ADF kernels.
+  }];
+  let constructor = "mlir::aries::createAriesKernelInterfaceCreatePass()";
+  let dependentDialects = ["mlir::memref::MemRefDialect"];
 }
 
 def AriesDMAToIO : Pass<"aries-dma-to-io"> {
