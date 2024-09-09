@@ -257,7 +257,7 @@ private:
                                    type.getElementType(), AffineMap(),
                                    (int)MemorySpace::L2));
     if(iopush)
-      allocOp->setAttr("buffer_type", builder.getStringAttr("bram_1p"));
+      allocOp->setAttr("buffer_type", builder.getStringAttr("bram_s2p"));
     else{
       allocOp->setAttr("buffer_type", builder.getStringAttr("uram_t2p"));
       allocOp->setAttr("init", builder.getUnitAttr());
