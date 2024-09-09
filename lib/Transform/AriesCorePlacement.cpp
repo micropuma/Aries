@@ -58,10 +58,6 @@ private:
     int64_t curCol =  std::ceil(tempRow / height) * KSize + kSize;
     int64_t col = colStart + curCol;
     int64_t row = rowStart + curRow;
-    llvm::outs() << "Col = " << col << ", Row = " << row << "\n";
-    llvm::outs() << "KSize, JSize, ISize = (" << KSize << ", " << JSize << ", " << ISize << ")\n";
-    llvm::outs() << "kSize, jSize, iSize = (" << kSize << ", " << jSize << ", " << iSize << ")\n";
-    llvm::outs() << "colNum, rowNum, colStart, rowStart, height = (" << colNum << ", " << rowNum << ", " << colStart << ", " << rowStart << ", " << height << ")\n";
     if((col > colNum-1) || (row > rowNum-1))
       return false;
     auto colAttr = builder.getIntegerAttr(indexType, col);
@@ -116,19 +112,21 @@ private:
       if(tripCounts.size()>2){
         JSize = tripCounts[1];
         ISize = tripCounts[2];
-        height_temp = tripCounts[1];
+        height_temp = std::max(JSize, ISize);
       }else if(tripCounts.size()>1){
         JSize = tripCounts[1];
-        height_temp = tripCounts[1];
+        height_temp = JSize;
       }else{
-        height_temp = tripCounts[0];
+        height_temp = KSize;
       }
     }
     else{
-      height_temp = tripCounts[0];
       JSize = tripCounts[0];
-      if(tripCounts.size()>1)
+      height_temp = JSize;
+      if(tripCounts.size()>1){
         ISize = tripCounts[0];
+        height_temp = std::max(JSize, ISize);
+      }
     }
     rowPlace = JSize * ISize;
     int64_t height = std::min(height_temp, rowNum);
