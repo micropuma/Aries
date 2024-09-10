@@ -89,6 +89,7 @@ std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesGMIOMaterializePass();
 std::unique_ptr<Pass> createAriesPLIOMaterializePass();
 std::unique_ptr<Pass> createAriesPLDoubleBufferPass();
+std::unique_ptr<Pass> createAriesBurstDetectionPass();
 std::unique_ptr<Pass> createAriesADFTestPass();
 std::unique_ptr<Pass> createAriesFileSplitPass();
 std::unique_ptr<Pass> createAriesFileSplitPass(const AriesOptions &opts);

@@ -177,6 +177,16 @@ def AriesPLDoubleBuffer : Pass<"aries-pl-double-buffer"> {
   let dependentDialects = ["mlir::scf::SCFDialect"];
 }
 
+def AriesBurstDetection : Pass<"aries-burst-detection"> {
+  let summary = "Attempt to merge loops together to increase burst length";
+  let description = [{
+    This pass tranverses all the "load" and "store" modules in the adf.pl and
+    tries to merge loops together to increase burst length. 
+  }];
+  let constructor = "mlir::aries::createAriesBurstDetectionPass()";
+  let dependentDialects = ["mlir::scf::SCFDialect"];
+}
+
 def AriesADFTest : Pass<"aries-adf-test"> {
   let summary = "Test ADF Dialect Ops";
   let constructor = "mlir::aries::createAriesADFTestPass()";

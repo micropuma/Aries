@@ -16,6 +16,7 @@ add_mlir_library(MLIRAriesPasses
     AriesGMIOMaterialize.cpp
     AriesPLIOMaterialize.cpp
     AriesPLDoubleBuffer.cpp
+    AriesBurstDetection.cpp
     AriesADFTest.cpp
     AriesFileSplit.cpp
     Passes.cpp

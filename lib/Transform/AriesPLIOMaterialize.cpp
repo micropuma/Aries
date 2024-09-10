@@ -909,9 +909,11 @@ private:
         if(auto Attr = forOp->getAttr("load")){
           outerNewloop->setAttr("load", Attr);
           forOp->removeAttr("load");
+          forOp->setAttr("merge", builder.getUnitAttr());
         }else if(auto Attr = forOp->getAttr("store")){
           outerNewloop->setAttr("store", Attr);
           forOp->removeAttr("store");
+          forOp->setAttr("merge", builder.getUnitAttr());
           forOp->setAttr("hoist",builder.getUnitAttr());
         }else if(auto Attr = forOp->getAttr("send")){
           outerNewloop->setAttr("send", Attr);
@@ -966,12 +968,15 @@ private:
       
       builder.setInsertionPoint(plFunc);
       std::string funcName;
+      bool flag = false;
       if(auto Attr = forOp->getAttrOfType<IntegerAttr>("load")){
         funcName = "load" + std::to_string(Attr.getInt());
         forOp->removeAttr("load");
+        flag = true;
       }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("store")){
         funcName = "store" + std::to_string(Attr.getInt());
         forOp->removeAttr("store");
+        flag = true;
       }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("send")){
         funcName = "send" + std::to_string(Attr.getInt());
         forOp->removeAttr("send");
@@ -986,6 +991,9 @@ private:
                                   builder.getUnknownLoc(), funcName, funcType);
       newfunc->setAttr("adf.pl",builder.getUnitAttr());
       newfunc->setAttr("inline",builder.getBoolAttr(false));
+      if(flag){
+        newfunc->setAttr("L3", builder.getUnitAttr());
+      }
       auto destBlock = newfunc.addEntryBlock();
       builder.setInsertionPointToEnd(destBlock);
       auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
@@ -1223,8 +1231,10 @@ private:
       // Check forOps marked by hoist
       SmallVector<AffineForOp, 2> forOps;
       for(auto forOp : innerloop.getOps<AffineForOp>())
-        if(forOp->hasAttr("hoist"))
+        if(forOp->hasAttr("hoist")){
+          forOp->removeAttr("hoist");
           forOps.push_back(forOp);
+        }
       if(!forOps.size())
         return WalkResult::advance();
       // Check and find the outmost reduction loop
