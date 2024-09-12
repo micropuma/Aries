@@ -23,7 +23,7 @@ fileCreate:
 copyFile:
 	cp -r template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
 
-test: doublebuffer
+test: burstDetect
 
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
@@ -108,6 +108,12 @@ ${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/14_${FUNC}.iomater
 	aries-opt -o $@ $< \
 			-aries-pl-double-buffer
 
+burstDetect: ${PROJECT_PATH}/16_${FUNC}.burstdetect.mlir
+${PROJECT_PATH}/16_${FUNC}.burstdetect.mlir: ${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir
+	aries-opt -o $@ $< \
+			-aries-burst-detection \
+			-canonicalize -cse
+
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
 ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir
 	aries-translate -o $@ $< \
@@ -134,7 +140,9 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-gmio-materialize \
 			-aries-plio-materialize \
 			-canonicalize -cse \
-			-aries-pl-double-buffer
+			-aries-pl-double-buffer \
+			-aries-burst-detection
+			-canonicalize -cse
 
 translate: file_split kernel_file_split clean_kernel_vec
 file_split: tempfile
