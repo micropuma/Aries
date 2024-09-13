@@ -46,6 +46,21 @@ unsigned getLoopNum(Operation *op, AffineForOp &loop) {
   return loopNum;
 }
 
+AffineForOp getLoopBandFromOutermost(AffineForOp forOp,
+                                     SmallVector<AffineForOp, 6> &band) {
+  band.clear();
+  auto currentLoop = forOp;
+  while (true) {
+    band.push_back(currentLoop);
+    AffineForOp emptyLoop;
+    if (getLoopNum(currentLoop, emptyLoop) == 1)
+      currentLoop = *currentLoop.getOps<AffineForOp>().begin();
+    else
+      break;
+  }
+  return band.back();
+}
+
 /// Get the whole loop band given the innermost loop and return it in "band".
 void getLoopBandFromInnermost(AffineForOp forOp, 
                               SmallVector<AffineForOp, 6> &band) {

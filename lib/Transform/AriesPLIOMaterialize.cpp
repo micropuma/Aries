@@ -285,8 +285,8 @@ private:
       builder.setInsertionPoint(outerloop);
     else
       builder.setInsertionPointAfter(outerloop);
+    // loopIndices is organized in a column-major, here change it to row-major
     auto orderedIndices = loopIndices;
-    llvm::sort(orderedIndices);
     for (auto loopIndex : orderedIndices){
       auto loop = band[loopIndex];
       auto newDMAForOp
@@ -400,13 +400,16 @@ private:
       auto d0 = builder.getAffineDimExpr(0);
       auto map = AffineMap::get(1, 0, d0 * sizeInt, builder.getContext());
       // Add ApplyOp for dma
-      auto loopIndex = loopIndices[i];
+      auto loopIndex = orderedIndices[i];
       auto loop = band[loopIndex];
       auto var = loop.getInductionVar();
       builder.setInsertionPoint(newInnerDMAYiled);
       auto newApplyopDMA = builder.create<AffineApplyOp>(loc, map, var);
       localOffsets.push_back(newApplyopDMA);
       // Add ApplyOp for IOPush/IOPop
+      loopIndex = loopIndices[i];
+      loop = band[loopIndex];
+      var = loop.getInductionVar();
       builder.setInsertionPoint(newInnerIOYiled);
       auto newApplyopIO = builder.create<AffineApplyOp>(loc, map, var);
       IOOffsets.push_back(newApplyopIO);
@@ -488,6 +491,36 @@ private:
       });
     }
     return WalkResult::advance();
+  }
+
+  // Tranverse the IOPushOps/IOPopOps and allocate L2 buffers
+  bool AllocL2Buffer(OpBuilder builder, FuncOp plFunc, AffineForOp plForOp,
+                     SmallVector<AffineForOp, 6>& band){
+    unsigned loadIdx = 0;
+    unsigned storeIdx = 0;
+    unsigned sendIdx = 0;
+    unsigned receiveIdx = 0;
+    SmallVector<std::pair<Value, unsigned>, 4> loadSrcs;
+    SmallVector<std::pair<Value, unsigned>, 4> storeDsts;
+    auto flag = plForOp.walk([&](Operation* op){
+      WalkResult result;
+      if(dyn_cast<IOPushOp>(op))
+        result = IOProcesses(builder, plFunc, op, band, loadIdx, storeIdx,
+                             sendIdx, receiveIdx, loadSrcs, storeDsts, true);
+      else if(dyn_cast<IOPopOp>(op))
+        result = IOProcesses(builder, plFunc, op, band, loadIdx, storeIdx,
+                             sendIdx, receiveIdx, loadSrcs, storeDsts, false);
+      else
+        return WalkResult::advance();
+      return result;
+    });
+    if (flag == WalkResult::interrupt()) 
+      return false;
+
+    // After Processes IOPush/IOPop in the outerloop, safe to erase outerLoop
+    auto outerLoop = band[0];
+    outerLoop.erase();
+    return true;
   }
 
   // Convert adf.io.push/pop that moves data between memrefs and ios to 
@@ -714,8 +747,27 @@ private:
     return WalkResult::advance();
   }
 
+  // Tranverse the IOPushOps/IOPopOps and convert them to affine load/store
+  bool ConvertIODMAToAffine(OpBuilder builder, AffineForOp plForOp){
+    auto flag = plForOp.walk([&](Operation* op){
+      WalkResult result;
+      if(dyn_cast<IOPushOp>(op))
+        result = ConvertIOToAffine(builder, op, true);
+      else if(dyn_cast<IOPopOp>(op))
+        result = ConvertIOToAffine(builder, op, false);
+      else if(dyn_cast<DmaOp>(op))
+        result = ConvertDMAToAffine(builder, op);
+      else
+        return WalkResult::advance();
+      return result;
+    });
+    if (flag == WalkResult::interrupt()) 
+      return false;
+    return true;
+  }
+
   // Change direct L2 buffer access to read from/write to a stream
-  void L2BufferProcess(OpBuilder builder, FuncOp plFunc, AffineStoreOp storeOp,
+  void L2MemProcess(OpBuilder builder, FuncOp plFunc, AffineStoreOp storeOp,
                        AffineLoadOp loadOp, SmallVector<AffineForOp, 6> band, 
                        bool load){
     auto loc = builder.getUnknownLoc();
@@ -841,6 +893,132 @@ private:
           return innerNewLoop->isProperAncestor(use.getOwner());
       });
     }
+  }
+
+  // Tranverse all the outer point dma loops(involve L3 mem) and change the
+  // L2 buffer access with stream access
+  void L2MemProcessTop(OpBuilder builder, FuncOp plFunc, AffineForOp plForOp){
+    for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
+      if(!forOp->hasAttr("load") && !forOp->hasAttr("store"))
+        continue;
+      SmallVector<AffineForOp, 6> band;
+      getNestedLoops(band, forOp);
+      AffineApplyPerfectize(band);
+      auto outerLoop = band[0];
+      auto innerLoop = band[band.size()-1];
+      AffineStoreOp emptyStoreOp;
+      AffineLoadOp emptyLoadOp;
+      if(outerLoop->hasAttr("load"))
+        for (auto storeOp: 
+             llvm::make_early_inc_range(innerLoop.getOps<AffineStoreOp>()))
+          L2MemProcess(builder, plFunc, storeOp, emptyLoadOp, band, true);
+      else
+        for (auto loadOp: 
+             llvm::make_early_inc_range(innerLoop.getOps<AffineLoadOp>()))
+          L2MemProcess(builder, plFunc, emptyStoreOp, loadOp, band, false);
+    }
+  }
+
+  // This function does the loop permutation for load/store from DDR->L2 mem
+  // in order to potential increase the burst length, the loops involved in
+  // the access of last dim should be put inside.
+  // TODO::This permutation is not safe, since it can not pass 
+  //       the interchange verification, need to figure it out why
+  bool loopPermutation(AffineForOp plForOp){
+    for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
+      if(!forOp->hasAttr("load") && !forOp->hasAttr("store"))
+        continue;
+      SmallVector<AffineForOp, 6> originBand;
+      getPerfectlyNestedLoops(originBand, forOp);
+      auto bandSize = originBand.size();
+      auto originInnerLoop = originBand[bandSize-1];
+      // Assume there is only memory access from/to L3
+      Value memref;
+      Operation* defineOp;
+      AffineApplyOp applyOp;
+      AffineMap map;
+      SmallVector<Value> operands;
+      for (auto& op: originInnerLoop.getBody()->getOperations()){
+        if (auto read = dyn_cast<AffineReadOpInterface>(op)) {
+          defineOp = read.getMapOperands().back().getDefiningOp();
+          memref = read.getMemRef();
+        }else if (auto write = dyn_cast<AffineWriteOpInterface>(op)){
+          defineOp = write.getMapOperands().back().getDefiningOp();
+          memref = write.getMemRef();
+        }else{
+          continue;
+        }
+        if(!defineOp || !dyn_cast<AffineApplyOp>(defineOp))
+          return true;
+        auto applyOp = dyn_cast<AffineApplyOp>(defineOp);
+        auto type = dyn_cast<MemRefType>(memref.getType());
+        if(auto memSpace = type.getMemorySpace()){
+          auto intSpace = dyn_cast<IntegerAttr>(memSpace);
+          if(intSpace && intSpace.getInt()==(int)MemorySpace::L3){
+            map = applyOp.getAffineMap();
+            operands = applyOp.getOperands();
+            break;
+          }
+        }else{//If no memSpace then default is L3 mem
+          map = applyOp.getAffineMap();
+          operands = applyOp.getOperands();
+          break;
+        }
+      }
+      if(!map)
+        return false;
+      auto lastExpr = map.getResults().back();
+      // flattened form [dims, symbols, locals, constant]
+      llvm::SmallVector<int64_t> flattenedExpr;
+      if (failed(getFlattenedAffineExpr(lastExpr, map.getNumDims(),
+                                        map.getNumSymbols(),
+                                        &flattenedExpr)))
+        return false;
+      auto mapSize = map.getNumDims();
+      SmallVector<std::pair<unsigned, int64_t>> outerLoops;
+      SmallVector<std::pair<unsigned, int64_t>> innerLoops;
+      for (unsigned i = 0; i < mapSize; ++i) {
+        auto loop = getForInductionVarOwner(operands[i]);
+        if (!loop)
+          continue;
+        auto it = llvm::find(originBand, loop);
+        if(it!=originBand.end()){
+          auto coeff = flattenedExpr[i];
+          unsigned depth = llvm::find(originBand, loop) - originBand.begin();
+          innerLoops.push_back(std::pair(depth, coeff));
+        }
+      }
+      for(unsigned i = 0; i<bandSize; i++){
+        auto it 
+        = llvm::find_if(innerLoops, [i](const std::pair<unsigned, int64_t> &p) {
+          return p.first == i;
+        });
+        if(it != innerLoops.end())
+          continue;
+        outerLoops.push_back(std::pair(i, 0));
+      }
+      // OuterLoops sort depth by ascending order
+      // InnerLoops sort coeff by ascending order
+      llvm::sort(outerLoops, [](const std::pair<unsigned, int64_t> &a, 
+                                const std::pair<unsigned, int64_t> &b){
+        return a.first < b.first;
+      });
+      llvm::sort(innerLoops, [](const std::pair<unsigned, int64_t> &a, 
+                                const std::pair<unsigned, int64_t> &b){
+        return a.second > b.second;
+      });
+      // Merge the depth of OuterLoops and InnerLoops
+      SmallVector<unsigned, 6> permMap;
+      for (auto pair : outerLoops)
+        permMap.push_back(pair.first);
+      for (auto pair : innerLoops)
+        permMap.push_back(pair.first);
+      // TODO::This permutation is not safe, since it can not pass 
+      //       the interchange verification, need to figure it out why
+      //if (isValidLoopInterchangePermutation(originBand, permMap))
+      permuteLoops(originBand, permMap);
+    }
+    return true;
   }
 
   // Split the loops marked by "load,store,send,receive" and then merge them
@@ -1125,34 +1303,11 @@ private:
     pm.addPass(createSimplifyAffineStructuresPass());
     (void)pm.run(plFunc);
 
-    // Tranverse the IOPushOps/IOPopOps and allocate L2 buffers
-    unsigned loadIdx = 0;
-    unsigned storeIdx = 0;
-    unsigned sendIdx = 0;
-    unsigned receiveIdx = 0;
-    SmallVector<std::pair<Value, unsigned>, 4> loadSrcs;
-    SmallVector<std::pair<Value, unsigned>, 4> storeDsts;
-    auto flag = plForOp.walk([&](Operation* op){
-      WalkResult result;
-      if(dyn_cast<IOPushOp>(op))
-        result = IOProcesses(builder, plFunc, op, band, loadIdx, storeIdx,
-                             sendIdx, receiveIdx, loadSrcs, storeDsts, true);
-      else if(dyn_cast<IOPopOp>(op))
-        result = IOProcesses(builder, plFunc, op, band, loadIdx, storeIdx,
-                             sendIdx, receiveIdx, loadSrcs, storeDsts, false);
-      else
-        return WalkResult::advance();
-      return result;
-    });
-    if (flag == WalkResult::interrupt()) 
+    if(!AllocL2Buffer(builder, plFunc, plForOp, band))
       return false;
 
-    // After Processes IOPush/IOPop in the outerloop, safe to erase outerLoop
-    auto outerLoop = band[0];
-    outerLoop.erase();
-
     // Tranverse the IOPushOps/IOPopOps and convert them to affine load/store
-    flag = plForOp.walk([&](Operation* op){
+    auto flag = plForOp.walk([&](Operation* op){
       WalkResult result;
       if(dyn_cast<IOPushOp>(op))
         result = ConvertIOToAffine(builder, op, true);
@@ -1169,32 +1324,18 @@ private:
 
     // Replace arguments with PLIOType by memref arguments
     ArgUpdate(builder, topFunc, plFunc, callop);
-
     // Simplify the loop structure after ConvertToAffine.
     // There won't be any nested affine.apply ops
     pm.addPass(createSimplifyAffineStructuresPass());
     (void)pm.run(plFunc);
+
+    // Permute loops in order to potentially increase the burst length
+    if(!loopPermutation(plForOp))
+      return false;
+    
     // Tranverse all the outer point dma loops(involve L3 mem) and change the
     // L2 buffer access with stream access
-    for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
-      if(!forOp->hasAttr("load") && !forOp->hasAttr("store"))
-        continue;
-      SmallVector<AffineForOp, 6> band;
-      getNestedLoops(band, forOp);
-      AffineApplyPerfectize(band);
-      auto outerLoop = band[0];
-      auto innerLoop = band[band.size()-1];
-      AffineStoreOp emptyStoreOp;
-      AffineLoadOp emptyLoadOp;
-      if(outerLoop->hasAttr("load"))
-        for (auto storeOp: 
-             llvm::make_early_inc_range(innerLoop.getOps<AffineStoreOp>()))
-          L2BufferProcess(builder, plFunc, storeOp, emptyLoadOp, band, true);
-      else
-        for (auto loadOp: 
-             llvm::make_early_inc_range(innerLoop.getOps<AffineLoadOp>()))
-          L2BufferProcess(builder, plFunc, emptyStoreOp, loadOp, band, false);
-    }
+    L2MemProcessTop(builder, plFunc, plForOp);
 
     // Post processes, move each loop marked by "load,store,receive,send" to the
     // outermost temporal tileBand 

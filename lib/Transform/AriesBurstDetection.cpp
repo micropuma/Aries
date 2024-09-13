@@ -348,7 +348,6 @@ private:
           SmallVector<SmallVector<std::pair<int64_t, AffineForOp>, 4>>& groups){
     auto loc = builder.getUnknownLoc();
     SmallVector<AffineForOp, 6> eliminateLoops;
-    unsigned printIdx = 0;
     for(auto group : groups){
       llvm::sort(group, [](const std::pair<int64_t, AffineForOp>& a, 
                            const std::pair<int64_t, AffineForOp>& b) {
