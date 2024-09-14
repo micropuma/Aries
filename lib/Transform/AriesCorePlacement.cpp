@@ -21,6 +21,10 @@ namespace {
 
 struct AriesCorePlacement : public AriesCorePlacementBase<AriesCorePlacement> {
 public:
+  AriesCorePlacement() = default;
+  AriesCorePlacement(const AriesOptions &opts) {
+    CoreAlgo=opts.OptCoreAlgo;
+  }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
     StringRef topFuncName = "top_func";
@@ -30,48 +34,214 @@ public:
   }
 
 private:
-  bool placementNaive1(OpBuilder builder, CallOp callOp, int64_t height,
-                      int64_t colNum, int64_t rowNum, int64_t colStart, 
-                      int64_t rowStart, int64_t KSize, int64_t JSize, 
-                      int64_t ISize, bool flow_flag, 
-                      SmallVector<int64_t, 3> ivIdeices){
+  // All the place algorithm here follows the logic below:
+  // pid =  (3d cell -> 1d serialization)
+  // Height = The number of rows utilized in this placement
+  // col = pid % Height
+  // row = ceil (pid/Height)
+
+  // In this algorithm, the reduction dim is consecutive vertically
+  bool placementNaive0(OpBuilder builder, CellOp cellOp, unsigned colNum, 
+                       unsigned rowNum, unsigned KSize, unsigned JSize, 
+                       unsigned ISize){
     auto indexType = builder.getIndexType();
-    int64_t kSize = 0;
-    int64_t jSize = 0;
-    int64_t iSize = 0;
-    if(flow_flag){
-      kSize = ivIdeices[0];
-      if(ivIdeices.size()>2){
-        jSize = ivIdeices[1];
-        iSize = ivIdeices[2];
-      }else if(ivIdeices.size()>1){
-        jSize = ivIdeices[1];
+    unsigned rowStart = 0;
+    // Determine the height and formula for pid
+    unsigned height= std::min(KSize, rowNum);
+    unsigned flag;
+    if(KSize<=rowNum){
+      if(rowNum%KSize==0)
+        height= rowNum;
+      if(ISize > JSize){
+        flag = 0;
+      }else{
+        flag = 1;
+      }
+    }else{
+      if(ISize > JSize){
+        flag = 2;
+      }else{
+        flag = 3;
       }
     }
-    else{
-      jSize = ivIdeices[0];
-      if(ivIdeices.size()>1)
-        iSize = ivIdeices[0];
-    }
-    int64_t tempRow = jSize + iSize * JSize;
-    int64_t curRow = tempRow % height;
-    int64_t curCol =  std::ceil(tempRow / height) * KSize + kSize;
-    int64_t col = colStart + curCol;
-    int64_t row = rowStart + curRow;
-    if((col > colNum-1) || (row > rowNum-1))
+    unsigned coreNum = KSize * JSize * ISize;
+    unsigned colWidth = std::ceil(coreNum/height);
+    if(colWidth > colNum)
       return false;
-    auto colAttr = builder.getIntegerAttr(indexType, col);
-    auto rowAttr = builder.getIntegerAttr(indexType, row);
-    auto arrayAttr = builder.getArrayAttr({colAttr, rowAttr});
-    callOp->setAttr("col, row", arrayAttr);
+    unsigned colStart = std::floor((colNum - colWidth) / 2);
+
+    llvm::outs() << "(I, K, J): " << "(" << ISize << "," << KSize << "," << JSize << ")\n";
+    llvm::outs() << "(height, flag): " << "(" << height << "," << flag << ")\n";
+    llvm::outs() << "(colStart, rowStart): " << "(" << colStart << "," << rowStart << ")\n\n";
+
+    for (auto callOp : cellOp.getOps<CallOp>()){
+      if(!callOp->hasAttr("adf.kernel"))
+        continue;
+      if(!callOp->hasAttr("ivs"))
+        return true;
+      auto ivArrayAttr = dyn_cast<ArrayAttr>(callOp->getAttr("ivs"));
+      // Check if there are reduction loops need to be placed
+      
+      SmallVector<unsigned, 3> ivIdeices;
+      for(auto attr : ivArrayAttr){
+        auto intAttr = dyn_cast<IntegerAttr>(attr);
+        ivIdeices.push_back((unsigned)intAttr.getInt());
+      }
+      unsigned kSize=0;
+      unsigned jSize=0;
+      unsigned iSize=0;
+      if(ivIdeices.size()>3){
+        return false;
+      }else if(ivIdeices.size()==3){
+        kSize = ivIdeices[0];
+        jSize = ivIdeices[1];
+        iSize = ivIdeices[2];
+      }else if(ivIdeices.size()==2){
+        if(KSize ==1){
+          jSize = ivIdeices[0];
+          iSize = ivIdeices[1];
+        }else{
+          kSize = ivIdeices[0];
+          jSize = ivIdeices[1];
+        }
+      }else if(ivIdeices.size()==1){
+        if(KSize ==1){
+          jSize = ivIdeices[0];
+        }else{
+          kSize = ivIdeices[0];
+        }
+      }else{
+        return true;
+      }
+      llvm::outs() << "(i, k, j): " << "(" << iSize << "," << kSize << "," << jSize << ")\n";
+      unsigned pid=0;
+      unsigned index=0;
+      if(flag == 0){
+        pid = kSize + jSize * KSize + iSize * JSize * KSize;
+      }else if(flag == 1){
+        pid = kSize + iSize * KSize + jSize * ISize * KSize;
+      }else if(flag == 2){
+        index = kSize + jSize * KSize + iSize * JSize * KSize; 
+      }else if(flag == 3){
+        index = kSize + iSize * KSize + jSize * ISize * KSize;
+      }
+      if(flag == 2 || flag ==3){
+        unsigned remi = index % height;
+        unsigned quot = std::floor(index / height);
+        if(quot%2==0){
+          pid = quot * height + remi;
+        }else{
+          pid = quot * height + (height-1) - remi;
+        }
+        llvm::outs() << "(remi, quot): " << "(" << remi << "," << quot << ")\n";
+      }
+      unsigned col = colStart + std::ceil(pid / height);
+      unsigned row = rowStart + pid % height;
+      llvm::outs() << "(pid, col, row): " << "(" << pid << "," << col << "," << row << ")\n\n";
+      if((col > colNum-1) || (row > rowNum-1))
+        return false;
+      auto colAttr = builder.getIntegerAttr(indexType, col);
+      auto rowAttr = builder.getIntegerAttr(indexType, row);
+      auto arrayAttr = builder.getArrayAttr({colAttr, rowAttr});
+      callOp->setAttr("col, row", arrayAttr);
+    }
+    return true;
+  }
+
+  // In this algorithm, the reduction dim is consecutive horizontally
+  // J dim will first be placed vertically
+  bool placementNaive1(OpBuilder builder, CellOp cellOp, unsigned colNum, 
+                       unsigned rowNum, unsigned KSize, unsigned JSize, 
+                       unsigned ISize){
+    auto indexType = builder.getIndexType();
+    unsigned rowStart = 0;
+    // Determine the height and formula for pid
+    unsigned height;
+    unsigned flag;
+    if(JSize >= ISize){
+      flag = 0;
+      height = std::min(JSize, rowNum);
+    }else{
+      flag = 1;
+      height = std::min(ISize, rowNum);
+    }
+    unsigned coreNum = KSize * JSize * ISize;
+    unsigned colWidth = std::ceil(coreNum/height);
+    if(colWidth > colNum)
+      return false;
+    unsigned colStart = std::floor((colNum - colWidth) / 2);
+
+    llvm::outs() << "(I, K, J): " << "(" << ISize << "," << KSize << "," << JSize << ")\n";
+    llvm::outs() << "(height, flag): " << "(" << height << "," << flag << ")\n";
+    llvm::outs() << "(colStart, rowStart): " << "(" << colStart << "," << rowStart << ")\n\n";
+
+    for (auto callOp : cellOp.getOps<CallOp>()){
+      if(!callOp->hasAttr("adf.kernel"))
+        continue;
+      if(!callOp->hasAttr("ivs"))
+        return true;
+      auto ivArrayAttr = dyn_cast<ArrayAttr>(callOp->getAttr("ivs"));
+      // Check if there are reduction loops need to be placed
+      
+      SmallVector<unsigned, 3> ivIdeices;
+      for(auto attr : ivArrayAttr){
+        auto intAttr = dyn_cast<IntegerAttr>(attr);
+        ivIdeices.push_back((unsigned)intAttr.getInt());
+      }
+      unsigned kSize=0;
+      unsigned jSize=0;
+      unsigned iSize=0;
+      if(ivIdeices.size()>3){
+        return false;
+      }else if(ivIdeices.size()==3){
+        kSize = ivIdeices[0];
+        jSize = ivIdeices[1];
+        iSize = ivIdeices[2];
+      }else if(ivIdeices.size()==2){
+        if(KSize ==1){
+          jSize = ivIdeices[0];
+          iSize = ivIdeices[1];
+        }else{
+          kSize = ivIdeices[0];
+          jSize = ivIdeices[1];
+        }
+      }else if(ivIdeices.size()==1){
+        if(KSize ==1){
+          jSize = ivIdeices[0];
+        }else{
+          kSize = ivIdeices[0];
+        }
+      }else{
+        return true;
+      }
+      
+      unsigned rowIndex = 0;
+      if(flag==0)
+        rowIndex = jSize + iSize * JSize;
+      else if(flag==1)
+        rowIndex = iSize + jSize * ISize;
+      unsigned remi = rowIndex % height;
+      unsigned quot = std::floor(rowIndex / height);
+      unsigned pid = remi + kSize * height + quot * KSize * height;
+      unsigned col = colStart + std::ceil(pid / height);
+      unsigned row = rowStart + pid % height;
+      llvm::outs() << "(i, k, j): " << "(" << iSize << "," << kSize << "," << jSize << ")\n";
+      llvm::outs() << "(remi, quot): " << "(" << remi << "," << quot << ")\n";
+      llvm::outs() << "(pid, col, row): " << "(" << pid << "," << col << "," << row << ")\n\n";
+      if((col > colNum-1) || (row > rowNum-1))
+        return false;
+      auto colAttr = builder.getIntegerAttr(indexType, col);
+      auto rowAttr = builder.getIntegerAttr(indexType, row);
+      auto arrayAttr = builder.getArrayAttr({colAttr, rowAttr});
+      callOp->setAttr("col, row", arrayAttr);
+    }
     return true;
   }
 
   bool CorePlacement (ModuleOp mod, StringRef topFuncName) {
     auto builder = OpBuilder(mod);
-    int64_t colNum = 50;
-    int64_t rowNum = 8;
-    int64_t rowStart = 0;
+    unsigned colNum = 50;
+    unsigned rowNum = 8;
     FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
@@ -88,71 +258,24 @@ private:
       return true;
     
     auto arrayAttr = dyn_cast<ArrayAttr>(cellOp->getAttr("tripCount"));
-    int64_t coreNum = 1;
-    SmallVector<int64_t, 3> tripCounts;
+    
+    SmallVector<unsigned, 3> tripCounts;
     for(auto attr : arrayAttr){
       auto intAttr = dyn_cast<IntegerAttr>(attr);
-      tripCounts.push_back(intAttr.getInt());
-      coreNum *= intAttr.getInt();
+      tripCounts.push_back((unsigned)intAttr.getInt());
     }
+    // Here we need to identify the KSize, which assume should be innermost
+    // but don't care about the order of ISize and JSize
+    unsigned KSize = tripCounts[0];
+    unsigned JSize = tripCounts[1];
+    unsigned ISize = tripCounts[2];
 
-    CallOp firstcall = getFirstOpOfType<CallOp>(cellOp.getBody());
-    unsigned flow_flag = false;
-    if(firstcall->hasAttr("kernel"))
-      flow_flag = true;
-      
-    int64_t height_temp = rowNum;
-    int64_t rowPlace = 1;  // row need to be placed
-    int64_t KSize = 1;
-    int64_t JSize = 1;
-    int64_t ISize = 1;
-    // Determine the height of the cores
-    if(flow_flag){
-      KSize = tripCounts[0];
-      if(tripCounts.size()>2){
-        JSize = tripCounts[1];
-        ISize = tripCounts[2];
-        height_temp = std::max(JSize, ISize);
-      }else if(tripCounts.size()>1){
-        JSize = tripCounts[1];
-        height_temp = JSize;
-      }else{
-        height_temp = KSize;
-      }
+    if(CoreAlgo == 0){
+      if(!placementNaive0(builder, cellOp, colNum, rowNum, KSize, JSize, ISize))
+        return false;
     }
     else{
-      JSize = tripCounts[0];
-      height_temp = JSize;
-      if(tripCounts.size()>1){
-        ISize = tripCounts[0];
-        height_temp = std::max(JSize, ISize);
-      }
-    }
-    rowPlace = JSize * ISize;
-    int64_t height = std::min(height_temp, rowNum);
-    int64_t width = coreNum / height;
-    int64_t colStart = std::floor((colNum - width) / 2);
-    if(width > colNum)
-      return false;
-
-    for (auto callOp : cellOp.getOps<CallOp>()){
-      if(!callOp->hasAttr("adf.kernel"))
-        continue;
-      if(!callOp->hasAttr("ivs"))
-        return true;
-      auto ivArrayAttr = dyn_cast<ArrayAttr>(callOp->getAttr("ivs"));
-      // Check if there are reduction loops need to be placed
-      
-      SmallVector<int64_t, 3> ivIdeices;
-      for(auto attr : ivArrayAttr){
-        auto intAttr = dyn_cast<IntegerAttr>(attr);
-        ivIdeices.push_back(intAttr.getInt());
-      }
-      
-      auto flag = placementNaive1(builder, callOp, height, colNum, rowNum, 
-                                  colStart, rowStart, KSize, JSize, ISize, 
-                                  flow_flag, ivIdeices);
-      if(!flag)
+      if(!placementNaive1(builder, cellOp, colNum, rowNum, KSize, JSize, ISize))
         return false;
     }
 
@@ -169,6 +292,10 @@ namespace aries {
 
 std::unique_ptr<Pass> createAriesCorePlacementPass() {
   return std::make_unique<AriesCorePlacement>();
+}
+
+std::unique_ptr<Pass> createAriesCorePlacementPass(const AriesOptions &opts) {
+  return std::make_unique<AriesCorePlacement>(opts);
 }
 
 } // namespace aries

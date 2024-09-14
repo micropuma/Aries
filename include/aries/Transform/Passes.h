@@ -35,6 +35,11 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       llvm::cl::desc("Specify a list of L3 loop tile sizes")};
   
   /// Configure the DMAToIO pass.
+  Option<int64_t> OptCoreAlgo{
+      *this, "core-algo", llvm::cl::init(0), llvm::cl::desc(
+      "Specify the algorithm for core placement 0:vertical,1:horizontally")};
+  
+  /// Configure the DMAToIO pass.
   Option<std::string> OptPortType{
       *this, "port-type", llvm::cl::init("PLIO"),
       llvm::cl::desc("Specify the type of the ports(PORT,GMIO,PLIO)")};
@@ -61,8 +66,8 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
   
   /// Configure the DMAToIO pass.
   Option<int64_t> OptAXIWidth{
-      *this, "axi-width", llvm::cl::init(32),
-      llvm::cl::desc("Specify the plio width of a port in bits (32,64,128)")};
+      *this, "axi-width", llvm::cl::init(32), llvm::cl::desc(
+      "Specify the axi width of the DDR ports in bits (32, 64, 128, ...)")};
 
   /// Configure the split file pass.
   Option<std::string> OptFileName{
@@ -85,6 +90,7 @@ std::unique_ptr<Pass> createAriesMemCopyPass();
 std::unique_ptr<Pass> createAriesDependencyExtractPass();
 std::unique_ptr<Pass> createAriesFuncUnrollPass();
 std::unique_ptr<Pass> createAriesCorePlacementPass();
+std::unique_ptr<Pass> createAriesCorePlacementPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesLocalDataForwardPass();
 std::unique_ptr<Pass> createAriesKernelInterfaceCreatePass();
 std::unique_ptr<Pass> createAriesDMAToIOPass();

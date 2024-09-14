@@ -92,6 +92,10 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
 def AriesCorePlacement : Pass<"aries-core-placement"> {
   let summary = "Place the AIE cores";
   let constructor = "mlir::aries::createAriesCorePlacementPass()";
+  let options = [
+    Option<"CoreAlgo", "core-algo", "int64_t", /*default=*/"0",
+           "Specify the algorithm for core placement 0:vertical,1:horizontally">
+  ];
 }
 
 def AriesLocalDataForward : Pass<"aries-local-data-forward"> {

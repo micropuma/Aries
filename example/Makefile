@@ -8,6 +8,7 @@ PROJECT_Host_PATH=${PROJECT_PATH}/host
 EN_PL = 1
 PLIOWidth = 128
 AXIWidth = 512
+CoreAlgo = 0
 L1_0=32
 L1_1=32
 L1_2=32
@@ -83,7 +84,7 @@ ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir: ${PROJECT_PATH}/7_${FUNC}.flow.mlir
 coreplacement: ${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir
 ${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir: ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir
 	aries-opt -o $@ $< \
-			-aries-core-placement
+			-aries-core-placement="core-algo=${CoreAlgo}"
 
 dataforward: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
 ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir
@@ -151,7 +152,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-lower-to-adf \
 			-aries-dependency-extract \
 			-aries-func-unroll \
-			-aries-core-placement \
+			-aries-core-placement="core-algo=${CoreAlgo}" \
 			-aries-local-data-forward \
 			-aries-kernel-interface-create \
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
