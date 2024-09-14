@@ -7,6 +7,7 @@
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/ADT/StringMap.h"
 #include "aries/Transform/Passes.h"
@@ -30,6 +31,12 @@ public:
     StringRef topFuncName = "top_func";
   
     if (!IOMaterialize(mod,topFuncName))
+      signalPassFailure();
+
+    PassManager pm(&getContext());
+    pm.addPass(createCSEPass());
+    pm.addPass(createCanonicalizerPass());
+    if (failed(pm.run(mod)))
       signalPassFailure();
   }
 
@@ -77,7 +84,6 @@ private:
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
     plFunc = builder.create<FuncOp>(builder.getUnknownLoc(),funcName,funcType);
     plFunc->setAttr("adf.pl",builder.getBoolAttr(true));
-    plFunc->setAttr("dataflow",builder.getUnitAttr());
     auto destBlock = plFunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
@@ -919,6 +925,73 @@ private:
     }
   }
 
+  // Replace IORead/IOWrite by AffineLoad/AffineStore, update the callee and
+  // caller function, create ConnectOp to connect IO with stream
+  void ArgUpdate(OpBuilder builder, FuncOp topFunc, FuncOp plFunc, 
+                 CallOp& caller){
+    auto loc = builder.getUnknownLoc();
+    SmallVector<OpFoldResult> allocSizes;
+    allocSizes.push_back(builder.getIndexAttr(1));
+    auto plioAttr = builder.getStringAttr("plio");
+    auto indexType = builder.getIndexType();
+    auto zeroAttr = builder.getIntegerAttr(indexType, 0);
+    builder.setInsertionPointToStart(&plFunc.getBody().front());
+    auto zeroValue = builder.create<arith::ConstantOp>(loc, zeroAttr);
+    SmallVector<Value> zeroValues(1, zeroValue);
+    auto inTypes =SmallVector<Type,8>(plFunc.getArgumentTypes().begin(),
+                                      plFunc.getArgumentTypes().end());
+    auto outTypes = plFunc.getResultTypes();
+    unsigned index = 0;
+    for (auto argOperand : caller.getArgOperands()) {
+      auto defineOp = argOperand.getDefiningOp();
+      if(!defineOp || !dyn_cast<CreateGraphIOOp>(defineOp)){
+        index++;
+        continue;
+      }
+      auto graphio = dyn_cast<CreateGraphIOOp>(defineOp);
+      auto calleeArg = plFunc.getArgument(index);
+      for(auto user : calleeArg.getUsers()){
+        builder.setInsertionPointToStart(&topFunc.getBody().front());
+        if(auto ioWrite = dyn_cast<IOWriteOp>(user)){
+          auto src = ioWrite.getSrc();
+          auto allocOp 
+            = builder.create<AllocOp>(loc, allocSizes, src.getType(), plioAttr);
+          // Replace the operands in the caller function to the allocOp
+          // Change the argument types of callee
+          caller.setOperand(index, allocOp);
+          inTypes[index] = allocOp.getType();
+          calleeArg.setType(allocOp.getType());
+          builder.setInsertionPoint(ioWrite);
+          builder.create<AffineStoreOp>(loc, src, calleeArg, zeroValues);
+          builder.setInsertionPointAfter(graphio);
+          auto connect = builder.create<ConnectOp>(loc, allocOp, graphio);
+          connect->setAttr("top_config", builder.getUnitAttr());
+          ioWrite.erase();
+          break;
+        }else if(auto ioRead = dyn_cast<IOReadOp>(user)){
+          auto dst = ioRead.getResult();
+          auto allocOp 
+            = builder.create<AllocOp>(loc, allocSizes, dst.getType(), plioAttr);
+          caller.setOperand(index, allocOp);
+          inTypes[index] = allocOp.getType();
+          calleeArg.setType(allocOp.getType());
+          builder.setInsertionPoint(ioRead);
+          auto load = builder.create<AffineLoadOp>(loc, calleeArg, zeroValues);
+          auto result = load.getResult();
+          dst.replaceAllUsesWith(result);
+          builder.setInsertionPointAfter(graphio);
+          auto connect = builder.create<ConnectOp>(loc, graphio, allocOp);
+          connect->setAttr("top_config", builder.getUnitAttr());
+          ioRead.erase();
+          break;
+        }
+      }
+      index++;
+    }
+    // Update the callee function type.
+    plFunc.setType(builder.getFunctionType(inTypes, outTypes));
+  }
+
   // This function does the loop permutation for load/store from DDR->L2 mem
   // in order to potential increase the burst length, the loops involved in
   // the access of last dim should be put inside.
@@ -1115,172 +1188,6 @@ private:
     outerTileBand.erase();
   }
 
-  // Tranverse all the forOps marked by "load,store,send,receive" and split
-  // them into new functions marked by adf.pl
-  void PLFuncSplit(OpBuilder builder, FuncOp plFunc){
-    auto loc = builder.getUnknownLoc();
-    for (auto forOp: llvm::make_early_inc_range(plFunc.getOps<AffineForOp>())){
-      SmallVector<Operation*, 4> Ops;
-      SmallVector<Value> inputs(forOp.getOperands());
-      auto liveness = Liveness(forOp);
-      for (auto livein: liveness.getLiveIn(forOp.getBody()))
-        if (!forOp->isProperAncestor(livein.getParentBlock()->getParentOp())){
-          auto definedOp = livein.getDefiningOp();
-          if(definedOp){
-            if(auto allocOp = dyn_cast<AllocOp>(definedOp)){
-              auto type = dyn_cast<MemRefType>(livein.getType());
-              if(auto memorySpace = type.getMemorySpace()){
-                auto intAttr = dyn_cast<IntegerAttr>(memorySpace);
-                if(intAttr && intAttr.getInt() == (int)MemorySpace::L2){
-                  Ops.push_back(definedOp);
-                  continue;
-                }
-              }
-            }else if(auto constOp = dyn_cast<arith::ConstantOp>(definedOp)){
-              Ops.push_back(definedOp);
-              continue;
-            }
-          }
-          inputs.push_back(livein);
-        }
-      
-      builder.setInsertionPoint(plFunc);
-      std::string funcName;
-      bool flag = false;
-      if(auto Attr = forOp->getAttrOfType<IntegerAttr>("load")){
-        funcName = "load" + std::to_string(Attr.getInt());
-        forOp->removeAttr("load");
-        flag = true;
-      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("store")){
-        funcName = "store" + std::to_string(Attr.getInt());
-        forOp->removeAttr("store");
-        flag = true;
-      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("send")){
-        funcName = "send" + std::to_string(Attr.getInt());
-        forOp->removeAttr("send");
-      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("receive")){
-        funcName = "receive" + std::to_string(Attr.getInt());
-        forOp->removeAttr("receive");
-      }else{
-       continue; 
-      }
-      auto funcType = builder.getFunctionType(ValueRange(inputs),TypeRange({}));
-      auto newfunc = builder.create<FuncOp>(
-                                  builder.getUnknownLoc(), funcName, funcType);
-      newfunc->setAttr("adf.pl",builder.getUnitAttr());
-      newfunc->setAttr("inline",builder.getBoolAttr(false));
-      if(flag){
-        newfunc->setAttr("L3", builder.getUnitAttr());
-      }
-      auto destBlock = newfunc.addEntryBlock();
-      builder.setInsertionPointToEnd(destBlock);
-      auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
-
-      // Move L2 buffer/Constant definition inside each function
-      builder.setInsertionPointToStart(destBlock);
-      SmallVector<Operation*, 4> newOps;
-      for(auto *op : Ops){
-        auto newOp = op->clone();
-        builder.insert(newOp);
-        newOps.push_back(newOp);
-      }
-
-      // Move the entire block of outerPointLoop before the returnOp
-      builder.setInsertionPointToEnd(destBlock);
-      forOp->moveBefore(returnOp);
-
-      // Create the function CallOp in plFunc
-      auto topReturnOp = plFunc.getBody().front().getTerminator();
-      builder.setInsertionPoint(topReturnOp);
-      builder.create<CallOp>(loc, newfunc, inputs);
-
-      // Update the references in the newfunc after move
-      auto numArg = destBlock->getNumArguments();
-      for (unsigned i = 0; i < numArg; ++i) {
-        auto sourceArg = inputs[i];
-        auto destArg = destBlock->getArgument(i);
-        sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
-            return newfunc->isProperAncestor(use.getOwner());
-        });
-      }
-      auto opSize = newOps.size();
-      for (unsigned i = 0; i < opSize; ++i) {
-        auto oldVal = Ops[i]->getResult(0);
-        auto newVal = newOps[i]->getResult(0);
-        oldVal.replaceUsesWithIf(newVal,[&](OpOperand &use){
-            return newfunc->isProperAncestor(use.getOwner());
-        });
-      }
-    }
-  }
-
-  // Replace IORead/IOWrite by AffineLoad/AffineStore, update the callee and
-  // caller function, create ConnectOp to connect IO with stream
-  void ArgUpdate(OpBuilder builder, FuncOp topFunc, FuncOp plFunc, 
-                 CallOp& caller){
-    auto loc = builder.getUnknownLoc();
-    SmallVector<OpFoldResult> allocSizes;
-    allocSizes.push_back(builder.getIndexAttr(1));
-    auto plioAttr = builder.getStringAttr("plio");
-    auto indexType = builder.getIndexType();
-    auto zeroAttr = builder.getIntegerAttr(indexType, 0);
-    builder.setInsertionPointToStart(&plFunc.getBody().front());
-    auto zeroValue = builder.create<arith::ConstantOp>(loc, zeroAttr);
-    SmallVector<Value> zeroValues(1, zeroValue);
-    auto inTypes =SmallVector<Type,8>(plFunc.getArgumentTypes().begin(),
-                                      plFunc.getArgumentTypes().end());
-    auto outTypes = plFunc.getResultTypes();
-    unsigned index = 0;
-    for (auto argOperand : caller.getArgOperands()) {
-      auto defineOp = argOperand.getDefiningOp();
-      if(!defineOp || !dyn_cast<CreateGraphIOOp>(defineOp)){
-        index++;
-        continue;
-      }
-      auto graphio = dyn_cast<CreateGraphIOOp>(defineOp);
-      auto calleeArg = plFunc.getArgument(index);
-      for(auto user : calleeArg.getUsers()){
-        builder.setInsertionPointToStart(&topFunc.getBody().front());
-        if(auto ioWrite = dyn_cast<IOWriteOp>(user)){
-          auto src = ioWrite.getSrc();
-          auto allocOp 
-            = builder.create<AllocOp>(loc, allocSizes, src.getType(), plioAttr);
-          // Replace the operands in the caller function to the allocOp
-          // Change the argument types of callee
-          caller.setOperand(index, allocOp);
-          inTypes[index] = allocOp.getType();
-          calleeArg.setType(allocOp.getType());
-          builder.setInsertionPoint(ioWrite);
-          builder.create<AffineStoreOp>(loc, src, calleeArg, zeroValues);
-          builder.setInsertionPointAfter(graphio);
-          auto connect = builder.create<ConnectOp>(loc, allocOp, graphio);
-          connect->setAttr("top_config", builder.getUnitAttr());
-          ioWrite.erase();
-          break;
-        }else if(auto ioRead = dyn_cast<IOReadOp>(user)){
-          auto dst = ioRead.getResult();
-          auto allocOp 
-            = builder.create<AllocOp>(loc, allocSizes, dst.getType(), plioAttr);
-          caller.setOperand(index, allocOp);
-          inTypes[index] = allocOp.getType();
-          calleeArg.setType(allocOp.getType());
-          builder.setInsertionPoint(ioRead);
-          auto load = builder.create<AffineLoadOp>(loc, calleeArg, zeroValues);
-          auto result = load.getResult();
-          dst.replaceAllUsesWith(result);
-          builder.setInsertionPointAfter(graphio);
-          auto connect = builder.create<ConnectOp>(loc, graphio, allocOp);
-          connect->setAttr("top_config", builder.getUnitAttr());
-          ioRead.erase();
-          break;
-        }
-      }
-      index++;
-    }
-    // Update the callee function type.
-    plFunc.setType(builder.getFunctionType(inTypes, outTypes));
-  }
-
   // Allocate L2 memory & add data movement
   bool PLDataMovement(OpBuilder builder, FuncOp topFunc, FuncOp plFunc, 
                       CallOp& callop){
@@ -1328,7 +1235,6 @@ private:
     // There won't be any nested affine.apply ops
     pm.addPass(createSimplifyAffineStructuresPass());
     (void)pm.run(plFunc);
-
     // Permute loops in order to potentially increase the burst length
     if(!loopPermutation(plForOp))
       return false;
@@ -1340,96 +1246,7 @@ private:
     // Post processes, move each loop marked by "load,store,receive,send" to the
     // outermost temporal tileBand 
     PLLoopSplit(builder, plFunc, plForOp);
-
-    // For each loop, create with a func marked by adf.pl
-    PLFuncSplit(builder, plFunc);
     return true;
-  }
-
-  // Hoist the loops beyond loops marked by reduction, 
-  // this is to implement the output stationary dataflow
-  // If has reduction, then need to initialize L2 buffer marked by init
-  void hoistBufferStore(ModuleOp mod, OpBuilder builder){
-    auto loc = builder.getUnknownLoc();
-    auto indexType = builder.getIndexType();
-    auto oneAttr = builder.getIntegerAttr(indexType, 1);
-    mod.walk([&](FuncOp func){
-      AffineForOp plforOp; 
-      func.walk([&](AffineForOp op){
-        if(op->hasAttr("Array_Partition")){
-          plforOp = op;
-          return WalkResult::interrupt();
-        }
-        return WalkResult::advance();
-      });
-      if(!func->hasAttr("adf.pl") || !plforOp)
-        return WalkResult::advance();
-      SmallVector<AffineForOp, 6> tileBand;
-      getLoopBandFromInnermost(plforOp, tileBand);
-      auto innerloop = tileBand[tileBand.size()-1];
-      auto reverseBand = tileBand;
-      std::reverse(reverseBand.begin(), reverseBand.end());
-      // Check forOps marked by hoist
-      SmallVector<AffineForOp, 2> forOps;
-      for(auto forOp : innerloop.getOps<AffineForOp>())
-        if(forOp->hasAttr("hoist")){
-          forOp->removeAttr("hoist");
-          forOps.push_back(forOp);
-        }
-      if(!forOps.size())
-        return WalkResult::advance();
-      // Check and find the outmost reduction loop
-      AffineForOp finalLoop;
-      unsigned index = 0;
-      unsigned indexRed = 0;
-      for(auto loop : reverseBand){
-        if(loop->hasAttr("reduction")){
-          finalLoop = loop;
-          if(index>indexRed)
-            assert("Detected loop doesn't support output stationary");
-          indexRed++;
-        }
-        index++;
-      }
-      for(auto forOp : forOps)
-        forOp->moveAfter(finalLoop);
-      // Initialize output buffer as zero
-      for(auto alloc : func.getOps<AllocOp>()){
-        if(alloc->hasAttr("init")){
-          alloc->removeAttr("init");
-          auto memref = alloc.getResult();
-          auto type = dyn_cast<MemRefType>(memref.getType());
-          auto eleType = type.getElementType();
-          auto rank = type.getRank();
-          SmallVector<Value> sizes;
-          SmallVector<AffineForOp, 4> newLoops;
-          builder.setInsertionPointAfter(alloc);
-          SmallVector<Value, 4> ivs;
-          for(unsigned i = 0; i < rank; i++){
-            auto size = type.getDimSize(i);
-            auto newForOp = builder.create<AffineForOp>(loc, 0, size, 1);
-            newLoops.push_back(newForOp);
-            ivs.push_back(newForOp.getInductionVar());
-            builder.setInsertionPointToStart(newForOp.getBody());
-          }
-          auto newInnerLoop = newLoops[newLoops.size()-1];
-          newInnerLoop->setAttr("pipeline_ii", oneAttr);
-          auto newInnerYiled = newInnerLoop.getBody()->getTerminator();
-          builder.setInsertionPoint(newInnerYiled);
-          Value value;
-          if (eleType.isa<IntegerType>()) {
-            auto zeroAttr = builder.getIntegerAttr(eleType, 0);
-            value = builder.create<arith::ConstantOp>(loc, eleType, zeroAttr);
-          }else{
-            auto floatType = builder.getF32Type();
-            auto floatAttr = builder.getF32FloatAttr(0.0);
-            value = builder.create<arith::ConstantOp>(loc, floatType, floatAttr);
-          }
-          builder.create<AffineStoreOp>(loc, value, memref, ivs);
-        }
-      }
-      return WalkResult::advance();
-    });
   }
 
   // Move the collected adf.cell to adf.cell.launch
@@ -1465,7 +1282,6 @@ private:
       PLFuncCreation(builder, topFunc, plFunc, callop, lauchcell);
       if(!PLDataMovement(builder, topFunc, plFunc, callop))
         return false;
-      hoistBufferStore(mod, builder);
       Postprocess(builder, lauchcell, calls);
     }
     return true;

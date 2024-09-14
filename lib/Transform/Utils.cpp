@@ -3,6 +3,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/LoopUtils.h"
+#include "mlir/Dialect/Affine/Analysis/Utils.h"
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "mlir/Dialect/Affine/Analysis/AffineAnalysis.h"
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
@@ -32,6 +33,36 @@ LogicalResult loopUnrollFull(AffineForOp forOp,
     return loopUnrollByFactor(forOp, tripCount, annotateFn);
   }
   return failure();
+}
+
+// Traverse all the surrounding 'affine.for' of op
+void getSurroundingLoops(Operation &op, SmallVector<AffineForOp, 6>& band) {
+  auto *currOp = op.getParentOp();
+  AffineForOp currAffineForOp;
+  while (currOp) {
+    if (AffineForOp currAffineForOp = dyn_cast<AffineForOp>(currOp))
+      band.push_back(currAffineForOp);
+    currOp = currOp->getParentOp();
+  }
+  std::reverse(band.begin(), band.end());
+}
+
+/// Get the common loops of op 'a' and 'b'
+/// Only return true when all the parent loops are common loops 
+bool getCommonSurroundingLoops(Operation &a, Operation &b, 
+                               SmallVector<AffineForOp, 6>& commonLoops){
+  SmallVector<Value, 4> ivsA;
+  SmallVector<Value, 4> ivsB;
+  getAffineIVs(a, ivsA);
+  getAffineIVs(b, ivsB);
+  if(ivsA.size()!=ivsB.size())
+    return false;
+  for (unsigned i = 0; i < ivsA.size(); ++i) {
+    if (ivsA[i] != ivsB[i])
+      return false;
+    commonLoops.push_back(ivsA[i].getDefiningOp<AffineForOp>());
+  }
+  return true;
 }
 
 unsigned getLoopNum(Operation *op, AffineForOp &loop) {

@@ -7,6 +7,15 @@ PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
 EN_PL = 1
 PORTWidth = 128
+L1_0=32
+L1_1=32
+L1_2=32
+L2_0=1
+L2_1=1
+L2_2=1
+L3_0=2
+L3_1=2
+L3_2=2
 ifeq ($(EN_PL),1)
 	IOType=PLIO
 else
@@ -28,7 +37,7 @@ test: burstDetect
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=32,32,32 l2-tile-sizes=1,1,1 l3-tile-sizes=2,2,2"
+			-aries-tiling="l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}"
 
 exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
@@ -100,16 +109,26 @@ iomaterialize: ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir
 ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
 	aries-opt -o $@ $< \
 			-aries-gmio-materialize \
-			-aries-plio-materialize \
+			-aries-plio-materialize
+
+axipacking: ${PROJECT_PATH}/15_${FUNC}.axipacking.mlir
+${PROJECT_PATH}/15_${FUNC}.axipacking.mlir: ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir
+	aries-opt -o $@ $< \
+			-aries-axi-packing
+
+pldataflow: ${PROJECT_PATH}/16_${FUNC}.pldataflow.mlir
+${PROJECT_PATH}/16_${FUNC}.pldataflow.mlir: ${PROJECT_PATH}/15_${FUNC}.axipacking.mlir
+	aries-opt -o $@ $< \
+			-aries-pl-dataflow \
 			-canonicalize -cse
 
-doublebuffer: ${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir
-${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir
+doublebuffer: ${PROJECT_PATH}/17_${FUNC}.doublebuffer.mlir
+${PROJECT_PATH}/17_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/16_${FUNC}.pldataflow.mlir
 	aries-opt -o $@ $< \
 			-aries-pl-double-buffer
 
-burstDetect: ${PROJECT_PATH}/16_${FUNC}.burstdetect.mlir
-${PROJECT_PATH}/16_${FUNC}.burstdetect.mlir: ${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir
+burstDetect: ${PROJECT_PATH}/18_${FUNC}.burstdetect.mlir
+${PROJECT_PATH}/18_${FUNC}.burstdetect.mlir: ${PROJECT_PATH}/17_${FUNC}.doublebuffer.mlir
 	aries-opt -o $@ $< \
 			-aries-burst-detection \
 			-canonicalize -cse
@@ -122,7 +141,7 @@ ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/15_${FUNC}.doublebuffer.
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=32,32,32 l2-tile-sizes=1,1,1 l3-tile-sizes=2,2,2" \
+			-aries-tiling="l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}" \
 			-aries-func-extract \
 			-aries-loop-simplify \
 			-aries-mem-subview \
@@ -139,9 +158,11 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-adf-cell-create \
 			-aries-gmio-materialize \
 			-aries-plio-materialize \
+			-aries-axi-packing \
+			-aries-pl-dataflow \
 			-canonicalize -cse \
 			-aries-pl-double-buffer \
-			-aries-burst-detection
+			-aries-burst-detection \
 			-canonicalize -cse
 
 translate: file_split kernel_file_split clean_kernel_vec

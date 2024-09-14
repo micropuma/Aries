@@ -88,6 +88,8 @@ std::unique_ptr<Pass> createAriesADFCellCreatePass();
 std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesGMIOMaterializePass();
 std::unique_ptr<Pass> createAriesPLIOMaterializePass();
+std::unique_ptr<Pass> createAriesAXIPackingPass();
+std::unique_ptr<Pass> createAriesPLDataflowPass();
 std::unique_ptr<Pass> createAriesPLDoubleBufferPass();
 std::unique_ptr<Pass> createAriesBurstDetectionPass();
 std::unique_ptr<Pass> createAriesADFTestPass();

@@ -167,6 +167,16 @@ def AriesPLIOMaterialize : Pass<"aries-plio-materialize"> {
   let constructor = "mlir::aries::createAriesPLIOMaterializePass()";
 }
 
+def AriesAXIPacking : Pass<"aries-axi-packing"> {
+  let summary = "Packing AXI to larger width";
+  let constructor = "mlir::aries::createAriesAXIPackingPass()";
+}
+
+def AriesPLDataflow : Pass<"aries-pl-dataflow"> {
+  let summary = "Create function for each outer loop and apply dataflow pragma";
+  let constructor = "mlir::aries::createAriesPLDataflowPass()";
+}
+
 def AriesPLDoubleBuffer : Pass<"aries-pl-double-buffer"> {
   let summary = "Apply double buffer for the data mover between PL and AIE";
   let description = [{
