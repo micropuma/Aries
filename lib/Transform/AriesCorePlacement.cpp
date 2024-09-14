@@ -52,13 +52,13 @@ private:
     if(KSize<=rowNum){
       if(rowNum%KSize==0)
         height= rowNum;
-      if(ISize > JSize){
+      if(ISize < JSize){
         flag = 0;
       }else{
         flag = 1;
       }
     }else{
-      if(ISize > JSize){
+      if(ISize < JSize){
         flag = 2;
       }else{
         flag = 3;
@@ -153,10 +153,16 @@ private:
     unsigned flag;
     if(JSize >= ISize){
       flag = 0;
-      height = std::min(JSize, rowNum);
+      if(rowNum>JSize && rowNum%JSize==0)
+        height = rowNum;
+      else
+        height = std::min(JSize, rowNum);
     }else{
       flag = 1;
-      height = std::min(ISize, rowNum);
+      if(rowNum>ISize && rowNum%ISize==0)
+        height = rowNum;
+      else
+        height = std::min(ISize, rowNum);
     }
     unsigned coreNum = KSize * JSize * ISize;
     unsigned colWidth = std::ceil(coreNum/height);
