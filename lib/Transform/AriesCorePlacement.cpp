@@ -70,10 +70,6 @@ private:
       return false;
     unsigned colStart = std::floor((colNum - colWidth) / 2);
 
-    llvm::outs() << "(I, K, J): " << "(" << ISize << "," << KSize << "," << JSize << ")\n";
-    llvm::outs() << "(height, flag): " << "(" << height << "," << flag << ")\n";
-    llvm::outs() << "(colStart, rowStart): " << "(" << colStart << "," << rowStart << ")\n\n";
-
     for (auto callOp : cellOp.getOps<CallOp>()){
       if(!callOp->hasAttr("adf.kernel"))
         continue;
@@ -113,7 +109,6 @@ private:
       }else{
         return true;
       }
-      llvm::outs() << "(i, k, j): " << "(" << iSize << "," << kSize << "," << jSize << ")\n";
       unsigned pid=0;
       unsigned index=0;
       if(flag == 0){
@@ -133,11 +128,9 @@ private:
         }else{
           pid = quot * height + (height-1) - remi;
         }
-        llvm::outs() << "(remi, quot): " << "(" << remi << "," << quot << ")\n";
       }
       unsigned col = colStart + std::ceil(pid / height);
       unsigned row = rowStart + pid % height;
-      llvm::outs() << "(pid, col, row): " << "(" << pid << "," << col << "," << row << ")\n\n";
       if((col > colNum-1) || (row > rowNum-1))
         return false;
       auto colAttr = builder.getIntegerAttr(indexType, col);
@@ -170,10 +163,6 @@ private:
     if(colWidth > colNum)
       return false;
     unsigned colStart = std::floor((colNum - colWidth) / 2);
-
-    llvm::outs() << "(I, K, J): " << "(" << ISize << "," << KSize << "," << JSize << ")\n";
-    llvm::outs() << "(height, flag): " << "(" << height << "," << flag << ")\n";
-    llvm::outs() << "(colStart, rowStart): " << "(" << colStart << "," << rowStart << ")\n\n";
 
     for (auto callOp : cellOp.getOps<CallOp>()){
       if(!callOp->hasAttr("adf.kernel"))
@@ -225,9 +214,6 @@ private:
       unsigned pid = remi + kSize * height + quot * KSize * height;
       unsigned col = colStart + std::ceil(pid / height);
       unsigned row = rowStart + pid % height;
-      llvm::outs() << "(i, k, j): " << "(" << iSize << "," << kSize << "," << jSize << ")\n";
-      llvm::outs() << "(remi, quot): " << "(" << remi << "," << quot << ")\n";
-      llvm::outs() << "(pid, col, row): " << "(" << pid << "," << col << "," << row << ")\n\n";
       if((col > colNum-1) || (row > rowNum-1))
         return false;
       auto colAttr = builder.getIntegerAttr(indexType, col);
