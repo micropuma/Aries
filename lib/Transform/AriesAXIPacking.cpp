@@ -182,7 +182,6 @@ private:
       }else if(auto write = dyn_cast<AffineStoreOp>(op)){
         // Update the access map
         write.setMap(map);
-        auto val = write.getValueToStore();
         // Insert SetIntSliceOp to transfer data from oldType to newType 
         builder.setInsertionPoint(write);
         auto forOp = builder.create<AffineForOp>(loc, 0, packNum);
@@ -194,6 +193,11 @@ private:
         auto zeroVal = builder.create<arith::ConstantOp>(loc, newType, attr);
         auto temp = builder.create<IntToAPInt>(loc, newType, zeroVal);
         builder.setInsertionPoint(forYiledOp);
+        // Move definingOp of val inside forOp
+        auto val = write.getValueToStore();
+        auto defineOp = val.getDefiningOp();
+        if(defineOp)
+          defineOp->moveBefore(forYiledOp);
         // Create the ub for slicing
         auto hiExpr = builder.getAffineDimExpr(0) * typeWidth + typeWidth-1;
         auto hiMap = AffineMap::get(1, 0, hiExpr);
@@ -206,6 +210,8 @@ private:
         auto loVal = builder.create<AffineApplyOp>(loc, loMap, loOperands);
         builder.create<SetIntSliceOp>(loc, temp, hiVal, loVal, val);
         write.setOperand(0, temp);
+        // Move the use into the AffineForOp
+        SmallVector<Operation*, 4> users;
       }
     }             
   }
