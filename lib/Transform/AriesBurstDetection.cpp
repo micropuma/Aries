@@ -30,24 +30,6 @@ public:
   }
 
 private:
-  /// Get the common loops of op 'a' and 'b'
-  /// Only return true when all the parent loops are common loops 
-  bool getCommonSurroundingLoops(Operation &a, Operation &b, 
-                                 SmallVector<AffineForOp, 6>& commonLoops){
-    SmallVector<Value, 4> ivsA;
-    SmallVector<Value, 4> ivsB;
-    getAffineIVs(a, ivsA);
-    getAffineIVs(b, ivsB);
-
-    if(ivsA.size()!=ivsB.size())
-      return false;
-    for (unsigned i = 0; i < ivsA.size(); ++i) {
-      if (ivsA[i] != ivsB[i])
-        return false;
-      commonLoops.push_back(ivsA[i].getDefiningOp<AffineForOp>());
-    }
-    return true;
-  }
   // Get the accessOp, memref, AffineMap, operands, and other ops inside 
   // the innermost loop
   void getMergeOp(AffineForOp innerLoop, Value& val,  bool& direction, 
@@ -159,10 +141,10 @@ private:
       auto it = llvm::find(band, loop);
       auto it1 = llvm::find(commonLoops, loop);
       if(it!=band.end()){
-        srcDepth = llvm::find(band, loop) - band.begin();
+        srcDepth = it - band.begin();
         loopCoEff.push_back(std::pair(srcDepth, flattenedExpr[i]));
       }else if(it1!=commonLoops.end()){
-        commonDepth = llvm::find(commonLoops, loop) - commonLoops.begin();
+        commonDepth = it1 - commonLoops.begin();
         commonCoEff.push_back(std::pair(commonDepth, flattenedExpr[i]));
       }
     }
@@ -219,10 +201,9 @@ private:
     auto dstInner = dstBand[dstSize-1];
     auto dstInnerUb = dstInner.getConstantUpperBound();
     auto dstInnerLb = dstInner.getConstantLowerBound();
-    //Check if both are perfectly nested loops and the number of loops is same
+    //Check if number of loops is same & the step innerLoop == 1 
     AffineForOp op; //This is a placeholder
-    if(getLoopNum(srcInner, op)!=0 || getLoopNum(dstInner, op)!=0 ||
-       srcInner.getStepAsInt() != 1 || dstInner.getStepAsInt() != 1 ||
+    if(srcInner.getStepAsInt() != 1 || dstInner.getStepAsInt() != 1 ||
        srcSize != dstSize )
       return false;
     // Step 3: Check if all the loops share the same lbs, ubs and steps
@@ -394,7 +375,7 @@ private:
           eliminateLoops.push_back(loop);
         }
         // Create IFOp with then region, move the otherOps in it and replace
-        // the ivs and val
+        // the ivs and val. read:direction==false, write:direction==true
         if(!direction){
           if(index != sizeG-1){
             auto Const = group[index+1].first;

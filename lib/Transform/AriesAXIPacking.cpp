@@ -158,7 +158,7 @@ private:
         auto forYiledOp = dyn_cast<AffineYieldOp>(entryBlock->getTerminator());
         builder.setInsertionPoint(forYiledOp);
         // Create the ub for slicing
-        auto hiExpr = builder.getAffineDimExpr(0) * typeWidth + typeWidth;
+        auto hiExpr = builder.getAffineDimExpr(0) * typeWidth + typeWidth-1;
         auto hiMap = AffineMap::get(1, 0, hiExpr);
         SmallVector<Value, 1> hiOperands = {forOp.getInductionVar()};
         auto hiVal = builder.create<AffineApplyOp>(loc, hiMap, hiOperands);
@@ -178,19 +178,20 @@ private:
       }else if(auto write = dyn_cast<AffineStoreOp>(op)){
         // Update the access map
         write.setMap(map);
+        auto val = write.getValueToStore();
         // Insert SetIntSliceOp to transfer data from oldType to newType 
         builder.setInsertionPoint(write);
         auto forOp = builder.create<AffineForOp>(loc, 0, packNum);
         auto entryBlock = forOp.getBody();
         auto forYiledOp = dyn_cast<AffineYieldOp>(entryBlock->getTerminator());
-        builder.setInsertionPoint(forYiledOp);
         // Create temp reg to store newType
-        auto val = write.getValueToStore();
+        builder.setInsertionPoint(forOp);
         auto attr = builder.getIntegerAttr(newType, 0);
         auto zeroVal = builder.create<arith::ConstantOp>(loc, newType, attr);
         auto temp = builder.create<IntToAPInt>(loc, newType, zeroVal);
+        builder.setInsertionPoint(forYiledOp);
         // Create the ub for slicing
-        auto hiExpr = builder.getAffineDimExpr(0) * typeWidth + typeWidth;
+        auto hiExpr = builder.getAffineDimExpr(0) * typeWidth + typeWidth-1;
         auto hiMap = AffineMap::get(1, 0, hiExpr);
         SmallVector<Value, 1> hiOperands = {forOp.getInductionVar()};
         auto hiVal = builder.create<AffineApplyOp>(loc, hiMap, hiOperands);
@@ -200,7 +201,6 @@ private:
         SmallVector<Value, 1> loOperands = {forOp.getInductionVar()};
         auto loVal = builder.create<AffineApplyOp>(loc, loMap, loOperands);
         builder.create<SetIntSliceOp>(loc, temp, hiVal, loVal, val);
-        write->moveBefore(forYiledOp);
         write.setOperand(0, temp);
       }
     }             
