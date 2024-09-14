@@ -170,6 +170,10 @@ def AriesPLIOMaterialize : Pass<"aries-plio-materialize"> {
 def AriesAXIPacking : Pass<"aries-axi-packing"> {
   let summary = "Packing AXI to larger width";
   let constructor = "mlir::aries::createAriesAXIPackingPass()";
+  let options = [
+    Option<"AXIWidth", "axi-width", "int64_t", /*default=*/"32",
+           "Specify the axi width of the DDR ports in bits (32, 64, 128, ...)">
+  ];
 }
 
 def AriesPLDataflow : Pass<"aries-pl-dataflow"> {

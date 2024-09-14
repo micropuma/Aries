@@ -58,6 +58,11 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
   Option<int64_t> OptGMIOBW{
       *this, "gmio-bw", llvm::cl::init(1000),
       llvm::cl::desc("Specify the required gmio bandwidth in MB/s")};
+  
+  /// Configure the DMAToIO pass.
+  Option<int64_t> OptAXIWidth{
+      *this, "axi-width", llvm::cl::init(32),
+      llvm::cl::desc("Specify the plio width of a port in bits (32,64,128)")};
 
   /// Configure the split file pass.
   Option<std::string> OptFileName{
@@ -89,6 +94,7 @@ std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesGMIOMaterializePass();
 std::unique_ptr<Pass> createAriesPLIOMaterializePass();
 std::unique_ptr<Pass> createAriesAXIPackingPass();
+std::unique_ptr<Pass> createAriesAXIPackingPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesPLDataflowPass();
 std::unique_ptr<Pass> createAriesPLDoubleBufferPass();
 std::unique_ptr<Pass> createAriesBurstDetectionPass();

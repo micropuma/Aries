@@ -6,7 +6,8 @@ PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
 EN_PL = 1
-PORTWidth = 128
+PLIOWidth = 128
+AXIWidth = 512
 L1_0=32
 L1_1=32
 L1_2=32
@@ -97,7 +98,7 @@ ${PROJECT_PATH}/11_${FUNC}.kernelio.mlir: ${PROJECT_PATH}/10_${FUNC}.dataforward
 dmaio: ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir
 ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/11_${FUNC}.kernelio.mlir
 	aries-opt -o $@ $< \
-			-aries-dma-to-io="port-type=${IOType} plio-width=${PORTWidth}" \
+			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
 			-canonicalize -cse
 
 adfgraph: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
@@ -114,7 +115,7 @@ ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgra
 axipacking: ${PROJECT_PATH}/15_${FUNC}.axipacking.mlir
 ${PROJECT_PATH}/15_${FUNC}.axipacking.mlir: ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir
 	aries-opt -o $@ $< \
-			-aries-axi-packing
+			-aries-axi-packing="axi-width=${AXIWidth}"
 
 pldataflow: ${PROJECT_PATH}/16_${FUNC}.pldataflow.mlir
 ${PROJECT_PATH}/16_${FUNC}.pldataflow.mlir: ${PROJECT_PATH}/15_${FUNC}.axipacking.mlir
@@ -153,12 +154,12 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-core-placement \
 			-aries-local-data-forward \
 			-aries-kernel-interface-create \
-			-aries-dma-to-io="port-type=${IOType} plio-width=${PORTWidth}" \
+			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
 			-aries-gmio-materialize \
 			-aries-plio-materialize \
-			-aries-axi-packing \
+			-aries-axi-packing="axi-width=${AXIWidth}" \
 			-aries-pl-dataflow \
 			-canonicalize -cse \
 			-aries-pl-double-buffer \

@@ -23,6 +23,10 @@ namespace {
 struct AriesAXIPacking 
        : public AriesAXIPackingBase<AriesAXIPacking> {
 public:
+  AriesAXIPacking() = default;
+  AriesAXIPacking(const AriesOptions &opts) {
+    AXIWidth=opts.OptAXIWidth;
+  }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
     StringRef topFuncName = "top_func";
@@ -304,7 +308,7 @@ private:
       return false;
     }
     unsigned argNum = topFunc.getNumArguments();
-    unsigned axiWidth = 512;
+    unsigned axiWidth = AXIWidth;
     std::vector<unsigned> cnt(argNum, 0);
     mod.walk([&](FuncOp func){
       if(!func->hasAttr("adf.pl"))
@@ -345,6 +349,10 @@ namespace aries {
 
 std::unique_ptr<Pass> createAriesAXIPackingPass() {
   return std::make_unique<AriesAXIPacking>();
+}
+
+std::unique_ptr<Pass> createAriesAXIPackingPass(const AriesOptions &opts) {
+  return std::make_unique<AriesAXIPacking>(opts);
 }
 
 } // namespace aries
