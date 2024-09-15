@@ -29,7 +29,7 @@ public:
   }
 
 private:
-  bool checkValidChal(unsigned& col, unsigned& chl, unsigned arrayIndex,
+  bool checkValidChal(unsigned& col, unsigned& chl, int arrayIndex,
                       unsigned colFirst, std::vector<int>& tileChannel){
     auto curChl = tileChannel[arrayIndex];
     if(curChl>=0){
@@ -43,16 +43,17 @@ private:
 
   // Here find available channel at the startPos, if not then jump forward and
   // back forward between startPos, if reach one end then only go another side
-  bool findPlacement(unsigned startPos, unsigned& col, unsigned& chl, 
+  bool findPlacement(unsigned numTile, unsigned startPos, 
+                     unsigned& col, unsigned& chl, 
                      std::vector<int>& tileChannel){
     unsigned colFirst = 6;
-    unsigned colLast = 44;
+    unsigned colLast = colFirst + (numTile-1);
     if(startPos < colFirst)
       startPos = colFirst;
     if(startPos > colLast)
       startPos = colLast;
-    auto firstIndex = startPos - colFirst; // Record start pos of tileChannel
-    auto arrayIndex = firstIndex; //Used to move position of tileChannel
+    int firstIndex = startPos - colFirst; // Record start pos of tileChannel
+    int arrayIndex = firstIndex; //Used to move position of tileChannel
     bool direction = false; //Towards left
     bool end_flag = false;
     bool reachEnd = false;
@@ -60,58 +61,52 @@ private:
     unsigned backwardCnt = 1;
     while(!end_flag){
       if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
-        end_flag = true;
-      else{
-        // If reachEnd been marked, then one side is already full
-        // Only search one direction
-        if(reachEnd){
-          if(direction){
-            arrayIndex = firstIndex + forwardCnt;
-            if(arrayIndex > colLast)
-              return false;
+        break;
+      // If reachEnd been marked, then one side is already full
+      // Only search one direction
+      if(reachEnd){
+        if(direction){
+          arrayIndex++;
+          if(arrayIndex > (int)(numTile-1))
+            return false;
+          if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+            end_flag = true;
+        }else{
+          arrayIndex--;
+          if(arrayIndex < 0)
+            return false;
+          if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+            end_flag = true;
+        }
+      }else{
+        // If both sides doesn't reach end, alternatively change direction
+        if(direction){
+          arrayIndex = firstIndex + forwardCnt;
+          if(arrayIndex > (int)(numTile-1)){
+            reachEnd = true;
+            arrayIndex = numTile-1;
+            if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+              end_flag = true;
+            direction = !direction;
+          }else{
             if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
               end_flag = true;
             forwardCnt++;
+            direction = !direction;
+          }
+        }else{
+          arrayIndex = firstIndex - backwardCnt;
+          if(arrayIndex < 0){
+            reachEnd = true;
+            arrayIndex = 0;
+            if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+              end_flag = true;
+            direction = !direction;
           }else{
-            arrayIndex = firstIndex - backwardCnt;
-            if(arrayIndex < colFirst)
-              return false;
             if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
               end_flag = true;
             backwardCnt++;
-          }
-        }else{
-          // If both sides doesn't reach end, alternatively change direction
-          if(direction){
-            arrayIndex = firstIndex + forwardCnt;
-            if(arrayIndex > colLast){
-              reachEnd = true;
-              arrayIndex = firstIndex - backwardCnt;
-              if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
-                end_flag = true;
-              backwardCnt++;
-              direction = !direction;
-            }else{
-              if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
-                end_flag = true;
-              forwardCnt++;
-              direction = !direction;
-            }
-          }else{
-            arrayIndex = firstIndex - backwardCnt;
-            if(arrayIndex < colFirst){
-              reachEnd = true;
-              arrayIndex = firstIndex + forwardCnt;
-              if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
-                end_flag = true;
-              forwardCnt++;
-              direction = !direction;
-            }else{
-              if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
-                end_flag = true;
-              backwardCnt++;
-              direction = !direction;
-            }
+            direction = !direction;
           }
         }
       }
@@ -123,8 +118,10 @@ private:
     auto indexType = builder.getIndexType();
     unsigned middleLine = 24;
     unsigned numTile = 39;
-    unsigned numChannel = 4;
-    std::vector<int> tileChannel(numTile, numChannel-1);
+    unsigned numInChl = 4;
+    unsigned numOutChl = 3;
+    std::vector<int> tileInChl(numTile, numInChl-1);
+    std::vector<int> tileOutChl(numTile, numOutChl-1);
     auto flag = mod.walk([&](FuncOp func){
       if(!func->hasAttr("adf.cell"))
         return WalkResult::advance();
@@ -132,7 +129,8 @@ private:
         SmallVector<unsigned, 4> corePlace;
         auto plio = configOp.getPlio();
         int disToMid = 0;
-        unsigned cnt = 0;
+        int cnt = 0;
+        bool inDir;
         for(auto use : plio.getUsers()){
           if(!dyn_cast<ConnectOp>(use))
             continue;
@@ -140,20 +138,23 @@ private:
           auto src = connectOp.getSrc();
           auto dst = connectOp.getDst();
           CallOp call;
-          // handle results
           if(src!=plio){
             auto defineOp = src.getDefiningOp();
             if(!defineOp || !dyn_cast<CallOp>(defineOp))
               return WalkResult::interrupt();
+            inDir = false;
             call = dyn_cast<CallOp>(defineOp);
           }else{
             for(auto valUse : dst.getUsers()){
               if(!dyn_cast<CallOp>(valUse))
                 continue;
               call = dyn_cast<CallOp>(valUse);
+              inDir = true;
               break;
             }
           }
+          if(!call)
+            return WalkResult::interrupt();
           auto corePlaceAttr = dyn_cast<ArrayAttr>(call->getAttr("col, row"));
           auto colAttr = corePlaceAttr[0];
           auto intAttr = dyn_cast<IntegerAttr>(colAttr);
@@ -165,9 +166,15 @@ private:
           return WalkResult::advance();
         unsigned col;
         unsigned chl;
-        auto startPos = std::ceil(disToMid/cnt) + middleLine;
-        if(!findPlacement(startPos, col, chl, tileChannel))
-          return WalkResult::interrupt();
+        int avgToMid = std::ceil(disToMid/cnt);
+        unsigned startPos = avgToMid + middleLine;
+        if(inDir){
+          if(!findPlacement(numTile, startPos, col, chl, tileInChl))
+            return WalkResult::interrupt();
+        }else{
+          if(!findPlacement(numTile, startPos, col, chl, tileOutChl))
+            return WalkResult::interrupt();
+        }
         auto colAttr = builder.getIntegerAttr(indexType, col);
         auto chlAttr = builder.getIntegerAttr(indexType, chl);
         auto arrayAttr = builder.getArrayAttr({colAttr, chlAttr});
