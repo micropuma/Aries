@@ -21,6 +21,12 @@ namespace {
 
 struct AriesIOPlacement : public AriesIOPlacementBase<AriesIOPlacement> {
 public:
+  AriesIOPlacement() = default;
+  AriesIOPlacement(const AriesOptions &opts) {
+    ChalIn=opts.OptChalIn;
+    ChalOut=opts.OptChalOut;
+    Offset=opts.OptOffset;
+  }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
   
@@ -43,11 +49,15 @@ private:
 
   // Here find available channel at the startPos, if not then jump forward and
   // back forward between startPos, if reach one end then only go another side
-  bool findPlacement(unsigned numTile, unsigned startPos, 
-                     unsigned& col, unsigned& chl, 
+  bool findPlacement(unsigned numTile, unsigned startPos, unsigned midLine,
+                     unsigned offset, unsigned& col, unsigned& chl, 
                      std::vector<int>& tileChannel){
     unsigned colFirst = 6;
     unsigned colLast = colFirst + (numTile-1);
+    if((startPos < midLine) && (midLine - startPos) < offset)
+      startPos = startPos - offset;
+    else if((startPos > midLine) && (startPos - midLine) < offset)
+      startPos = startPos + offset;
     if(startPos < colFirst)
       startPos = colFirst;
     if(startPos > colLast)
@@ -116,10 +126,11 @@ private:
   bool IOPlacement (ModuleOp mod) {
     auto builder = OpBuilder(mod);
     auto indexType = builder.getIndexType();
-    unsigned middleLine = 24;
+    unsigned midLine = 24;
     unsigned numTile = 39;
-    unsigned numInChl = 4;
-    unsigned numOutChl = 3;
+    unsigned numInChl = ChalIn;
+    unsigned numOutChl = ChalOut;
+    unsigned offset = Offset; //This is to move the IO near the middle
     std::vector<int> tileInChl(numTile, numInChl-1);
     std::vector<int> tileOutChl(numTile, numOutChl-1);
     auto flag = mod.walk([&](FuncOp func){
@@ -159,7 +170,7 @@ private:
           auto colAttr = corePlaceAttr[0];
           auto intAttr = dyn_cast<IntegerAttr>(colAttr);
           int colCore = intAttr.getInt();
-          disToMid += colCore-middleLine;
+          disToMid += colCore-midLine;
           cnt++;
         }
         if(cnt == 0)
@@ -167,12 +178,14 @@ private:
         unsigned col;
         unsigned chl;
         int avgToMid = std::ceil(disToMid/cnt);
-        unsigned startPos = avgToMid + middleLine;
+        unsigned startPos = avgToMid + midLine;
         if(inDir){
-          if(!findPlacement(numTile, startPos, col, chl, tileInChl))
+          if(!findPlacement(numTile, startPos, midLine, offset, col, chl, 
+                            tileInChl))
             return WalkResult::interrupt();
         }else{
-          if(!findPlacement(numTile, startPos, col, chl, tileOutChl))
+          if(!findPlacement(numTile, startPos, midLine, offset, col, chl, 
+                            tileOutChl))
             return WalkResult::interrupt();
         }
         auto colAttr = builder.getIntegerAttr(indexType, col);
@@ -197,6 +210,10 @@ namespace aries {
 
 std::unique_ptr<Pass> createAriesIOPlacementPass() {
   return std::make_unique<AriesIOPlacement>();
+}
+
+std::unique_ptr<Pass> createAriesIOPlacementPass(const AriesOptions &opts) {
+  return std::make_unique<AriesIOPlacement>(opts);
 }
 
 } // namespace aries

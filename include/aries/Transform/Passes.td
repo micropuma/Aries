@@ -153,6 +153,14 @@ def AriesIOPlacement : Pass<"aries-io-placement"> {
     This pass place PLIO/GMIO to the shim tile to alleviate routing congestion.
   }];
   let constructor = "mlir::aries::createAriesIOPlacementPass()";
+  let options = [
+    Option<"ChalIn", "chal-in", "int64_t", /*default=*/"3",
+           "Specify the input PLIO channel in each shim">,
+    Option<"ChalOut", "chal-out", "int64_t", /*default=*/"3",
+           "Specify the output PLIO channel in each shim">,
+    Option<"Offset", "offset", "int64_t", /*default=*/"5",
+           "Specify the range from midline to move PLIOs away from this range">
+  ];
 }
 
 def AriesKernelSplit : Pass<"aries-kernel-split"> {

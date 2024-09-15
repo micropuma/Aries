@@ -9,6 +9,9 @@ EN_PL = 1
 PLIOWidth = 128
 AXIWidth = 512
 CoreAlgo = 0
+ChalIn = 3
+ChalOut = 3
+Offset = 5
 L1_0=32
 L1_1=32
 L1_2=32
@@ -110,7 +113,7 @@ ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir
 ioplacement: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
 ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
 	aries-opt -o $@ $< \
-			-aries-io-placement
+			-aries-io-placement="chal-in=${ChalIn} chal-out=${ChalOut} offset=${Offset}"
 
 iomaterialize: ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir
 ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
@@ -163,7 +166,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
-			-aries-io-placement \
+			-aries-io-placement="chal-in=${ChalIn} chal-out=${ChalOut} offset=${Offset}" \
 			-aries-gmio-materialize \
 			-aries-plio-materialize \
 			-aries-axi-packing="axi-width=${AXIWidth}" \

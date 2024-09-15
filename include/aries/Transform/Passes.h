@@ -34,7 +34,7 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       *this, "l3-tile-sizes", llvm::cl::ZeroOrMore,
       llvm::cl::desc("Specify a list of L3 loop tile sizes")};
   
-  /// Configure the DMAToIO pass.
+  /// Configure the CorePlacement pass.
   Option<int64_t> OptCoreAlgo{
       *this, "core-algo", llvm::cl::init(0), llvm::cl::desc(
       "Specify the algorithm for core placement 0:vertical,1:horizontally")};
@@ -64,7 +64,18 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       *this, "gmio-bw", llvm::cl::init(1000),
       llvm::cl::desc("Specify the required gmio bandwidth in MB/s")};
   
-  /// Configure the DMAToIO pass.
+  /// Configure the IOPlacement pass.
+  Option<int64_t> OptChalIn{
+      *this, "chal-in", llvm::cl::init(3),
+      llvm::cl::desc("Specify the input PLIO channel in each shim")};
+  Option<int64_t> OptChalOut{
+      *this, "chal-out", llvm::cl::init(3),
+      llvm::cl::desc("Specify the output PLIO channel in each shim")};
+  Option<int64_t> OptOffset{
+      *this, "offset", llvm::cl::init(5), llvm::cl::desc(
+      "Specify the range from midline to move PLIOs away from this range")};
+  
+  /// Configure the AXIPacking pass.
   Option<int64_t> OptAXIWidth{
       *this, "axi-width", llvm::cl::init(32), llvm::cl::desc(
       "Specify the axi width of the DDR ports in bits (32, 64, 128, ...)")};
@@ -97,6 +108,7 @@ std::unique_ptr<Pass> createAriesDMAToIOPass();
 std::unique_ptr<Pass> createAriesDMAToIOPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesADFCellCreatePass();
 std::unique_ptr<Pass> createAriesIOPlacementPass();
+std::unique_ptr<Pass> createAriesIOPlacementPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesGMIOMaterializePass();
 std::unique_ptr<Pass> createAriesPLIOMaterializePass();
