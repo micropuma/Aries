@@ -8,26 +8,29 @@ PROJECT_Host_PATH=${PROJECT_PATH}/host
 EN_PL = 1
 PLIOWidth = 128
 AXIWidth = 512
-CoreAlgo = 0
+CoreAlgo = 1
 ChalIn = 3
 ChalOut = 3
-Offset = 5
+Offset = 0
 L1_0=32
 L1_1=32
 L1_2=32
-L2_0=1
-L2_1=1
-L2_2=1
-L3_0=2
-L3_1=2
-L3_2=2
+L2_0=10
+L2_1=8
+L2_2=4
+L3_0=4
+L3_1=5
+L3_2=1
 ifeq ($(EN_PL),1)
 	IOType=PLIO
 else
 	IOType=GMIO
 endif
 
-all: fileCreate copyFile pass translate copyplhost
+all: fileCreate copyFile pass translate copyplhost printcommand
+
+printcommand:
+	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, Offset=${Offset}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, IOType=${IOType}" >${PROJECT_PATH}/command.txt
 
 fileCreate:
 	mkdir -p ${PROJECT_AIE_PATH}
@@ -72,7 +75,8 @@ ${PROJECT_PATH}/5_${FUNC}.copymem.mlir: ${PROJECT_PATH}/4_${FUNC}.hoistmem.mlir
 toadf: ${PROJECT_PATH}/6_${FUNC}.adf.mlir
 ${PROJECT_PATH}/6_${FUNC}.adf.mlir: ${PROJECT_PATH}/5_${FUNC}.copymem.mlir
 	aries-opt -o $@ $< \
-			-aries-lower-to-adf
+			-aries-lower-to-adf \
+			-canonicalize -cse
 
 flow: ${PROJECT_PATH}/7_${FUNC}.flow.mlir
 ${PROJECT_PATH}/7_${FUNC}.flow.mlir: ${PROJECT_PATH}/6_${FUNC}.adf.mlir

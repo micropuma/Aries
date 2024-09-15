@@ -211,9 +211,9 @@ private:
       }
       
       unsigned rowIndex = 0;
-      if(flag==0)
+      if(flag==1)
         rowIndex = jSize + iSize * JSize;
-      else if(flag==1)
+      else if(flag==0)
         rowIndex = iSize + jSize * ISize;
       unsigned remi = rowIndex % height;
       unsigned quot = std::floor(rowIndex / height);
