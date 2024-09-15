@@ -96,6 +96,7 @@ std::unique_ptr<Pass> createAriesKernelInterfaceCreatePass();
 std::unique_ptr<Pass> createAriesDMAToIOPass();
 std::unique_ptr<Pass> createAriesDMAToIOPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesADFCellCreatePass();
+std::unique_ptr<Pass> createAriesIOPlacementPass();
 std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesGMIOMaterializePass();
 std::unique_ptr<Pass> createAriesPLIOMaterializePass();

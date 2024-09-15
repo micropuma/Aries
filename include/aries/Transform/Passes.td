@@ -147,6 +147,14 @@ def AriesADFCellCreate : Pass<"aries-adf-cell-create"> {
   let constructor = "mlir::aries::createAriesADFCellCreatePass()";
 }
 
+def AriesIOPlacement : Pass<"aries-io-placement"> {
+  let summary = "Place PLIO/GMIO to the shim tile";
+  let description = [{
+    This pass place PLIO/GMIO to the shim tile to alleviate routing congestion.
+  }];
+  let constructor = "mlir::aries::createAriesIOPlacementPass()";
+}
+
 def AriesKernelSplit : Pass<"aries-kernel-split"> {
   let summary = "Split adf.kernel to another file";
   let constructor = "mlir::aries::createAriesKernelSplitPass()";

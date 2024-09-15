@@ -32,6 +32,7 @@ void mlir::aries::registerAriesPassPipeline() {
     pm.addPass(createAriesDMAToIOPass());
     pm.addPass(createAriesDMAToIOPass(opts));
     pm.addPass(createAriesADFCellCreatePass());
+    pm.addPass(createAriesIOPlacementPass());
     pm.addPass(createAriesKernelSplitPass());
     pm.addPass(createAriesGMIOMaterializePass());
     pm.addPass(createAriesPLIOMaterializePass());

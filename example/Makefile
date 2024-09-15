@@ -107,36 +107,41 @@ ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir
 	aries-opt -o $@ $< \
 			-aries-adf-cell-create
 
-iomaterialize: ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir
-${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
+ioplacement: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
+${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
+	aries-opt -o $@ $< \
+			-aries-io-placement
+
+iomaterialize: ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir
+${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
 	aries-opt -o $@ $< \
 			-aries-gmio-materialize \
 			-aries-plio-materialize
 
-axipacking: ${PROJECT_PATH}/15_${FUNC}.axipacking.mlir
-${PROJECT_PATH}/15_${FUNC}.axipacking.mlir: ${PROJECT_PATH}/14_${FUNC}.iomaterialize.mlir
+axipacking: ${PROJECT_PATH}/16_${FUNC}.axipacking.mlir
+${PROJECT_PATH}/16_${FUNC}.axipacking.mlir: ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir
 	aries-opt -o $@ $< \
 			-aries-axi-packing="axi-width=${AXIWidth}"
 
-pldataflow: ${PROJECT_PATH}/16_${FUNC}.pldataflow.mlir
-${PROJECT_PATH}/16_${FUNC}.pldataflow.mlir: ${PROJECT_PATH}/15_${FUNC}.axipacking.mlir
+pldataflow: ${PROJECT_PATH}/17_${FUNC}.pldataflow.mlir
+${PROJECT_PATH}/17_${FUNC}.pldataflow.mlir: ${PROJECT_PATH}/16_${FUNC}.axipacking.mlir
 	aries-opt -o $@ $< \
 			-aries-pl-dataflow \
 			-canonicalize -cse
 
-doublebuffer: ${PROJECT_PATH}/17_${FUNC}.doublebuffer.mlir
-${PROJECT_PATH}/17_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/16_${FUNC}.pldataflow.mlir
+doublebuffer: ${PROJECT_PATH}/18_${FUNC}.doublebuffer.mlir
+${PROJECT_PATH}/18_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/17_${FUNC}.pldataflow.mlir
 	aries-opt -o $@ $< \
 			-aries-pl-double-buffer
 
-burstDetect: ${PROJECT_PATH}/18_${FUNC}.burstdetect.mlir
-${PROJECT_PATH}/18_${FUNC}.burstdetect.mlir: ${PROJECT_PATH}/17_${FUNC}.doublebuffer.mlir
+burstDetect: ${PROJECT_PATH}/19_${FUNC}.burstdetect.mlir
+${PROJECT_PATH}/19_${FUNC}.burstdetect.mlir: ${PROJECT_PATH}/18_${FUNC}.doublebuffer.mlir
 	aries-opt -o $@ $< \
 			-aries-burst-detection \
 			-canonicalize -cse
 
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
-${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/15_${FUNC}.doublebuffer.mlir
+${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/19_${FUNC}.doublebuffer.mlir
 	aries-translate -o $@ $< \
 		-emit-aries-kernels
 
@@ -158,6 +163,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
+			-aries-io-placement \
 			-aries-gmio-materialize \
 			-aries-plio-materialize \
 			-aries-axi-packing="axi-width=${AXIWidth}" \

@@ -770,6 +770,18 @@ void ModuleEmitter::emitADFPLIOConf(adf::ConfigPLIOOp op){
   std::string portSetting = portName + "_" + std::to_string(width) + "_bits";
   os << VName << " = " << IOType << "::create(\"" << VName << "\", " << 
   portSetting << ", \"data/" << VName << ".txt\", " << freq <<");\n" ;
+  if(op->hasAttr("col, chl")){
+    auto IOPlaceAttr = dyn_cast<ArrayAttr>(op->getAttr("col, chl"));
+    auto colAttr = IOPlaceAttr[0];
+    auto chlAttr = IOPlaceAttr[1];
+    auto intColAttr = dyn_cast<IntegerAttr>(colAttr);
+    auto intChlAttr = dyn_cast<IntegerAttr>(chlAttr);
+    int ioCol = intColAttr.getInt();
+    int ioChl = intChlAttr.getInt();
+    indent();
+    os << "adf::location<PLIO>(" << VName << ") = shim(" << ioCol << ", " 
+       << ioChl  << ");\n";
+  }
 }
 
 void ModuleEmitter::emitADFGMIOConf(adf::ConfigGMIOOp op){
