@@ -152,7 +152,8 @@ private:
         auto operands = read.getOperands();
         SmallVector<Value, 4> indices(operands.begin() + 1, operands.end()); 
         builder.setInsertionPoint(read);
-        auto newRead = builder.create<AffineLoadOp>(loc, newType, arg, indices, map);
+        auto newRead 
+             = builder.create<AffineLoadOp>(loc, newType, arg, indices, map);
         eliminateOps.push_back(read);
         auto newResult = newRead.getResult(); 
         // Insert GetIntSliceOp to transfer data from newType to oldType 
@@ -210,8 +211,226 @@ private:
         auto loVal = builder.create<AffineApplyOp>(loc, loMap, loOperands);
         builder.create<SetIntSliceOp>(loc, temp, hiVal, loVal, val);
         write.setOperand(0, temp);
-        // Move the use into the AffineForOp
-        SmallVector<Operation*, 4> users;
+      }
+    }             
+  }
+
+  void loadMerge(OpBuilder builder, AffineLoadOp read, MemRefType type, 
+                 MemRefType newType, unsigned packNum, unsigned& cnt){
+    auto loc = builder.getUnknownLoc();
+    auto elemType = type.getElementType();
+    auto typeWidth = type.getElementTypeBitWidth();
+    auto result = read.getResult();
+    auto newElemType = newType.getElementType();
+    SmallVector<OpFoldResult> sizes;
+    sizes.push_back(builder.getIndexAttr(1));
+    auto indexType = builder.getIndexType();
+    auto zeroAttr = builder.getIntegerAttr(indexType, 0);
+    auto oneAttr = builder.getIntegerAttr(indexType, 1);
+    auto packAttr = builder.getIntegerAttr(indexType, packNum);
+    SmallVector<AffineForOp, 6> band;
+    getSurroundingLoops(*read, band);
+    auto outerLoop = band[0];
+    auto innerLoop = band[band.size()-1];
+    auto innerUb = innerLoop.getConstantUpperBound();
+    std::string streamStr = "stream" + std::to_string(innerUb);
+    auto streamAttr = builder.getStringAttr(streamStr);
+    builder.setInsertionPoint(outerLoop);
+    auto allocOp 
+         = builder.create<AllocOp>(loc, sizes, newElemType, streamAttr);
+    auto zeroValue = builder.create<arith::ConstantOp>(loc, zeroAttr);
+    SmallVector<Value> zeroValues(1, zeroValue);
+    // Create newForOps for reading data from wider stream and write to
+    // narrower stream
+    builder.setInsertionPointAfter(outerLoop);
+    SmallVector<AffineForOp, 4> newForOps;
+    for (auto loop: band){
+      auto newForOp 
+           = builder.create<AffineForOp>(loc,
+                                         loop.getLowerBoundOperands(),
+                                         loop.getLowerBoundMap(),
+                                         loop.getUpperBoundOperands(),
+                                         loop.getUpperBoundMap(),
+                                         loop.getStepAsInt());
+      newForOps.push_back(newForOp);
+      builder.setInsertionPointToStart(newForOp.getBody());
+    }
+    auto newOuterForOp = newForOps[0];
+    auto newInnerForOp = newForOps[newForOps.size()-1];
+    auto attr = outerLoop->getAttr("load");
+    auto cntAttr = builder.getIntegerAttr(indexType, cnt++); 
+    newOuterForOp->setAttr("load", attr);
+    newOuterForOp->setAttr("func", cntAttr);
+    newInnerForOp->setAttr("pipeline_ii", packAttr);
+    // Create new AffineLoad to load data from wider stream/new alloc
+    auto newLoad = builder.create<AffineLoadOp>(loc, allocOp, zeroValues);
+    auto newResult = newLoad.getResult();
+    builder.setInsertionPointAfter(newLoad);
+    auto forOp = builder.create<AffineForOp>(loc, 0, packNum);
+    forOp->setAttr("pipeline_ii", oneAttr);
+    auto entryBlock = forOp.getBody();
+    auto forYiledOp = dyn_cast<AffineYieldOp>(entryBlock->getTerminator());
+    builder.setInsertionPoint(forYiledOp);
+    // Insert GetIntSliceOp to transfer data from newType to oldType 
+    // Create the ub for slicing
+    auto hiExpr = builder.getAffineDimExpr(0) * typeWidth + typeWidth-1;
+    auto hiMap = AffineMap::get(1, 0, hiExpr);
+    SmallVector<Value, 1> hiOperands = {forOp.getInductionVar()};
+    auto hiVal = builder.create<AffineApplyOp>(loc, hiMap, hiOperands);
+    // Create the lb for slicing
+    auto loExpr = builder.getAffineDimExpr(0) * typeWidth;
+    auto loMap = AffineMap::get(1, 0, loExpr);
+    SmallVector<Value, 1> loOperands = {forOp.getInductionVar()};
+    auto loVal = builder.create<AffineApplyOp>(loc, loMap, loOperands);
+    auto slice = builder.create<GetIntSliceOp>(loc, elemType, newResult,
+                                               hiVal, loVal);
+    // Move the use into the AffineForOp
+    SmallVector<Operation*, 4> users;
+    for(auto use: result.getUsers()){
+      use->moveBefore(forYiledOp);
+    }
+    result.replaceAllUsesWith(slice);
+    // Create StoreOp to new Alloc after original read
+    builder.setInsertionPointAfter(read);
+    builder.create<AffineStoreOp>(loc, result, allocOp, zeroValues);
+  }
+
+  void storeSplit(OpBuilder builder, AffineStoreOp write, MemRefType type, 
+                 MemRefType newType, unsigned packNum, unsigned& cnt){
+    auto loc = builder.getUnknownLoc();
+    auto typeWidth = type.getElementTypeBitWidth();
+    auto newElemType = newType.getElementType();
+    SmallVector<OpFoldResult> sizes;
+    sizes.push_back(builder.getIndexAttr(1));
+    auto indexType = builder.getIndexType();
+    auto zeroAttr = builder.getIntegerAttr(indexType, 0);
+    auto oneAttr = builder.getIntegerAttr(indexType, 1);
+    auto packAttr = builder.getIntegerAttr(indexType, packNum);
+    SmallVector<AffineForOp, 6> band;
+    getSurroundingLoops(*write, band);
+    auto outerLoop = band[0];
+    auto innerLoop = band[band.size()-1];
+    auto innerUb = innerLoop.getConstantUpperBound();
+    std::string streamStr = "stream" + std::to_string(innerUb);
+    auto streamAttr = builder.getStringAttr(streamStr);
+    builder.setInsertionPoint(outerLoop);
+    auto allocOp 
+         = builder.create<AllocOp>(loc, sizes, newElemType, streamAttr);
+    auto zeroValue = builder.create<arith::ConstantOp>(loc, zeroAttr);
+    SmallVector<Value> zeroValues(1, zeroValue);
+    // Create new AffineloadOp from wider stream
+    builder.setInsertionPoint(write);
+    auto newLoad = builder.create<AffineLoadOp>(loc, allocOp, zeroValues);
+    auto newResult = newLoad.getResult();
+    // Create newForOps for reading data from wider stream and write to
+    // narrower stream
+    builder.setInsertionPoint(outerLoop);
+    SmallVector<AffineForOp, 4> newForOps;
+    for (auto loop: band){
+      auto newForOp 
+           = builder.create<AffineForOp>(loc,
+                                         loop.getLowerBoundOperands(),
+                                         loop.getLowerBoundMap(),
+                                         loop.getUpperBoundOperands(),
+                                         loop.getUpperBoundMap(),
+                                         loop.getStepAsInt());
+      newForOps.push_back(newForOp);
+      if(loop->hasAttr("hoist"))
+        newForOp->setAttr("hoist", builder.getUnitAttr());
+      if(loop->hasAttr("Array_Partition"))
+        newForOp->setAttr("Array_Partition", builder.getUnitAttr());
+      if(loop->hasAttr("reduction"))
+        newForOp->setAttr("reduction", builder.getUnitAttr());
+      builder.setInsertionPointToStart(newForOp.getBody());
+    }
+    auto newOuterForOp = newForOps[0];
+    auto newInnerForOp = newForOps[newForOps.size()-1];
+    auto attr = outerLoop->getAttr("store");
+    auto cntAttr = builder.getIntegerAttr(indexType, cnt++); 
+    newOuterForOp->setAttr("store", attr);
+    newOuterForOp->setAttr("func", cntAttr);
+    newInnerForOp->setAttr("pipeline_ii", packAttr);
+    auto forOp = builder.create<AffineForOp>(loc, 0, packNum);
+    forOp->setAttr("pipeline_ii", oneAttr);
+    auto entryBlock = forOp.getBody();
+    auto forYiledOp = dyn_cast<AffineYieldOp>(entryBlock->getTerminator());
+    // Create temp reg to store newType
+    builder.setInsertionPoint(forOp);
+    auto intAttr = builder.getIntegerAttr(newElemType, 0);
+    auto zeroVal = builder.create<arith::ConstantOp>(loc, newElemType, intAttr);
+    auto temp = builder.create<IntToAPInt>(loc, newElemType, zeroVal);
+    builder.setInsertionPoint(forYiledOp);
+    // Move definingOp of val inside forOp
+    auto val = write.getValueToStore();
+    auto defineOp = val.getDefiningOp();
+    if(defineOp)
+      defineOp->moveBefore(forYiledOp);
+    // Create the ub for slicing
+    auto hiExpr = builder.getAffineDimExpr(0) * typeWidth + typeWidth-1;
+    auto hiMap = AffineMap::get(1, 0, hiExpr);
+    SmallVector<Value, 1> hiOperands = {forOp.getInductionVar()};
+    auto hiVal = builder.create<AffineApplyOp>(loc, hiMap, hiOperands);
+    // Create the lb for slicing
+    auto loExpr = builder.getAffineDimExpr(0) * typeWidth;
+    auto loMap = AffineMap::get(1, 0, loExpr);
+    SmallVector<Value, 1> loOperands = {forOp.getInductionVar()};
+    auto loVal = builder.create<AffineApplyOp>(loc, loMap, loOperands);
+    builder.create<SetIntSliceOp>(loc, temp, hiVal, loVal, val);
+    // Create AffineStoeOp to store temp to wider stream/allocOp
+    builder.setInsertionPointAfter(forOp);
+    builder.create<AffineStoreOp>(loc, temp, allocOp, zeroValues);
+    // Update value to store in original AffineStoreOp
+    write.setOperand(0, newResult);
+  }
+
+  void applyPacking1(OpBuilder builder, BlockArgument arg, unsigned index,
+                     MemRefType type, unsigned packNum,
+                     SmallVector<Type,8>& inTypes,
+                     SmallVector<std::pair<AffineForOp, int64_t>, 4>& loopList,
+                     SmallVector<std::pair<Operation*, AffineMap>, 4>& packlist,
+                     SmallVector<AffineLoadOp, 4>& eliminateOps){
+    auto loc = builder.getUnknownLoc();
+    auto shape = type.getShape();
+    auto rank = type.getRank();
+    auto typeWidth = type.getElementTypeBitWidth();
+    auto newTypeWidth = typeWidth * packNum;
+    auto newType = builder.getIntegerType(newTypeWidth);
+    // Update innerLoop Upperbound
+    for(auto loopPair : loopList){
+      auto loop = loopPair.first;
+      auto ub = loopPair.second;
+      loop.setConstantUpperBound(ub);
+    }
+
+    // Update arguments in func
+    SmallVector<int64_t> sizesInt(shape.begin(),shape.end());
+    sizesInt[rank-1] = sizesInt[rank-1] / packNum;
+    auto newMemRefType = MemRefType::get(sizesInt, newType);
+    inTypes[index] = newMemRefType;
+    arg.setType(newMemRefType);
+
+    // Update access map && add logic to send new data to stream
+    unsigned cnt = 0;
+    for(auto packPair : packlist){
+      auto op = packPair.first;
+      auto map = packPair.second;
+      if(auto read = dyn_cast<AffineLoadOp>(op)){
+        // Update the access map
+        read.setMap(map);
+        auto result = read.getResult();
+        auto operands = read.getOperands();
+        SmallVector<Value, 4> indices(operands.begin() + 1, operands.end()); 
+        builder.setInsertionPoint(read);
+        auto newRead 
+             = builder.create<AffineLoadOp>(loc, newType, arg, indices, map);
+        auto newResult = newRead.getResult();
+        result.replaceAllUsesWith(newResult);
+        eliminateOps.push_back(read);
+        loadMerge(builder, newRead, type, newMemRefType, packNum, cnt);
+      }else if(auto write = dyn_cast<AffineStoreOp>(op)){
+        // Update the access map
+        write.setMap(map);
+        storeSplit(builder, write, type, newMemRefType, packNum, cnt);
       }
     }             
   }
@@ -247,9 +466,10 @@ private:
       
       if(loopList.size()!=packlist.size() || loopList.size()!= numUser)
         continue;
-      
-      applyPacking(builder, arg, i, type, packNum, inTypes, loopList, packlist, eliminateOps);
+      applyPacking1(builder, arg, i, type, packNum, inTypes, loopList, packlist, 
+                   eliminateOps);
       argList.push_back(i);
+
     }
     for(auto read: llvm::make_early_inc_range(eliminateOps))
       read.erase();

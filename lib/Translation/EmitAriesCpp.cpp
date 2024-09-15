@@ -2104,8 +2104,8 @@ void ModuleEmitter::emitArrayDirectives(Value memref) {
       os << "#pragma HLS stream variable=";
       emitValue(memref);
       os << " depth=";
-      int semicolon_index = attr_str.find(";");
-      os << attr_str.substr(7, semicolon_index - 7);
+      int depth = std::stoi(attr_str.substr(6,7));
+      os << depth;
       os << "\n";
       // if the array is a FIFO, then it cannot be further partitioned
       // so directly return
@@ -2231,10 +2231,10 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
     os << "\n";
   }
 
-  // Emit other pragmas for function ports.
-  for (auto &port : portList)
-    if (port.getType().isa<MemRefType>())
-      emitArrayDirectives(port);
+  // // Emit other pragmas for function ports.
+  // for (auto &port : portList)
+  //   if (port.getType().isa<MemRefType>())
+  //     emitArrayDirectives(port);
 }
 
 void ModuleEmitter::emitKernelHeader(FuncOp func){

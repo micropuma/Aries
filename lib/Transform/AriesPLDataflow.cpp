@@ -64,11 +64,23 @@ private:
       std::string funcName;
       bool flag = false;
       if(auto Attr = forOp->getAttrOfType<IntegerAttr>("load")){
-        funcName = "load" + std::to_string(Attr.getInt());
+        if(auto cntAttr = forOp->getAttrOfType<IntegerAttr>("func")){
+          funcName = "load" + std::to_string(Attr.getInt()) + "_" 
+                             + std::to_string(cntAttr.getInt());
+          forOp->removeAttr("func");
+        }else{
+          funcName = "load" + std::to_string(Attr.getInt());
+        }
         forOp->removeAttr("load");
         flag = true;
       }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("store")){
-        funcName = "store" + std::to_string(Attr.getInt());
+        if(auto cntAttr = forOp->getAttrOfType<IntegerAttr>("func")){
+          funcName = "store" + std::to_string(Attr.getInt()) + "_" 
+                             + std::to_string(cntAttr.getInt());
+          forOp->removeAttr("func");
+        }else{
+          funcName = "store" + std::to_string(Attr.getInt());
+        }
         forOp->removeAttr("store");
         flag = true;
       }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("send")){
