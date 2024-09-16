@@ -154,6 +154,12 @@ def AriesIOPlacement : Pass<"aries-io-placement"> {
   }];
   let constructor = "mlir::aries::createAriesIOPlacementPass()";
   let options = [
+    Option<"FirstCol", "first-col", "int64_t", /*default=*/"6",
+           "Specify the first col to place PLIOs">,
+    Option<"NumShim", "num-shim", "int64_t", /*default=*/"39",
+           "Specify the number of shim tiles to place PLIOs">,
+    Option<"MidLine", "mid-line", "int64_t", /*default=*/"24",
+           "Specify the middle position for calculate the cost function">,
     Option<"ChalIn", "chal-in", "int64_t", /*default=*/"3",
            "Specify the input PLIO channel in each shim">,
     Option<"ChalOut", "chal-out", "int64_t", /*default=*/"3",

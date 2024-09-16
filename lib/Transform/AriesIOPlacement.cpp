@@ -23,6 +23,9 @@ struct AriesIOPlacement : public AriesIOPlacementBase<AriesIOPlacement> {
 public:
   AriesIOPlacement() = default;
   AriesIOPlacement(const AriesOptions &opts) {
+    FirstCol=opts.OptFirstCol;
+    NumShim=opts.OptNumShim;
+    MidLine=opts.OptMidLine;
     ChalIn=opts.OptChalIn;
     ChalOut=opts.OptChalOut;
     Offset=opts.OptOffset;
@@ -49,10 +52,9 @@ private:
 
   // Here find available channel at the startPos, if not then jump forward and
   // back forward between startPos, if reach one end then only go another side
-  bool findPlacement(unsigned numTile, unsigned startPos, unsigned midLine,
-                     unsigned offset, unsigned& col, unsigned& chl, 
-                     std::vector<int>& tileChannel){
-    unsigned colFirst = 6;
+  bool findPlacement(unsigned colFirst, unsigned numTile, unsigned startPos, 
+                     unsigned midLine, unsigned offset, unsigned& col, 
+                     unsigned& chl, std::vector<int>& tileChannel){
     unsigned colLast = colFirst + (numTile-1);
     if((startPos < midLine) && (midLine - startPos) < offset)
       startPos = startPos - offset;
@@ -126,8 +128,9 @@ private:
   bool IOPlacement (ModuleOp mod) {
     auto builder = OpBuilder(mod);
     auto indexType = builder.getIndexType();
-    unsigned midLine = 24;
-    unsigned numTile = 39;
+    unsigned colFirst = FirstCol;
+    unsigned numTile = NumShim;
+    unsigned midLine = MidLine;
     unsigned numInChl = ChalIn;
     unsigned numOutChl = ChalOut;
     unsigned offset = Offset; //This is to move the IO near the middle
@@ -180,12 +183,12 @@ private:
         int avgToMid = std::ceil(disToMid/cnt);
         unsigned startPos = avgToMid + midLine;
         if(inDir){
-          if(!findPlacement(numTile, startPos, midLine, offset, col, chl, 
-                            tileInChl))
+          if(!findPlacement(colFirst, numTile, startPos, midLine, offset, 
+                            col, chl, tileInChl))
             return WalkResult::interrupt();
         }else{
-          if(!findPlacement(numTile, startPos, midLine, offset, col, chl, 
-                            tileOutChl))
+          if(!findPlacement(colFirst, numTile, startPos, midLine, offset, 
+                            col, chl, tileOutChl))
             return WalkResult::interrupt();
         }
         auto colAttr = builder.getIntegerAttr(indexType, col);

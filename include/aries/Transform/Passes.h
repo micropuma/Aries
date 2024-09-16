@@ -65,6 +65,15 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       llvm::cl::desc("Specify the required gmio bandwidth in MB/s")};
   
   /// Configure the IOPlacement pass.
+  Option<int64_t> OptFirstCol{
+      *this, "first-col", llvm::cl::init(6),
+      llvm::cl::desc("Specify the first col to place PLIOs")};
+  Option<int64_t> OptNumShim{
+      *this, "num-shim", llvm::cl::init(39),
+      llvm::cl::desc("Specify the number of shim tiles to place PLIOs")};
+  Option<int64_t> OptMidLine{
+      *this, "mid-line", llvm::cl::init(24), llvm::cl::desc(
+      "Specify the middle position for calculate the cost function")};
   Option<int64_t> OptChalIn{
       *this, "chal-in", llvm::cl::init(3),
       llvm::cl::desc("Specify the input PLIO channel in each shim")};
