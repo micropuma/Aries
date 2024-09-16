@@ -133,6 +133,14 @@ private:
     bool enableIOCons= EnableIOCons;
     std::vector<int> tileInChl(numTile, numInChl-1);
     std::vector<int> tileOutChl(numTile, numOutChl-1);
+    if(EnableIOCons){
+      tileInChl[0]=0;
+      tileInChl[1]=0;
+      tileInChl[2]=1;
+      tileInChl[36]=1;
+      tileInChl[37]=0;
+      tileInChl[38]=0;
+    }
     auto flag = mod.walk([&](FuncOp func){
       if(!func->hasAttr("adf.cell"))
         return WalkResult::advance();
@@ -196,8 +204,9 @@ private:
           variance /= cnt;
           // Calculate the standard deviation
           auto sdvar = std::sqrt(variance);
-          if (sdvar < 1.0)
+          if (sdvar < 1.0){
             enable = true;
+          }
         }
         if(inDir){
           if(!findPlacement(colFirst, numTile, startPos, midLine, enable, 
