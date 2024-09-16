@@ -28,7 +28,7 @@ public:
     MidLine=opts.OptMidLine;
     ChalIn=opts.OptChalIn;
     ChalOut=opts.OptChalOut;
-    Offset=opts.OptOffset;
+    EnableIOCons=opts.OptEnableIOCons;
   }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
@@ -39,9 +39,10 @@ public:
 
 private:
   bool checkValidChal(unsigned& col, unsigned& chl, int arrayIndex,
-                      unsigned colFirst, std::vector<int>& tileChannel){
+                      unsigned colFirst, bool enable, 
+                      std::vector<int>& tileChannel){
     auto curChl = tileChannel[arrayIndex];
-    if(curChl>=0){
+    if((!enable && curChl>=0) || (enable && curChl>=1)){
       col = arrayIndex + colFirst;
       chl = curChl * 2;
       tileChannel[arrayIndex] = curChl -1;
@@ -53,13 +54,9 @@ private:
   // Here find available channel at the startPos, if not then jump forward and
   // back forward between startPos, if reach one end then only go another side
   bool findPlacement(unsigned colFirst, unsigned numTile, unsigned startPos, 
-                     unsigned midLine, unsigned offset, unsigned& col, 
+                     unsigned midLine, bool en, unsigned& col, 
                      unsigned& chl, std::vector<int>& tileChannel){
     unsigned colLast = colFirst + (numTile-1);
-    if((startPos < midLine) && (midLine - startPos) < offset)
-      startPos = startPos - offset;
-    else if((startPos > midLine) && (startPos - midLine) < offset)
-      startPos = startPos + offset;
     if(startPos < colFirst)
       startPos = colFirst;
     if(startPos > colLast)
@@ -72,7 +69,7 @@ private:
     unsigned forwardCnt = 1;
     unsigned backwardCnt = 1;
     while(!end_flag){
-      if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+      if(checkValidChal(col, chl, arrayIndex, colFirst, en, tileChannel))
         break;
       // If reachEnd been marked, then one side is already full
       // Only search one direction
@@ -81,13 +78,13 @@ private:
           arrayIndex++;
           if(arrayIndex > (int)(numTile-1))
             return false;
-          if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+          if(checkValidChal(col, chl, arrayIndex, colFirst, en, tileChannel))
             end_flag = true;
         }else{
           arrayIndex--;
           if(arrayIndex < 0)
             return false;
-          if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+          if(checkValidChal(col, chl, arrayIndex, colFirst, en, tileChannel))
             end_flag = true;
         }
       }else{
@@ -97,11 +94,11 @@ private:
           if(arrayIndex > (int)(numTile-1)){
             reachEnd = true;
             arrayIndex = numTile-1;
-            if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+            if(checkValidChal(col, chl, arrayIndex, colFirst, en, tileChannel))
               end_flag = true;
             direction = !direction;
           }else{
-            if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+            if(checkValidChal(col, chl, arrayIndex, colFirst, en, tileChannel))
               end_flag = true;
             forwardCnt++;
             direction = !direction;
@@ -111,11 +108,11 @@ private:
           if(arrayIndex < 0){
             reachEnd = true;
             arrayIndex = 0;
-            if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+            if(checkValidChal(col, chl, arrayIndex, colFirst, en, tileChannel))
               end_flag = true;
             direction = !direction;
           }else{
-            if(checkValidChal(col, chl, arrayIndex, colFirst, tileChannel))
+            if(checkValidChal(col, chl, arrayIndex, colFirst, en, tileChannel))
               end_flag = true;
             backwardCnt++;
             direction = !direction;
@@ -133,7 +130,7 @@ private:
     unsigned midLine = MidLine;
     unsigned numInChl = ChalIn;
     unsigned numOutChl = ChalOut;
-    unsigned offset = Offset; //This is to move the IO near the middle
+    bool enableIOCons= EnableIOCons;
     std::vector<int> tileInChl(numTile, numInChl-1);
     std::vector<int> tileOutChl(numTile, numOutChl-1);
     auto flag = mod.walk([&](FuncOp func){
@@ -141,6 +138,7 @@ private:
         return WalkResult::advance();
       for(auto configOp : func.getOps<ConfigPLIOOp>()){
         SmallVector<unsigned, 4> corePlace;
+        SmallVector<int, 4> broadPos;
         auto plio = configOp.getPlio();
         int disToMid = 0;
         int cnt = 0;
@@ -173,6 +171,7 @@ private:
           auto colAttr = corePlaceAttr[0];
           auto intAttr = dyn_cast<IntegerAttr>(colAttr);
           int colCore = intAttr.getInt();
+          broadPos.push_back(colCore);
           disToMid += colCore-midLine;
           cnt++;
         }
@@ -182,12 +181,30 @@ private:
         unsigned chl;
         int avgToMid = std::ceil(disToMid/cnt);
         unsigned startPos = avgToMid + midLine;
+        // when enableIOCons is enabled check if the variance of the position
+        // of the broadcast ops is too small (<1) then limit the number used in
+        // this shim
+        bool enable = false;
+        if(cnt>1 && enableIOCons){
+          // Calculate the mean
+          double sum = std::accumulate(broadPos.begin(), broadPos.end(), 0.0);
+          double mean = sum / cnt;
+          // Calculate the variance
+          double variance = 0.0;
+          for (int num : broadPos)
+            variance += (num - mean) * (num - mean);
+          variance /= cnt;
+          // Calculate the standard deviation
+          auto sdvar = std::sqrt(variance);
+          if (sdvar < 1.0)
+            enable = true;
+        }
         if(inDir){
-          if(!findPlacement(colFirst, numTile, startPos, midLine, offset, 
+          if(!findPlacement(colFirst, numTile, startPos, midLine, enable, 
                             col, chl, tileInChl))
             return WalkResult::interrupt();
         }else{
-          if(!findPlacement(colFirst, numTile, startPos, midLine, offset, 
+          if(!findPlacement(colFirst, numTile, startPos, midLine, enable, 
                             col, chl, tileOutChl))
             return WalkResult::interrupt();
         }

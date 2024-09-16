@@ -18,7 +18,7 @@ NumShim = 39
 MidLine = 24
 ChalIn = 3
 ChalOut = 3
-IOOffset = 0
+EnableIOCons = "false"
 L1_0=32
 L1_1=32
 L1_2=32
@@ -37,7 +37,7 @@ endif
 all: fileCreate copyFile pass translate copyplhost printcommand
 
 printcommand:
-	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, IOOffset=${IOOffset}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, IOType=${IOType}" >${PROJECT_PATH}/command.txt
+	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, EnableIOCons=${EnableIOCons}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, IOType=${IOType}" >${PROJECT_PATH}/command.txt
 
 fileCreate:
 	mkdir -p ${PROJECT_AIE_PATH}
@@ -124,7 +124,7 @@ ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir
 ioplacement: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
 ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
 	aries-opt -o $@ $< \
-			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${MidLine} chal-in=${ChalIn} chal-out=${ChalOut} offset=${IOOffset}"
+			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${MidLine} chal-in=${ChalIn} chal-out=${ChalOut} iocons=${EnableIOCons}"
 
 iomaterialize: ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir
 ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
@@ -177,7 +177,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
-			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${MidLine} chal-in=${ChalIn} chal-out=${ChalOut} offset=${IOOffset}" \
+			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${MidLine} chal-in=${ChalIn} chal-out=${ChalOut} iocons=${EnableIOCons}" \
 			-aries-gmio-materialize \
 			-aries-plio-materialize \
 			-aries-axi-packing="axi-width=${AXIWidth}" \

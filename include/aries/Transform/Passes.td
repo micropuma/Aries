@@ -172,8 +172,8 @@ def AriesIOPlacement : Pass<"aries-io-placement"> {
            "Specify the input PLIO channel in each shim">,
     Option<"ChalOut", "chal-out", "int64_t", /*default=*/"3",
            "Specify the output PLIO channel in each shim">,
-    Option<"Offset", "offset", "int64_t", /*default=*/"5",
-           "Specify the range from midline to move PLIOs away from this range">
+    Option<"EnableIOCons", "iocons", "bool", /*default=*/"false",
+           "Enable limiting the IO used in a shim for certain PLIOs">
   ];
 }
 

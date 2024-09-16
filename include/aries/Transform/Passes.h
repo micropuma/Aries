@@ -84,9 +84,9 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
   Option<int64_t> OptChalOut{
       *this, "chal-out", llvm::cl::init(3),
       llvm::cl::desc("Specify the output PLIO channel in each shim")};
-  Option<int64_t> OptOffset{
-      *this, "offset", llvm::cl::init(5), llvm::cl::desc(
-      "Specify the range from midline to move PLIOs away from this range")};
+  Option<bool> OptEnableIOCons{
+      *this, "iocons", llvm::cl::init(false), llvm::cl::desc(
+      "Enable limiting the IO used in a shim for certain PLIOs")};
   
   /// Configure the AXIPacking pass.
   Option<int64_t> OptAXIWidth{
