@@ -23,6 +23,10 @@ struct AriesCorePlacement : public AriesCorePlacementBase<AriesCorePlacement> {
 public:
   AriesCorePlacement() = default;
   AriesCorePlacement(const AriesOptions &opts) {
+    ColNum=opts.OptColNum;
+    RowNum=opts.OptRowNum;
+    ColOffset=opts.OptColOffset;
+    RowOffset=opts.OptRowOffset;
     CoreAlgo=opts.OptCoreAlgo;
   }
   void runOnOperation() override {
@@ -41,11 +45,12 @@ private:
   // row = ceil (pid/Height)
 
   // In this algorithm, the reduction dim is consecutive vertically
-  bool placementNaive0(OpBuilder builder, CellOp cellOp, unsigned colNum, 
-                       unsigned rowNum, unsigned KSize, unsigned JSize, 
-                       unsigned ISize){
+  bool placementNaive0(OpBuilder builder, CellOp cellOp, 
+                       unsigned colNum, unsigned rowNum, 
+                       unsigned colOffset, unsigned rowOffset,
+                       unsigned KSize, unsigned JSize, unsigned ISize){
     auto indexType = builder.getIndexType();
-    unsigned rowStart = 0;
+    unsigned rowStart = rowOffset;
     // Determine the height and formula for pid
     unsigned height= std::min(KSize, rowNum);
     unsigned flag;
@@ -68,7 +73,7 @@ private:
     unsigned colWidth = std::ceil(coreNum/height);
     if(colWidth > colNum)
       return false;
-    unsigned colStart = std::floor((colNum - colWidth) / 2);
+    unsigned colStart = std::floor((colNum - colWidth) / 2) + colOffset;
 
     for (auto callOp : cellOp.getOps<CallOp>()){
       if(!callOp->hasAttr("adf.kernel"))
@@ -143,11 +148,12 @@ private:
 
   // In this algorithm, the reduction dim is consecutive horizontally
   // J dim will first be placed vertically
-  bool placementNaive1(OpBuilder builder, CellOp cellOp, unsigned colNum, 
-                       unsigned rowNum, unsigned KSize, unsigned JSize, 
-                       unsigned ISize){
+  bool placementNaive1(OpBuilder builder, CellOp cellOp, 
+                       unsigned colNum, unsigned rowNum, 
+                       unsigned colOffset, unsigned rowOffset,
+                       unsigned KSize, unsigned JSize, unsigned ISize){
     auto indexType = builder.getIndexType();
-    unsigned rowStart = 0;
+    unsigned rowStart = rowOffset;
     // Determine the height and formula for pid
     unsigned height;
     unsigned flag;
@@ -168,7 +174,7 @@ private:
     unsigned colWidth = std::ceil(coreNum/height);
     if(colWidth > colNum)
       return false;
-    unsigned colStart = std::floor((colNum - colWidth) / 2);
+    unsigned colStart = std::floor((colNum - colWidth) / 2) + colOffset;
 
     for (auto callOp : cellOp.getOps<CallOp>()){
       if(!callOp->hasAttr("adf.kernel"))
@@ -232,8 +238,10 @@ private:
 
   bool CorePlacement (ModuleOp mod, StringRef topFuncName) {
     auto builder = OpBuilder(mod);
-    unsigned colNum = 50;
-    unsigned rowNum = 8;
+    unsigned colNum = ColNum;
+    unsigned rowNum = RowNum;
+    unsigned colOffset = ColOffset;
+    unsigned rowOffset = RowOffset;
     FuncOp topFunc;
     if(!topFind(mod, topFunc, topFuncName)){
       topFunc->emitOpError("Top function not found\n");
@@ -263,11 +271,13 @@ private:
     unsigned ISize = tripCounts[2];
 
     if(CoreAlgo == 0){
-      if(!placementNaive0(builder, cellOp, colNum, rowNum, KSize, JSize, ISize))
+      if(!placementNaive0(builder, cellOp, colNum, rowNum, colOffset, rowOffset,
+                          KSize, JSize, ISize))
         return false;
     }
     else{
-      if(!placementNaive1(builder, cellOp, colNum, rowNum, KSize, JSize, ISize))
+      if(!placementNaive1(builder, cellOp, colNum, rowNum, colOffset, rowOffset,
+                          KSize, JSize, ISize))
         return false;
     }
 

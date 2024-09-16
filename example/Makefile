@@ -8,13 +8,17 @@ PROJECT_Host_PATH=${PROJECT_PATH}/host
 EN_PL = 1
 PLIOWidth = 128
 AXIWidth = 512
+ColNum = 50
+RowNum = 8
+ColOffset = 0 
+RowOffset = 0
 CoreAlgo = 1
 FirstCol = 6
 NumShim = 39
-OptMidLine = 24
+MidLine = 24
 ChalIn = 3
 ChalOut = 3
-Offset = 0
+IOOffset = 0
 L1_0=32
 L1_1=32
 L1_2=32
@@ -33,7 +37,7 @@ endif
 all: fileCreate copyFile pass translate copyplhost printcommand
 
 printcommand:
-	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, OptMidLine=${OptMidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, Offset=${Offset}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, IOType=${IOType}" >${PROJECT_PATH}/command.txt
+	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, IOOffset=${IOOffset}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, IOType=${IOType}" >${PROJECT_PATH}/command.txt
 
 fileCreate:
 	mkdir -p ${PROJECT_AIE_PATH}
@@ -94,7 +98,7 @@ ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir: ${PROJECT_PATH}/7_${FUNC}.flow.mlir
 coreplacement: ${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir
 ${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir: ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir
 	aries-opt -o $@ $< \
-			-aries-core-placement="core-algo=${CoreAlgo}"
+			-aries-core-placement="col-num=${ColNum} row-num=${RowNum} col-offset=${ColOffset} row-offset=${RowOffset} core-algo=${CoreAlgo}"
 
 dataforward: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
 ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir
@@ -120,7 +124,7 @@ ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir
 ioplacement: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
 ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
 	aries-opt -o $@ $< \
-			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${OptMidLine} chal-in=${ChalIn} chal-out=${ChalOut} offset=${Offset}"
+			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${MidLine} chal-in=${ChalIn} chal-out=${ChalOut} offset=${IOOffset}"
 
 iomaterialize: ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir
 ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
@@ -167,13 +171,13 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-lower-to-adf \
 			-aries-dependency-extract \
 			-aries-func-unroll \
-			-aries-core-placement="core-algo=${CoreAlgo}" \
+			-aries-core-placement="col-num=${ColNum} row-num=${RowNum} col-offset=${ColOffset} row-offset=${RowOffset} core-algo=${CoreAlgo}" \
 			-aries-local-data-forward \
 			-aries-kernel-interface-create \
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
-			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${OptMidLine} chal-in=${ChalIn} chal-out=${ChalOut} offset=${Offset}" \
+			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${MidLine} chal-in=${ChalIn} chal-out=${ChalOut} offset=${IOOffset}" \
 			-aries-gmio-materialize \
 			-aries-plio-materialize \
 			-aries-axi-packing="axi-width=${AXIWidth}" \

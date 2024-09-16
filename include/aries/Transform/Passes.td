@@ -93,6 +93,14 @@ def AriesCorePlacement : Pass<"aries-core-placement"> {
   let summary = "Place the AIE cores";
   let constructor = "mlir::aries::createAriesCorePlacementPass()";
   let options = [
+    Option<"ColNum", "col-num", "int64_t", /*default=*/"50",
+           "Specify the number of columns of the AIE array">,
+    Option<"RowNum", "row-num", "int64_t", /*default=*/"8",
+           "Specify the number of rows of the AIE array">,
+    Option<"ColOffset", "col-offset", "int64_t", /*default=*/"0",
+           "Specify the offset for core placement in the col direction">,
+    Option<"RowOffset", "row-offset", "int64_t", /*default=*/"0",
+           "Specify the offset for core placement in the row direction">,
     Option<"CoreAlgo", "core-algo", "int64_t", /*default=*/"0",
            "Specify the algorithm for core placement 0:vertical,1:horizontally">
   ];

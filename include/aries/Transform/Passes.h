@@ -35,6 +35,18 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       llvm::cl::desc("Specify a list of L3 loop tile sizes")};
   
   /// Configure the CorePlacement pass.
+  Option<int64_t> OptColNum{
+      *this, "col-num", llvm::cl::init(0), 
+      llvm::cl::desc("Specify the number of columns of the AIE array")};
+  Option<int64_t> OptRowNum{
+      *this, "row-num", llvm::cl::init(0), 
+      llvm::cl::desc("Specify the number of rows of the AIE array")};
+  Option<int64_t> OptColOffset{
+      *this, "col-offset", llvm::cl::init(0), llvm::cl::desc(
+      "Specify the offset for core placement in the col direction")};
+  Option<int64_t> OptRowOffset{
+      *this, "row-offset", llvm::cl::init(0), llvm::cl::desc(
+      "Specify the offset for core placement in the row direction")};
   Option<int64_t> OptCoreAlgo{
       *this, "core-algo", llvm::cl::init(0), llvm::cl::desc(
       "Specify the algorithm for core placement 0:vertical,1:horizontally")};
@@ -43,23 +55,15 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
   Option<std::string> OptPortType{
       *this, "port-type", llvm::cl::init("PLIO"),
       llvm::cl::desc("Specify the type of the ports(PORT,GMIO,PLIO)")};
-
-  /// Configure the DMAToIO pass.
   Option<int64_t> OptPortWidth{
       *this, "plio-width", llvm::cl::init(32),
       llvm::cl::desc("Specify the plio width of a port in bits (32,64,128)")};
-  
-  /// Configure the DMAToIO pass.
   Option<int64_t> OptPLIOFreq{
       *this, "plio-freq", llvm::cl::init(250),
       llvm::cl::desc("Specify the plio frequency in MHz")};
-  
-  /// Configure the DMAToIO pass.
   Option<int64_t> OptPortBurst{
       *this, "gmio-burst", llvm::cl::init(64),
       llvm::cl::desc("Specify the gmio burst in bytes (64,128,256)")};
-  
-  /// Configure the DMAToIO pass.
   Option<int64_t> OptGMIOBW{
       *this, "gmio-bw", llvm::cl::init(1000),
       llvm::cl::desc("Specify the required gmio bandwidth in MB/s")};
