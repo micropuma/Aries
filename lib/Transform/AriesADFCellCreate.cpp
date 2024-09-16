@@ -26,22 +26,23 @@ public:
 private:
   void OpCollect(CellOp cellop, 
                  SmallVector<Operation*> &TopOps, 
+                 SmallVector<Operation*> &topGraphOps, 
                  SmallVector<Operation*> &GraphOps, 
                  SmallVector<IOPopOp> &IOPopOps, 
                  SmallVector<Value> &ArgIns){
     cellop.walk([&](Operation *op){
-      if( dyn_cast<BufferOp>(op) || dyn_cast<ConnectOp>(op) || 
-          dyn_cast<CallOp>(op)   || dyn_cast<ConfigPLIOOp>(op) ||
-          dyn_cast<ConfigGMIOOp>(op)){
-            GraphOps.push_back(op);
-      }else if(auto graphio = dyn_cast<CreateGraphIOOp>(op)){
+      if(dyn_cast<ConfigPLIOOp>(op) ||dyn_cast<ConfigGMIOOp>(op))
+        topGraphOps.push_back(op);
+      else if(dyn_cast<BufferOp>(op) || dyn_cast<ConnectOp>(op) || 
+              dyn_cast<CallOp>(op))
+        GraphOps.push_back(op);
+      else if(auto graphio = dyn_cast<CreateGraphIOOp>(op)){
         TopOps.push_back(op);
         ArgIns.push_back(graphio.getResult());
-      }else if(auto iopopOp = dyn_cast<IOPopOp>(op)){
+      }else if(auto iopopOp = dyn_cast<IOPopOp>(op))
         IOPopOps.push_back(iopopOp);
-      }else{
+      else
         TopOps.push_back(op);
-      }
     });
   }
 
@@ -64,10 +65,11 @@ private:
     cellOp.getBody().front().back().erase();
     
     SmallVector<Operation*> TopOps;
+    SmallVector<Operation*> topGraphOps; 
     SmallVector<Operation*> GraphOps;
     SmallVector<IOPopOp> IOPopOps;
     SmallVector<Value> ArgIns;
-    OpCollect(cellOp, TopOps, GraphOps, IOPopOps, ArgIns);
+    OpCollect(cellOp, TopOps, topGraphOps, GraphOps, IOPopOps, ArgIns);
 
     //Create an empty func adf_graph before the outmost band loop
     builder.setInsertionPoint(topFunc);
@@ -82,6 +84,10 @@ private:
 
     //Move GraphOps into adf_cell
     builder.setInsertionPoint(returnOp);
+    // Move ConfigOps first, as these will translate to create ios in adf graph
+    for (Operation *op : topGraphOps) {
+      op->moveBefore(returnOp);
+    }
     for (Operation *op : GraphOps) {
       op->moveBefore(returnOp);
     }

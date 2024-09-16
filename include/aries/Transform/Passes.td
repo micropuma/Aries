@@ -23,19 +23,20 @@ def AriesTiling : Pass<"aries-tiling"> {
 }
 
 def AriesFuncExtract : Pass<"aries-func-extract"> {
-  let summary = "Extract out the operations within the innermost block loop as a function";
+  let summary = "Extract the function of the tile";
   let description = [{
-    This pass extracts the operations within the block loop as a function call by using livess
-    analysis and replacing the arguments in the new function.
+    This pass extracts the operations within the block loop as a function call 
+    by using livess analysis and replacing the arguments in the new function.
   }];
   let constructor = "mlir::aries::createAriesFuncExtractPass()";
 }
 
 def AriesLoopSimplify : Pass<"aries-loop-simplify"> {
-  let summary = "Simplify the boundray of the nested loops in kernel to constant values";
+  let summary = "A customized loop normalization pass";
   let description = [{
-    This pass simplifies the nested loops in the extracted function from affineMap to constant
-    values by checking its recutangularity and using affine.apply.
+    This pass simplifies the nested loops in the extracted function from 
+    affineMap to constant values by checking its recutangularity and using 
+    affine.apply.
   }];
   let constructor = "mlir::aries::createAriesLoopSimplifyPass()";
 }
@@ -82,29 +83,68 @@ def AriesDependencyExtract : Pass<"aries-dependency-extract"> {
 def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let summary = "Unroll all the block loops as seperated function calls";
   let description = [{
-    This pass unrolls all the block loops to function calls with different arguments.
+    This pass unrolls all the block loops to function calls with different 
+    arguments.
   }];
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
-def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
-  let summary = "Create new kenrel with interface compatable with ADF kernels";
-  let description = [{
-    This pass creates the new kernel function that returns the buffers be touched.
-    This identifies the direction of the buffer which is required by ADF kernels.
-  }];
-  let constructor = "mlir::aries::createAriesKernelInterfaceCreatePass()";
-  let dependentDialects = ["mlir::memref::MemRefDialect"];
+def AriesCorePlacement : Pass<"aries-core-placement"> {
+  let summary = "Place the AIE cores";
+  let constructor = "mlir::aries::createAriesCorePlacementPass()";
+  let options = [
+    Option<"ColNum", "col-num", "int64_t", /*default=*/"50",
+           "Specify the number of columns of the AIE array">,
+    Option<"RowNum", "row-num", "int64_t", /*default=*/"8",
+           "Specify the number of rows of the AIE array">,
+    Option<"ColOffset", "col-offset", "int64_t", /*default=*/"0",
+           "Specify the offset for core placement in the col direction">,
+    Option<"RowOffset", "row-offset", "int64_t", /*default=*/"0",
+           "Specify the offset for core placement in the row direction">,
+    Option<"CoreAlgo", "core-algo", "int64_t", /*default=*/"0",
+           "Specify the algorithm for core placement 0:vertical,1:horizontally">
+  ];
 }
 
 def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
   let summary = "Forward the data from local buffer to another local buffer";
   let description = [{
-    This pass detect the opportunities to do data forwarding between local buffers
-    instead of writing to then reading back from memory out of L1. This pass
-    relies on the annotation in AriesFuncUnroll pass.
+    This pass detect the opportunities to do data forwarding between local 
+    buffers instead of writing to then reading back from memory out of L1. 
+    This pass relies on the annotation in AriesFuncUnroll pass.
   }];
   let constructor = "mlir::aries::createAriesLocalDataForwardPass()";
+}
+
+def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
+  let summary = "Create new kenrel with interface compatable with ADF kernels";
+  let description = [{
+    This pass creates the new kernel function that returns the buffers be 
+    touched. This identifies the direction of the buffer which is required 
+    by ADF kernels.
+  }];
+  let constructor = "mlir::aries::createAriesKernelInterfaceCreatePass()";
+  let dependentDialects = ["mlir::memref::MemRefDialect"];
+}
+
+def AriesDMAToIO : Pass<"aries-dma-to-io"> {
+  let summary = "Convert DmaOp to GraphIOs";
+  let description = [{
+    This pass converts the DmaOps to the GraphIOs(PORT,GMIO,PLIO).
+  }];
+  let constructor = "mlir::aries::createAriesDMAToIOPass()";
+  let options = [
+    Option<"PortType", "port-type", "std::string", /*default=*/"\"PLIO\"", 
+           "Specify the type of the ports(PORT,GMIO,PLIO)">,
+    Option<"PortWidth", "plio-width", "int64_t", /*default=*/"32",
+           "Specify the plio width of a port in bits (32,64,128)">,
+    Option<"PLIOFreq", "plio-freq", "int64_t", /*default=*/"250",
+           "Specify the plio frequency in MHz">,
+    Option<"PortBurst", "gmio-burst", "int64_t", /*default=*/"64",
+           "Specify the gmio burst in bytes (64,128,256)">,
+    Option<"GMIOBW", "gmio-bw", "int64_t", /*default=*/"1000",
+           "Specify the required gmio bandwidth in MB/s">
+  ];
 }
 
 def AriesADFCellCreate : Pass<"aries-adf-cell-create"> {
@@ -113,6 +153,28 @@ def AriesADFCellCreate : Pass<"aries-adf-cell-create"> {
     This pass create the adf cell with input arguments and output values.
   }];
   let constructor = "mlir::aries::createAriesADFCellCreatePass()";
+}
+
+def AriesIOPlacement : Pass<"aries-io-placement"> {
+  let summary = "Place PLIO/GMIO to the shim tile";
+  let description = [{
+    This pass place PLIO/GMIO to the shim tile to alleviate routing congestion.
+  }];
+  let constructor = "mlir::aries::createAriesIOPlacementPass()";
+  let options = [
+    Option<"FirstCol", "first-col", "int64_t", /*default=*/"6",
+           "Specify the first col to place PLIOs">,
+    Option<"NumShim", "num-shim", "int64_t", /*default=*/"39",
+           "Specify the number of shim tiles to place PLIOs">,
+    Option<"MidLine", "mid-line", "int64_t", /*default=*/"24",
+           "Specify the middle position for calculate the cost function">,
+    Option<"ChalIn", "chal-in", "int64_t", /*default=*/"3",
+           "Specify the input PLIO channel in each shim">,
+    Option<"ChalOut", "chal-out", "int64_t", /*default=*/"3",
+           "Specify the output PLIO channel in each shim">,
+    Option<"EnableIOCons", "iocons", "bool", /*default=*/"false",
+           "Enable limiting the IO used in a shim for certain PLIOs">
+  ];
 }
 
 def AriesKernelSplit : Pass<"aries-kernel-split"> {
@@ -139,6 +201,20 @@ def AriesPLIOMaterialize : Pass<"aries-plio-materialize"> {
   let constructor = "mlir::aries::createAriesPLIOMaterializePass()";
 }
 
+def AriesAXIPacking : Pass<"aries-axi-packing"> {
+  let summary = "Packing AXI to larger width";
+  let constructor = "mlir::aries::createAriesAXIPackingPass()";
+  let options = [
+    Option<"AXIWidth", "axi-width", "int64_t", /*default=*/"32",
+           "Specify the axi width of the DDR ports in bits (32, 64, 128, ...)">
+  ];
+}
+
+def AriesPLDataflow : Pass<"aries-pl-dataflow"> {
+  let summary = "Create function for each outer loop and apply dataflow pragma";
+  let constructor = "mlir::aries::createAriesPLDataflowPass()";
+}
+
 def AriesPLDoubleBuffer : Pass<"aries-pl-double-buffer"> {
   let summary = "Apply double buffer for the data mover between PL and AIE";
   let description = [{
@@ -146,6 +222,16 @@ def AriesPLDoubleBuffer : Pass<"aries-pl-double-buffer"> {
     separate functions and use double buffer. 
   }];
   let constructor = "mlir::aries::createAriesPLDoubleBufferPass()";
+  let dependentDialects = ["mlir::scf::SCFDialect"];
+}
+
+def AriesBurstDetection : Pass<"aries-burst-detection"> {
+  let summary = "Attempt to merge loops together to increase burst length";
+  let description = [{
+    This pass tranverses all the "load" and "store" modules in the adf.pl and
+    tries to merge loops together to increase burst length. 
+  }];
+  let constructor = "mlir::aries::createAriesBurstDetectionPass()";
   let dependentDialects = ["mlir::scf::SCFDialect"];
 }
 

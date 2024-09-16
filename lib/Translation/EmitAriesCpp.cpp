@@ -128,7 +128,7 @@ static Value getCalleeArg(Value val, CallOp& call){
   auto gmio = calleeFuncOp.getArgument(index_final);
   return gmio;
 }
-
+static bool BIT_FLAG = false; 
 static SmallString<16> getTypeName(Type valType) {
   bool PLIO_FLAG = false;
   if (auto memType = dyn_cast<MemRefType>(valType)){
@@ -164,7 +164,11 @@ static SmallString<16> getTypeName(Type valType) {
       std::string signedness = "";
       if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
         signedness = "u";
-      if(!PLIO_FLAG){
+      if(PLIO_FLAG){
+        return SmallString<16>("ap_axiu<" + std::to_string(intType.getWidth()) 
+                                + ", 0 ,0 ,0>");
+      }
+      if(!BIT_FLAG){
         switch (intType.getWidth()) {
         case 8:
         case 16:
@@ -173,12 +177,12 @@ static SmallString<16> getTypeName(Type valType) {
           return SmallString<16>(signedness + "int" +
                                  std::to_string(intType.getWidth()) + "_t");
         default:
-          return SmallString<16>(signedness + "int" +
-                                 std::to_string(intType.getWidth()) + "_t");
+          return SmallString<16>("ap_" + signedness + "int<" +
+                                 std::to_string(intType.getWidth()) + ">");
         }
       }else{
-        return SmallString<16>("ap_axiu<" + std::to_string(intType.getWidth()) 
-                                + ", 0 ,0 ,0>");
+        return SmallString<16>("ap_" + signedness + "int<" +
+                               std::to_string(intType.getWidth()) + ">");
       }
     }
   }
@@ -228,6 +232,27 @@ static SmallString<16> getTypeName(CallOp call) {
 static SmallString<16> getTypeName(Value val) {
   auto valType = val.getType();
   return getTypeName(valType);
+}
+
+void fixUnsignedType(Value &result, bool isUnsigned) {
+  if (isUnsigned) { // unsigned type
+    if (result.getType().isa<MemRefType>()) {
+      auto arrayType = result.getType().dyn_cast<MemRefType>();
+      Type elt = IntegerType::get(
+          arrayType.getContext(),
+          arrayType.getElementType().cast<IntegerType>().getWidth(),
+          IntegerType::SignednessSemantics::Unsigned);
+      result.setType(MemRefType::get(arrayType.getShape(), elt,
+                                     arrayType.getLayout(),
+                                     arrayType.getMemorySpace()));
+    } else if (result.getType().isa<IntegerType>()) {
+      Type type =
+          IntegerType::get(result.getType().getContext(),
+                           result.getType().cast<IntegerType>().getWidth(),
+                           IntegerType::SignednessSemantics::Unsigned);
+      result.setType(type);
+    }
+  }
 }
 
 SmallString<16> ADFEmitterBase::getDMAAccess(adf::DmaOp op, unsigned rank, 
@@ -348,6 +373,15 @@ public:
   void emitADFIOWait(adf::IOWaitOp op);
   void emitADFIOWrite(adf::IOWriteOp op);
   void emitADFIORead(adf::IOReadOp op);
+  void emitIntToAP(adf::IntToAPInt op);
+  void emitAPToInt(adf::APIntToInt op);
+  void emitGetBit(adf::GetIntBitOp op);
+  void emitSetBit(adf::SetIntBitOp op);
+  void emitGetSlice(adf::GetIntSliceOp op);
+  void emitSetSlice(adf::SetIntSliceOp op);
+  void emitBitReverse(adf::BitReverseOp op);
+  void emitBitcast(arith::BitcastOp op);
+
 
   /// Top-level MLIR module emitter.
   void emitModule(ModuleOp module);
@@ -499,6 +533,9 @@ public:
   bool visitOp(adf::IOWaitOp op) { return emitter.emitADFIOWait(op), true; };
   bool visitOp(adf::IOWriteOp op) { return emitter.emitADFIOWrite(op), true;};
   bool visitOp(adf::IOReadOp op) { return emitter.emitADFIORead(op), true; };
+  bool visitOp(adf::IntToAPInt op) { return emitter.emitIntToAP(op), true; };
+  bool visitOp(adf::APIntToInt op) { return emitter.emitAPToInt(op), true; };
+  bool visitOp(arith::BitcastOp op) { return emitter.emitBitcast(op), true; };
 
   /// Function operations.
   bool visitOp(func::CallOp op) { return emitter.emitCall(op), true; }
@@ -585,6 +622,13 @@ public:
   bool visitOp(arith::ShLIOp op) { return emitter.emitBinary(op, "<<"), true; }
   bool visitOp(arith::ShRSIOp op) { return emitter.emitBinary(op, ">>"), true; }
   bool visitOp(arith::ShRUIOp op) { return emitter.emitBinary(op, ">>"), true; }
+  bool visitOp(adf::GetIntBitOp op) { return emitter.emitGetBit(op), true; }
+  bool visitOp(adf::SetIntBitOp op) { return emitter.emitSetBit(op), true; }
+  bool visitOp(adf::GetIntSliceOp op) { return emitter.emitGetSlice(op), true; }
+  bool visitOp(adf::SetIntSliceOp op) { return emitter.emitSetSlice(op), true; }
+  bool visitOp(adf::BitReverseOp op) {
+    return emitter.emitBitReverse(op), true;
+  }
 
   /// Unary expressions.
   bool visitOp(math::AbsFOp op) { return emitter.emitUnary(op, "abs"), true; }
@@ -726,6 +770,18 @@ void ModuleEmitter::emitADFPLIOConf(adf::ConfigPLIOOp op){
   std::string portSetting = portName + "_" + std::to_string(width) + "_bits";
   os << VName << " = " << IOType << "::create(\"" << VName << "\", " << 
   portSetting << ", \"data/" << VName << ".txt\", " << freq <<");\n" ;
+  if(op->hasAttr("col, chl")){
+    auto IOPlaceAttr = dyn_cast<ArrayAttr>(op->getAttr("col, chl"));
+    auto colAttr = IOPlaceAttr[0];
+    auto chlAttr = IOPlaceAttr[1];
+    auto intColAttr = dyn_cast<IntegerAttr>(colAttr);
+    auto intChlAttr = dyn_cast<IntegerAttr>(chlAttr);
+    int ioCol = intColAttr.getInt();
+    int ioChl = intChlAttr.getInt();
+    indent();
+    os << "adf::location<PLIO>(" << VName << ") = shim(" << ioCol << ", " 
+       << ioChl  << ");\n";
+  }
 }
 
 void ModuleEmitter::emitADFGMIOConf(adf::ConfigGMIOOp op){
@@ -857,7 +913,7 @@ void ModuleEmitter::emitADFIOWrite(adf::IOWriteOp op){
   emitValue(stream);
   os << ".write(";
   emitValue(val);
-  os << ");";
+  os << ");\n";
 }
 
 void ModuleEmitter::emitADFIORead(adf::IOReadOp op){
@@ -867,7 +923,54 @@ void ModuleEmitter::emitADFIORead(adf::IOReadOp op){
   emitValue(result);
   os << " = ";
   emitValue(val);
-  os << ".read();";
+  os << ".read();\n";
+}
+
+void ModuleEmitter::emitIntToAP(adf::IntToAPInt op){
+  indent();
+  auto val = op.getInput();
+  auto result = op.getResult();
+  BIT_FLAG = true;
+  emitValue(result);
+  BIT_FLAG = false;
+  os << " = ";
+  emitValue(val);
+  os << ";\n";
+}
+
+void ModuleEmitter::emitAPToInt(adf::APIntToInt op){
+  indent();
+  auto val = op.getInput();
+  auto result = op.getResult();
+  emitValue(result);
+  os << " = ";
+  emitValue(val);
+  os << ";\n";
+}
+
+void ModuleEmitter::emitBitcast(arith::BitcastOp op) {
+  indent();
+  emitValue(op.getResult());
+  os << ";\n";
+  indent();
+  os << "union { ";
+  os << getTypeName(op.getOperand());
+  os << " from; ";
+  os << getTypeName(op.getResult());
+  os << " to;} ";
+  auto name = SmallString<32>("_converter_") + getName(op.getOperand()) +
+              SmallString<32>("_to_") + getName(op.getResult());
+  os << name << ";\n";
+  indent();
+  os << name << ".from";
+  os << " = ";
+  emitValue(op.getOperand());
+  os << ";\n";
+  indent();
+  emitValue(op.getResult());
+  os << " = ";
+  os << name << ".to;";
+  emitInfoAndNewLine(op);
 }
 
 void ModuleEmitter::emitCall(func::CallOp op) {
@@ -1231,6 +1334,7 @@ void ModuleEmitter::emitAffineMaxMin(OpType op, const char *syntax) {
 
 void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   auto memref = op.getMemRef();
   auto affineMap = op.getAffineMap();
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
@@ -1476,6 +1580,7 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
 
   indent();
   Value result = op.getResult(); // memref
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitArrayDecl(result, false, name);
   os << ";";
   emitInfoAndNewLine(op);
@@ -1484,7 +1589,9 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
 
 void ModuleEmitter::emitLoad(memref::LoadOp op) {
   indent();
-  emitValue(op.getResult());
+  Value result = op.getResult(); 
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
   os << " = ";
   emitValue(op.getMemRef());
   for (auto index : op.getIndices()) {
@@ -1537,6 +1644,7 @@ void ModuleEmitter::emitBinary(Operation *op, const char *syntax) {
   auto rank = emitNestedLoopHead(op->getResult(0));
   indent();
   Value result = op->getResult(0);
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result, rank);
   os << " = ";
   emitValue(op->getOperand(0), rank);
@@ -1551,6 +1659,7 @@ void ModuleEmitter::emitUnary(Operation *op, const char *syntax) {
   auto rank = emitNestedLoopHead(op->getResult(0));
   indent();
   Value result = op->getResult(0);
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result, rank);
   os << " = " << syntax << "(";
   emitValue(op->getOperand(0), rank);
@@ -1577,6 +1686,7 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
   auto rank = emitNestedLoopHead(op->getResult(0));
   indent();
   Value result = op->getResult(0);
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result, rank);
   os << " = " << syntax << "(";
   emitValue(op->getOperand(0), rank);
@@ -1587,6 +1697,91 @@ void ModuleEmitter::emitMaxMin(Operation *op, const char *syntax) {
   emitNestedLoopTail(rank);
 }
 
+void ModuleEmitter::emitGetBit(adf::GetIntBitOp op) {
+  indent();
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  // generate ap_int types
+  os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
+  emitValue(op.getNum());
+  os << "_tmp = ";
+  emitValue(op.getNum());
+  os << ";\n";
+  // generate bit indexing
+  indent();
+  emitValue(result);
+  os << " = ";
+  emitValue(op.getNum());
+  os << "_tmp[";
+  emitValue(op.getIndex());
+  os << "];";
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitSetBit(adf::SetIntBitOp op) {
+  indent();
+  // generate ap_int types
+  os << "ap_int<" << op.getNum().getType().getIntOrFloatBitWidth() << "> ";
+  emitValue(op.getNum());
+  os << "_tmp = ";
+  emitValue(op.getNum());
+  os << ";\n";
+  // generate bit indexing
+  indent();
+  emitValue(op.getNum());
+  os << "_tmp[";
+  emitValue(op.getIndex());
+  os << "] = ";
+  emitValue(op.getVal());
+  os << ";";
+  // write back
+  indent();
+  emitValue(op.getResult());
+  os << " = ";
+  emitValue(op.getNum());
+  os << "_tmp;";
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitGetSlice(adf::GetIntSliceOp op) {
+  indent();
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
+  os << " = ";
+  emitValue(op.getNum());
+  os << "(";
+  emitValue(op.getHi());
+  os << ", ";
+  emitValue(op.getLo());
+  os << ");";
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitSetSlice(adf::SetIntSliceOp op) {
+  indent();
+  emitValue(op.getNum());
+  os << "(";
+  emitValue(op.getHi());
+  os << ", ";
+  emitValue(op.getLo());
+  os << ") = ";
+  emitValue(op.getVal());
+  os << ";";
+  emitInfoAndNewLine(op);
+}
+
+void ModuleEmitter::emitBitReverse(adf::BitReverseOp op) {
+  indent();
+  Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
+  emitValue(result);
+  os << " = ";
+  emitValue(op.getNum());
+  os << ".reverse();";
+  emitInfoAndNewLine(op);
+}
+
 void ModuleEmitter::emitSelect(arith::SelectOp op) {
   unsigned rank = emitNestedLoopHead(op.getResult());
   unsigned conditionRank = rank;
@@ -1594,15 +1789,18 @@ void ModuleEmitter::emitSelect(arith::SelectOp op) {
     conditionRank = 0;
   indent();
   Value result = op.getResult();
+  fixUnsignedType(result, op->hasAttr("unsigned"));
   emitValue(result, rank);
   os << " = ";
   emitValue(op.getCondition(), conditionRank);
   os << " ? ";
   Value true_val = op.getTrueValue();
+  fixUnsignedType(true_val, op->hasAttr("unsigned"));
   os << "(" << getTypeName(true_val) << ")";
   emitValue(true_val, rank);
   os << " : ";
   Value false_val = op.getFalseValue();
+  fixUnsignedType(false_val, op->hasAttr("unsigned"));
   os << "(" << getTypeName(false_val) << ")";
   emitValue(false_val, rank);
   os << ";";
@@ -1618,6 +1816,7 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
   if (auto denseAttr = dyn_cast<DenseElementsAttr>(op.getValue())) {
     indent();
     Value result = op.getResult(); // memref
+    fixUnsignedType(result, op->hasAttr("unsigned"));
     emitArrayDecl(result);
     os << " = {";
     auto type = op.getResult().getType().cast<ShapedType>().getElementType();
@@ -1917,8 +2116,8 @@ void ModuleEmitter::emitArrayDirectives(Value memref) {
       os << "#pragma HLS stream variable=";
       emitValue(memref);
       os << " depth=";
-      int semicolon_index = attr_str.find(";");
-      os << attr_str.substr(7, semicolon_index - 7);
+      int depth = std::stoi(attr_str.substr(6,7));
+      os << depth;
       os << "\n";
       // if the array is a FIFO, then it cannot be further partitioned
       // so directly return
@@ -2044,10 +2243,10 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
     os << "\n";
   }
 
-  // Emit other pragmas for function ports.
-  for (auto &port : portList)
-    if (port.getType().isa<MemRefType>())
-      emitArrayDirectives(port);
+  // // Emit other pragmas for function ports.
+  // for (auto &port : portList)
+  //   if (port.getType().isa<MemRefType>())
+  //     emitArrayDirectives(port);
 }
 
 void ModuleEmitter::emitKernelHeader(FuncOp func){
@@ -2183,6 +2382,14 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
          << calleeName.str() << ".cc\";\n";
       indent();
       os <<  "adf::runtime<ratio>(" << KName << ") = 1;\n" ;
+      if(!op->hasAttr("col, row"))
+        return;
+      auto arrayAttr = dyn_cast<ArrayAttr>(op->getAttr("col, row"));
+      auto col = dyn_cast<IntegerAttr>(arrayAttr[0]).getInt();
+      auto row = dyn_cast<IntegerAttr>(arrayAttr[1]).getInt();
+      indent();
+      os <<  "adf::location<kernel>(" << KName << ") = " << "adf::tile(" 
+         << std::to_string(col) << ", " << std::to_string(row) << ");\n";
       return;
     }
   });

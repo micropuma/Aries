@@ -61,11 +61,24 @@ private:
                         SmallVector<AffineForOp, 6> band, 
                         AffineParallelOp parallelOp){
     // The Arguments in the specified block is not a live-in variable
-    SmallVector<Value, 6> inputs(parallelOp.getBody()->getArguments());
+    SmallVector<Value, 6> liveins(parallelOp.getBody()->getArguments());
     auto liveness = Liveness(parallelOp);
     for (auto livein: liveness.getLiveIn(parallelOp.getBody()))
       if (!parallelOp->isProperAncestor(livein.getParentBlock()->getParentOp()))
+        liveins.push_back(livein);
+    
+    //reorder inputs to be correspond with the topfunc arguments
+    SmallVector<Value, 6> inputs;
+    for(auto arg : topFunc.getArguments()){
+      auto it = llvm::find(liveins,arg);
+      if(it != liveins.end())
+        inputs.push_back(arg);
+    }
+    for(auto livein : liveins){
+      auto it = llvm::find(inputs, livein);
+      if(it == inputs.end())
         inputs.push_back(livein);
+    }
 
     builder.setInsertionPoint(topFunc);
     // Define the KNL function with the detected inputs as arguments
@@ -89,13 +102,13 @@ private:
     outerPointLoop->moveBefore(returnOp);
 
     // Update the references in the newfunc after move
-    for (unsigned i = 0, num_arg = destBlock->getNumArguments(); 
-         i < num_arg; ++i) {
-        auto sourceArg = inputs[i];
-        auto destArg = destBlock->getArgument(i);
-        sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
-            return newfunc->isProperAncestor(use.getOwner());
-        });
+    auto argNum = destBlock->getNumArguments();
+    for (unsigned i = 0; i < argNum; ++i) {
+      auto sourceArg = inputs[i];
+      auto destArg = destBlock->getArgument(i);
+      sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
+          return newfunc->isProperAncestor(use.getOwner());
+      });
     }
   }
 

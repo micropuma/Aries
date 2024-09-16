@@ -55,12 +55,22 @@ private:
 
     SmallVector<AffineForOp, 6> band;
     getNestedLoopBand(cellOp.getBody(), band, true);
-    
+    SmallVector<Attribute, 3> tripCountList;
+    auto indexType = builder.getIndexType();
     //Start from the innermost loop
     for (auto loop: band) {
+      // Keep the tripCount info after unrolling
+      auto tripCount = getConstantTripCount(loop);
+      if(!tripCount.has_value())
+        return false;
+      auto tripCountVal = tripCount.value();
+      auto tripCountAttr = builder.getIntegerAttr(indexType, tripCountVal);
+      tripCountList.push_back(tripCountAttr);
+      
       if (loop->getAttr("flow")){
         auto annotateFn = [](unsigned i, Operation *op, OpBuilder builder) {
-          auto valueAttr = builder.getIntegerAttr(builder.getIndexType(),i);
+          auto indexType = builder.getIndexType();
+          auto valueAttr = builder.getIntegerAttr(indexType,i);
           if (auto dmaop = dyn_cast<DmaOp>(op)){
             if(auto attr = dmaop->getAttr("write"))
               dmaop->setAttr("write", valueAttr);
@@ -68,17 +78,57 @@ private:
               dmaop->setAttr("read", valueAttr);
           }
           else if (auto callop = dyn_cast<CallOp>(op)){
+            // Mark kernel in the reduction chain to modify the kernel interface 
             callop->setAttr("kernel", valueAttr);
+            // Mark each loop iteration info for placement
+            if(auto attr = callop->getAttr("ivs")){
+              auto arrayAttr = dyn_cast<ArrayAttr>(attr);
+              SmallVector<Attribute, 3> newAttrList;
+              for (auto oldAttr : arrayAttr){
+                newAttrList.push_back(oldAttr);
+              }
+              newAttrList.push_back(valueAttr);
+              auto newArrayAttr = builder.getArrayAttr(newAttrList);
+              callop->setAttr("ivs", newArrayAttr);
+            }else{
+              auto arrayAttr = builder.getArrayAttr({valueAttr});
+              callop->setAttr("ivs", arrayAttr);
+            }
           }
         };
-        if (failed(loopUnrollFull(loop,annotateFn)))
+        if (failed(loopUnrollFull(loop, annotateFn)))
           return false;
       }
       else {
-        if (failed(loopUnrollFull(loop)))
+        auto annotateFn = [](unsigned i, Operation *op, OpBuilder builder) {
+          auto indexType = builder.getIndexType();
+          auto valueAttr = builder.getIntegerAttr(indexType,i);
+          if (auto callop = dyn_cast<CallOp>(op)){
+            // Mark kernel in the reduction chain to modify the kernel interface 
+            // Mark each loop iteration info for placement
+            if(auto attr = callop->getAttr("ivs")){
+              auto arrayAttr = dyn_cast<ArrayAttr>(attr);
+              SmallVector<Attribute, 3> newAttrList;
+              for (auto oldAttr : arrayAttr){
+                newAttrList.push_back(oldAttr);
+              }
+              newAttrList.push_back(valueAttr);
+              auto newArrayAttr = builder.getArrayAttr(newAttrList);
+              callop->setAttr("ivs", newArrayAttr);
+            }else{
+              auto arrayAttr = builder.getArrayAttr({valueAttr});
+              callop->setAttr("ivs", arrayAttr);
+            }
+          }
+        };
+        if (failed(loopUnrollFull(loop, annotateFn)))
           return false;
       }
     }
+
+    // Mark the tripCount info for placement
+    auto arrayAttr = builder.getArrayAttr(tripCountList);
+    cellOp->setAttr("tripCount", arrayAttr);
 
     llvm::SmallVector<std::pair<StringRef, unsigned>, 4> calleeCounts;
     topFunc.walk([&](CallOp call){

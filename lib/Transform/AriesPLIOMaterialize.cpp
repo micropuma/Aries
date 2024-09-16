@@ -7,7 +7,9 @@
 #include "mlir/Dialect/Affine/Analysis/LoopAnalysis.h"
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/ADT/StringMap.h"
 #include "aries/Transform/Passes.h"
 #include "aries/Transform/Utils.h"
 #include "aries/Dialect/ADF/ADFDialect.h"
@@ -18,6 +20,7 @@ using namespace adf;
 using namespace mlir::memref;
 using namespace mlir::func;
 using namespace mlir::affine;
+using namespace mlir::arith;
 
 namespace {
 
@@ -28,6 +31,12 @@ public:
     StringRef topFuncName = "top_func";
   
     if (!IOMaterialize(mod,topFuncName))
+      signalPassFailure();
+
+    PassManager pm(&getContext());
+    pm.addPass(createCSEPass());
+    pm.addPass(createCanonicalizerPass());
+    if (failed(pm.run(mod)))
       signalPassFailure();
   }
 
@@ -50,11 +59,24 @@ private:
   void PLFuncCreation(OpBuilder builder, FuncOp topFunc, FuncOp& plFunc,
                       CallOp& callop, LauchCellOp lauchcell){
     auto loc = builder.getUnknownLoc();
-    SmallVector<Value> inputs;
+    SmallVector<Value> liveins;
     auto liveness = Liveness(lauchcell);
     for (auto livein: liveness.getLiveIn(&lauchcell.getBody().front()))
       if (!lauchcell->isProperAncestor(livein.getParentBlock()->getParentOp()))
+        liveins.push_back(livein);
+    
+    //reorder inputs to be correspond with the topfunc arguments
+    SmallVector<Value, 6> inputs;
+    for(auto arg : topFunc.getArguments()){
+      auto it = llvm::find(liveins,arg);
+      if(it != liveins.end())
+        inputs.push_back(arg);
+    }
+    for(auto livein : liveins){
+      auto it = llvm::find(inputs, livein);
+      if(it == inputs.end())
         inputs.push_back(livein);
+    }
 
     // Define the dma function with the detected inputs as arguments
     builder.setInsertionPoint(topFunc);
@@ -62,7 +84,6 @@ private:
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
     plFunc = builder.create<FuncOp>(builder.getUnknownLoc(),funcName,funcType);
     plFunc->setAttr("adf.pl",builder.getBoolAttr(true));
-    plFunc->setAttr("dataflow",builder.getUnitAttr());
     auto destBlock = plFunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
@@ -240,9 +261,9 @@ private:
     auto allocOp 
          = builder.create<AllocOp>(loc, MemRefType::get(bufSizes,
                                    type.getElementType(), AffineMap(),
-                                   (int)mlir::aries::adf::MemorySpace::L2));
+                                   (int)MemorySpace::L2));
     if(iopush)
-      allocOp->setAttr("buffer_type", builder.getStringAttr("bram_1p"));
+      allocOp->setAttr("buffer_type", builder.getStringAttr("bram_s2p"));
     else{
       allocOp->setAttr("buffer_type", builder.getStringAttr("uram_t2p"));
       allocOp->setAttr("init", builder.getUnitAttr());
@@ -270,8 +291,8 @@ private:
       builder.setInsertionPoint(outerloop);
     else
       builder.setInsertionPointAfter(outerloop);
+    // loopIndices is organized in a column-major, here change it to row-major
     auto orderedIndices = loopIndices;
-    llvm::sort(orderedIndices);
     for (auto loopIndex : orderedIndices){
       auto loop = band[loopIndex];
       auto newDMAForOp
@@ -385,13 +406,16 @@ private:
       auto d0 = builder.getAffineDimExpr(0);
       auto map = AffineMap::get(1, 0, d0 * sizeInt, builder.getContext());
       // Add ApplyOp for dma
-      auto loopIndex = loopIndices[i];
+      auto loopIndex = orderedIndices[i];
       auto loop = band[loopIndex];
       auto var = loop.getInductionVar();
       builder.setInsertionPoint(newInnerDMAYiled);
       auto newApplyopDMA = builder.create<AffineApplyOp>(loc, map, var);
       localOffsets.push_back(newApplyopDMA);
       // Add ApplyOp for IOPush/IOPop
+      loopIndex = loopIndices[i];
+      loop = band[loopIndex];
+      var = loop.getInductionVar();
       builder.setInsertionPoint(newInnerIOYiled);
       auto newApplyopIO = builder.create<AffineApplyOp>(loc, map, var);
       IOOffsets.push_back(newApplyopIO);
@@ -403,8 +427,10 @@ private:
       builder.create<DmaOp>(loc, src,      offsets,      sizes,      strides,
                              allocOp, localOffsets, localSizes, localStrides);
       builder.setInsertionPoint(newInnerIOYiled);
-      builder.create<IOPushOp>(loc, allocOp, IOOffsets, localSizes, 
-                               localStrides, dst);
+      auto pushOp = builder.create<IOPushOp>(loc, allocOp, IOOffsets, 
+                                             localSizes, localStrides, dst);
+      auto attr = iopushOp->getAttr("type");
+      pushOp->setAttr("type", attr);
     }else{
       // Create dma op to store data from L2 buffer to external mem
       // Replace IOPop: Receive data from L1 buffer to L2 buffer
@@ -414,6 +440,8 @@ private:
       builder.setInsertionPoint(newInnerIOYiled);
       auto popOp = builder.create<IOPopOp>(loc, src, allocOp, 
                                            IOOffsets, localSizes, localStrides);
+      auto attr = iopopOp->getAttr("type");
+      popOp->setAttr("type", attr);
       // check if there is output buffer reuse and set an Attr
       if (loopIndices.size()!=band.size())
         popOp->setAttr("reduction", builder.getUnitAttr());
@@ -453,7 +481,7 @@ private:
     for (unsigned i = 0; i < rank; i++) {
       auto oldOffset = offsets[i];
       auto definedOp = oldOffset.getDefiningOp();
-      if(!definedOp || dyn_cast<ConstantOp>(definedOp))
+      if(!definedOp || dyn_cast<arith::ConstantOp>(definedOp))
         continue;
       auto applyop = dyn_cast<AffineApplyOp>(definedOp);
       auto it = llvm::find(applyops, applyop);
@@ -469,6 +497,36 @@ private:
       });
     }
     return WalkResult::advance();
+  }
+
+  // Tranverse the IOPushOps/IOPopOps and allocate L2 buffers
+  bool AllocL2Buffer(OpBuilder builder, FuncOp plFunc, AffineForOp plForOp,
+                     SmallVector<AffineForOp, 6>& band){
+    unsigned loadIdx = 0;
+    unsigned storeIdx = 0;
+    unsigned sendIdx = 0;
+    unsigned receiveIdx = 0;
+    SmallVector<std::pair<Value, unsigned>, 4> loadSrcs;
+    SmallVector<std::pair<Value, unsigned>, 4> storeDsts;
+    auto flag = plForOp.walk([&](Operation* op){
+      WalkResult result;
+      if(dyn_cast<IOPushOp>(op))
+        result = IOProcesses(builder, plFunc, op, band, loadIdx, storeIdx,
+                             sendIdx, receiveIdx, loadSrcs, storeDsts, true);
+      else if(dyn_cast<IOPopOp>(op))
+        result = IOProcesses(builder, plFunc, op, band, loadIdx, storeIdx,
+                             sendIdx, receiveIdx, loadSrcs, storeDsts, false);
+      else
+        return WalkResult::advance();
+      return result;
+    });
+    if (flag == WalkResult::interrupt()) 
+      return false;
+
+    // After Processes IOPush/IOPop in the outerloop, safe to erase outerLoop
+    auto outerLoop = band[0];
+    outerLoop.erase();
+    return true;
   }
 
   // Convert adf.io.push/pop that moves data between memrefs and ios to 
@@ -498,10 +556,12 @@ private:
       sizes = iopopOp.getDstSizes();
       builder.setInsertionPoint(iopopOp);
     } // Create for loops for IOPush/Pop Ops
+    auto elementType = type.getElementType();
+    auto width = elementType.getIntOrFloatBitWidth();
     SmallVector<AffineForOp, 4> newIOLoops;
     auto rank = offsets.size();
-    auto indexType = builder.getIndexType();
-    auto oneAttr = builder.getIntegerAttr(indexType, 1);
+    auto idxType = builder.getIndexType();
+    auto oneAttr = builder.getIntegerAttr(idxType, 1);
     for(unsigned i = 0; i < rank; i++){
       auto size = sizes[i];
       auto constantSize = dyn_cast<arith::ConstantOp>(size.getDefiningOp());
@@ -537,16 +597,56 @@ private:
       builder.create<IOWriteOp>(loc, loadOp, dst);
       iopushOp.erase();
     }else{
-      auto result = builder.create<IOReadOp>(loc, type.getElementType(), src);
+      auto result = builder.create<IOReadOp>(loc, elementType, src);
       if(iopopOp->hasAttr("reduction")){
         auto loadOp = builder.create<AffineLoadOp>(loc, dst, newApplyopIOs);
-        Value addOp;
-        if (type.getElementType().isa<FloatType>())
-          addOp = builder.create<arith::AddFOp>(loc, loadOp, result);
-        else
-          addOp = builder.create<arith::AddIOp>(loc, loadOp, result);
-        builder.create<AffineStoreOp>(loc, addOp, dst, newApplyopIOs);
-      }else{
+        auto typeAttr = dyn_cast<TypeAttr>(iopopOp->getAttr("type"));
+        auto originType = typeAttr.getValue();
+        auto originWidth = originType.getIntOrFloatBitWidth();
+        auto newType = builder.getIntegerType(originWidth);
+        auto splitNum = (unsigned)(width/originWidth);
+        if(splitNum==1){
+          Value addOp;
+          if (elementType.isa<FloatType>())
+            addOp = builder.create<arith::AddFOp>(loc, loadOp, result);
+          else
+            addOp = builder.create<arith::AddIOp>(loc, loadOp, result);
+          builder.create<AffineStoreOp>(loc, addOp, dst, newApplyopIOs);
+        }else{
+          auto castL = builder.create<IntToAPInt>(loc, elementType, result);
+          auto castR = builder.create<IntToAPInt>(loc, elementType, loadOp);
+          auto zeroAttr = builder.getIntegerAttr(elementType, 0);
+          auto zeroVal
+               = builder.create<arith::ConstantOp>(loc, elementType, zeroAttr);
+          auto temp = builder.create<IntToAPInt>(loc, elementType, zeroVal);
+          for (unsigned i = 0; i < splitNum; i++){
+            auto hiAttr = builder.getIntegerAttr(idxType,originWidth*(i+1)-1);
+            auto hiVal= builder.create<arith::ConstantOp>(loc,idxType,hiAttr);
+            auto loAttr = builder.getIntegerAttr(idxType,originWidth*i);
+            auto loVal= builder.create<arith::ConstantOp>(loc,idxType,loAttr);
+            auto sliceL = builder.create<GetIntSliceOp>(loc, newType, castL,
+                                                        hiVal, loVal);
+            auto sliceR = builder.create<GetIntSliceOp>(loc, newType, castR,
+                                                        hiVal, loVal);
+            if(auto floatType = dyn_cast<FloatType>(originType)){                                       
+              auto castlhs = builder.create<BitcastOp>(loc, floatType, sliceL);                                            
+              auto castrhs = builder.create<BitcastOp>(loc, floatType, sliceR);
+              auto addOp = builder.create<arith::AddFOp>(loc, castlhs, castrhs);
+              auto castout = builder.create<BitcastOp>(loc, newType, addOp);
+              builder.create<SetIntSliceOp>(loc, temp, hiVal, loVal, castout);
+            }else if(auto intType = dyn_cast<IntegerType>(originType)){
+              auto addOp = builder.create<arith::AddIOp>(loc, sliceL, sliceR);
+              builder.create<SetIntSliceOp>(loc, temp, hiVal, loVal, addOp);
+            }else{
+              llvm::outs() << "Find IOPop marked by non-float/int type\n";
+              return WalkResult::interrupt();
+            }
+          }
+          auto castO = builder.create<APIntToInt>(loc, elementType, temp);
+          builder.create<AffineStoreOp>(loc, castO, dst, newApplyopIOs);
+        }
+      }
+      else{
         builder.create<AffineStoreOp>(loc, result, dst, newApplyopIOs);
       }
       iopopOp.erase();
@@ -653,8 +753,27 @@ private:
     return WalkResult::advance();
   }
 
+  // Tranverse the IOPushOps/IOPopOps and convert them to affine load/store
+  bool ConvertIODMAToAffine(OpBuilder builder, AffineForOp plForOp){
+    auto flag = plForOp.walk([&](Operation* op){
+      WalkResult result;
+      if(dyn_cast<IOPushOp>(op))
+        result = ConvertIOToAffine(builder, op, true);
+      else if(dyn_cast<IOPopOp>(op))
+        result = ConvertIOToAffine(builder, op, false);
+      else if(dyn_cast<DmaOp>(op))
+        result = ConvertDMAToAffine(builder, op);
+      else
+        return WalkResult::advance();
+      return result;
+    });
+    if (flag == WalkResult::interrupt()) 
+      return false;
+    return true;
+  }
+
   // Change direct L2 buffer access to read from/write to a stream
-  void L2BufferProcess(OpBuilder builder, FuncOp plFunc, AffineStoreOp storeOp,
+  void L2MemProcess(OpBuilder builder, FuncOp plFunc, AffineStoreOp storeOp,
                        AffineLoadOp loadOp, SmallVector<AffineForOp, 6> band, 
                        bool load){
     auto loc = builder.getUnknownLoc();
@@ -746,12 +865,11 @@ private:
     }else{
       auto newLoad = builder.create<AffineLoadOp>(loc, memref, indices);
       builder.create<AffineStoreOp>(loc, newLoad, allocOp, zeroValues);
-      // Then initialize local buffer with zero
+      // After data store back to L2, initialize local buffer with zero
       Value value;
       if (elementType.isa<IntegerType>()) {
-        auto intType = builder.getI32Type();
-        auto intAttr = builder.getIntegerAttr(intType, 0);
-        value = builder.create<arith::ConstantOp>(loc, intType, intAttr);
+        auto intAttr = builder.getIntegerAttr(elementType, 0);
+        value = builder.create<arith::ConstantOp>(loc, elementType, intAttr);
       }else{
         auto floatType = builder.getF32Type();
         auto floatAttr = builder.getF32FloatAttr(0.0);
@@ -783,188 +901,27 @@ private:
     }
   }
 
-  // Split the loops marked by "load,store,send,receive" and then merge them
-  // into the outmost tileBand by identify there attributes
-  void PLLoopSplit(OpBuilder builder, FuncOp plFunc, AffineForOp plForOp){
-    auto loc = builder.getUnknownLoc();
-    SmallVector<AffineForOp, 6> tileBand;
-    getNestedLoopBand(plFunc.getRegion(),tileBand);
-    auto outerTileBand = tileBand[0];
-    // Tranverse the forOps and group then by the attribute 
-    DenseMap<StringRef, SmallVector<unsigned, 4>> groups;
-    SmallVector<AffineForOp, 4> forOps;
-    unsigned index = 0;
-    for (auto forOp: llvm::make_early_inc_range(plForOp.getOps<AffineForOp>())){
-      if(auto Attr = forOp->getAttrOfType<IntegerAttr>("load")){
-        std::string str = "load" + std::to_string(Attr.getInt());
-        StringRef strRef(str);
-        groups[strRef].push_back(index++);
-        forOps.push_back(forOp);
-      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("store")){
-        std::string str = "store" + std::to_string(Attr.getInt());
-        StringRef strRef(str);
-        groups[strRef].push_back(index++);
-        forOps.push_back(forOp);
-      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("send")){
-        std::string str = "send" + std::to_string(Attr.getInt());
-        StringRef strRef(str);
-        groups[strRef].push_back(index++);
-        forOps.push_back(forOp);
-      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("receive")){
-        std::string str = "receive" + std::to_string(Attr.getInt());
-        StringRef strRef(str);
-        groups[strRef].push_back(index++);
-        forOps.push_back(forOp);
-      }
-    }
-    // Move the forOps with the same attribute to the same tileBand
-    for (const auto &group : groups) {
-      SmallVector<AffineForOp, 4> newForOps;
-      builder.setInsertionPoint(outerTileBand);
-      for (auto loop: tileBand){
-        auto newForOp 
-             = builder.create<AffineForOp>(loc,
-                                           loop.getLowerBoundOperands(),
-                                           loop.getLowerBoundMap(),
-                                           loop.getUpperBoundOperands(),
-                                           loop.getUpperBoundMap(),
-                                           loop.getStepAsInt());
-        newForOps.push_back(newForOp);
-        if(loop->hasAttr("Array_Partition"))
-          newForOp->setAttr("Array_Partition",builder.getUnitAttr());
-        if(loop->hasAttr("reduction"))
-          newForOp->setAttr("reduction",builder.getUnitAttr());
-        builder.setInsertionPointToStart(newForOp.getBody());
-      }
-      auto outerNewloop = newForOps[0];
-      auto innerNewLoop = newForOps[newForOps.size()-1];
-      auto innerNewYiled = innerNewLoop.getBody()->getTerminator();
-      unsigned cnt = 0;
-      for (unsigned idx : group.second) {
-        // Move the forOp to the new loop nests and set new Attrs
-        auto forOp = forOps[idx];
-        forOp->moveBefore(innerNewYiled);
-        auto indexType = builder.getIndexType();
-        auto newAttr = builder.getIntegerAttr(indexType, cnt++);
-        if(auto Attr = forOp->getAttr("load")){
-          outerNewloop->setAttr("load", Attr);
-          forOp->removeAttr("load");
-        }else if(auto Attr = forOp->getAttr("store")){
-          outerNewloop->setAttr("store", Attr);
-          forOp->removeAttr("store");
-          forOp->setAttr("hoist",builder.getUnitAttr());
-        }else if(auto Attr = forOp->getAttr("send")){
-          outerNewloop->setAttr("send", Attr);
-          forOp->removeAttr("send");
-          forOp->setAttr("module", newAttr);
-        }else if(auto Attr = forOp->getAttr("receive")){
-          outerNewloop->setAttr("receive", Attr);
-          forOp->removeAttr("receive");
-        }
-      }
-      // Update the loop variables
-      auto numVi = newForOps.size();
-      for (unsigned i = 0; i < numVi; ++i) {
-        auto oldvi = tileBand[i].getInductionVar();
-        auto newvi = newForOps[i].getInductionVar();
-        oldvi.replaceUsesWithIf(newvi,[&](OpOperand &use){
-            return innerNewLoop->isProperAncestor(use.getOwner());
-        });
-      }
-    }
-    outerTileBand.erase();
-  }
-
-  // Tranverse all the forOps marked by "load,store,send,receive" and split
-  // them into new functions marked by adf.pl
-  void PLFuncSplit(OpBuilder builder, FuncOp plFunc){
-    auto loc = builder.getUnknownLoc();
-    for (auto forOp: llvm::make_early_inc_range(plFunc.getOps<AffineForOp>())){
-      SmallVector<Operation*, 4> Ops;
-      SmallVector<Value> inputs(forOp.getOperands());
-      auto liveness = Liveness(forOp);
-      for (auto livein: liveness.getLiveIn(forOp.getBody()))
-        if (!forOp->isProperAncestor(livein.getParentBlock()->getParentOp())){
-          auto definedOp = livein.getDefiningOp();
-          if(definedOp){
-            if(auto allocOp = dyn_cast<AllocOp>(definedOp)){
-              auto type = dyn_cast<MemRefType>(livein.getType());
-              if(auto memorySpace = type.getMemorySpace()){
-                auto intAttr = dyn_cast<IntegerAttr>(memorySpace);
-                if(intAttr && intAttr.getInt() == (int)MemorySpace::L2){
-                  Ops.push_back(definedOp);
-                  continue;
-                }
-              }
-            }else if(auto constOp = dyn_cast<arith::ConstantOp>(definedOp)){
-              Ops.push_back(definedOp);
-              continue;
-            }
-          }
-          inputs.push_back(livein);
-        }
-      
-      builder.setInsertionPoint(plFunc);
-      std::string funcName;
-      if(auto Attr = forOp->getAttrOfType<IntegerAttr>("load")){
-        funcName = "load" + std::to_string(Attr.getInt());
-        forOp->removeAttr("load");
-      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("store")){
-        funcName = "store" + std::to_string(Attr.getInt());
-        forOp->removeAttr("store");
-      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("send")){
-        funcName = "send" + std::to_string(Attr.getInt());
-        forOp->removeAttr("send");
-      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("receive")){
-        funcName = "receive" + std::to_string(Attr.getInt());
-        forOp->removeAttr("receive");
-      }else{
-       continue; 
-      }
-      auto funcType = builder.getFunctionType(ValueRange(inputs),TypeRange({}));
-      auto newfunc = builder.create<FuncOp>(
-                                  builder.getUnknownLoc(), funcName, funcType);
-      newfunc->setAttr("adf.pl",builder.getUnitAttr());
-      newfunc->setAttr("inline",builder.getBoolAttr(false));
-      auto destBlock = newfunc.addEntryBlock();
-      builder.setInsertionPointToEnd(destBlock);
-      auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
-
-      // Move L2 buffer/Constant definition inside each function
-      builder.setInsertionPointToStart(destBlock);
-      SmallVector<Operation*, 4> newOps;
-      for(auto *op : Ops){
-        auto newOp = op->clone();
-        builder.insert(newOp);
-        newOps.push_back(newOp);
-      }
-
-      // Move the entire block of outerPointLoop before the returnOp
-      builder.setInsertionPointToEnd(destBlock);
-      forOp->moveBefore(returnOp);
-
-      // Create the function CallOp in plFunc
-      auto topReturnOp = plFunc.getBody().front().getTerminator();
-      builder.setInsertionPoint(topReturnOp);
-      builder.create<CallOp>(loc, newfunc, inputs);
-
-      // Update the references in the newfunc after move
-      auto numArg = destBlock->getNumArguments();
-      for (unsigned i = 0; i < numArg; ++i) {
-        auto sourceArg = inputs[i];
-        auto destArg = destBlock->getArgument(i);
-        sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
-            return newfunc->isProperAncestor(use.getOwner());
-        });
-      }
-      auto opSize = newOps.size();
-      for (unsigned i = 0; i < opSize; ++i) {
-        auto oldVal = Ops[i]->getResult(0);
-        auto newVal = newOps[i]->getResult(0);
-        oldVal.replaceUsesWithIf(newVal,[&](OpOperand &use){
-            return newfunc->isProperAncestor(use.getOwner());
-        });
-      }
+  // Tranverse all the outer point dma loops(involve L3 mem) and change the
+  // L2 buffer access with stream access
+  void L2MemProcessTop(OpBuilder builder, FuncOp plFunc, AffineForOp plForOp){
+    for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
+      if(!forOp->hasAttr("load") && !forOp->hasAttr("store"))
+        continue;
+      SmallVector<AffineForOp, 6> band;
+      getNestedLoops(band, forOp);
+      AffineApplyPerfectize(band);
+      auto outerLoop = band[0];
+      auto innerLoop = band[band.size()-1];
+      AffineStoreOp emptyStoreOp;
+      AffineLoadOp emptyLoadOp;
+      if(outerLoop->hasAttr("load"))
+        for (auto storeOp: 
+             llvm::make_early_inc_range(innerLoop.getOps<AffineStoreOp>()))
+          L2MemProcess(builder, plFunc, storeOp, emptyLoadOp, band, true);
+      else
+        for (auto loadOp: 
+             llvm::make_early_inc_range(innerLoop.getOps<AffineLoadOp>()))
+          L2MemProcess(builder, plFunc, emptyStoreOp, loadOp, band, false);
     }
   }
 
@@ -1035,6 +992,202 @@ private:
     plFunc.setType(builder.getFunctionType(inTypes, outTypes));
   }
 
+  // This function does the loop permutation for load/store from DDR->L2 mem
+  // in order to potential increase the burst length, the loops involved in
+  // the access of last dim should be put inside.
+  // TODO::This permutation is not safe, since it can not pass 
+  //       the interchange verification, need to figure it out why
+  bool loopPermutation(AffineForOp plForOp){
+    for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
+      if(!forOp->hasAttr("load") && !forOp->hasAttr("store"))
+        continue;
+      SmallVector<AffineForOp, 6> originBand;
+      getPerfectlyNestedLoops(originBand, forOp);
+      auto bandSize = originBand.size();
+      auto originInnerLoop = originBand[bandSize-1];
+      // Assume there is only memory access from/to L3
+      Value memref;
+      Operation* defineOp;
+      AffineApplyOp applyOp;
+      AffineMap map;
+      SmallVector<Value> operands;
+      for (auto& op: originInnerLoop.getBody()->getOperations()){
+        if (auto read = dyn_cast<AffineReadOpInterface>(op)) {
+          defineOp = read.getMapOperands().back().getDefiningOp();
+          memref = read.getMemRef();
+        }else if (auto write = dyn_cast<AffineWriteOpInterface>(op)){
+          defineOp = write.getMapOperands().back().getDefiningOp();
+          memref = write.getMemRef();
+        }else{
+          continue;
+        }
+        if(!defineOp || !dyn_cast<AffineApplyOp>(defineOp))
+          return true;
+        auto applyOp = dyn_cast<AffineApplyOp>(defineOp);
+        auto type = dyn_cast<MemRefType>(memref.getType());
+        if(auto memSpace = type.getMemorySpace()){
+          auto intSpace = dyn_cast<IntegerAttr>(memSpace);
+          if(intSpace && intSpace.getInt()==(int)MemorySpace::L3){
+            map = applyOp.getAffineMap();
+            operands = applyOp.getOperands();
+            break;
+          }
+        }else{//If no memSpace then default is L3 mem
+          map = applyOp.getAffineMap();
+          operands = applyOp.getOperands();
+          break;
+        }
+      }
+      if(!map)
+        return false;
+      auto lastExpr = map.getResults().back();
+      // flattened form [dims, symbols, locals, constant]
+      llvm::SmallVector<int64_t> flattenedExpr;
+      if (failed(getFlattenedAffineExpr(lastExpr, map.getNumDims(),
+                                        map.getNumSymbols(),
+                                        &flattenedExpr)))
+        return false;
+      auto mapSize = map.getNumDims();
+      SmallVector<std::pair<unsigned, int64_t>> outerLoops;
+      SmallVector<std::pair<unsigned, int64_t>> innerLoops;
+      for (unsigned i = 0; i < mapSize; ++i) {
+        auto loop = getForInductionVarOwner(operands[i]);
+        if (!loop)
+          continue;
+        auto it = llvm::find(originBand, loop);
+        if(it!=originBand.end()){
+          auto coeff = flattenedExpr[i];
+          unsigned depth = llvm::find(originBand, loop) - originBand.begin();
+          innerLoops.push_back(std::pair(depth, coeff));
+        }
+      }
+      for(unsigned i = 0; i<bandSize; i++){
+        auto it 
+        = llvm::find_if(innerLoops, [i](const std::pair<unsigned, int64_t> &p) {
+          return p.first == i;
+        });
+        if(it != innerLoops.end())
+          continue;
+        outerLoops.push_back(std::pair(i, 0));
+      }
+      // OuterLoops sort depth by ascending order
+      // InnerLoops sort coeff by ascending order
+      llvm::sort(outerLoops, [](const std::pair<unsigned, int64_t> &a, 
+                                const std::pair<unsigned, int64_t> &b){
+        return a.first < b.first;
+      });
+      llvm::sort(innerLoops, [](const std::pair<unsigned, int64_t> &a, 
+                                const std::pair<unsigned, int64_t> &b){
+        return a.second > b.second;
+      });
+      // Merge the depth of OuterLoops and InnerLoops
+      SmallVector<unsigned, 6> permMap;
+      for (auto pair : outerLoops)
+        permMap.push_back(pair.first);
+      for (auto pair : innerLoops)
+        permMap.push_back(pair.first);
+      // TODO::This permutation is not safe, since it can not pass 
+      //       the interchange verification, need to figure it out why
+      //if (isValidLoopInterchangePermutation(originBand, permMap))
+      permuteLoops(originBand, permMap);
+    }
+    return true;
+  }
+
+  // Split the loops marked by "load,store,send,receive" and then merge them
+  // into the outmost tileBand by identify there attributes
+  void PLLoopSplit(OpBuilder builder, FuncOp plFunc, AffineForOp plForOp){
+    auto loc = builder.getUnknownLoc();
+    SmallVector<AffineForOp, 6> tileBand;
+    getNestedLoopBand(plFunc.getRegion(),tileBand);
+    auto outerTileBand = tileBand[0];
+    // Tranverse the forOps and group then by the attribute 
+    llvm::StringMap<SmallVector<unsigned, 4>> groups;
+    SmallVector<AffineForOp, 4> forOps;
+    unsigned index = 0;
+    for (auto forOp: llvm::make_early_inc_range(plForOp.getOps<AffineForOp>())){
+      if(auto Attr = forOp->getAttrOfType<IntegerAttr>("load")){
+        std::string str = "load" + std::to_string(Attr.getInt());
+        StringRef strRef(str);
+        groups[strRef].push_back(index++);
+        forOps.push_back(forOp);
+      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("store")){
+        std::string str = "store" + std::to_string(Attr.getInt());
+        StringRef strRef(str);
+        groups[strRef].push_back(index++);
+        forOps.push_back(forOp);
+      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("send")){
+        std::string str = "send" + std::to_string(Attr.getInt());
+        StringRef strRef(str);
+        groups[strRef].push_back(index++);
+        forOps.push_back(forOp);
+      }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("receive")){
+        std::string str = "receive" + std::to_string(Attr.getInt());
+        StringRef strRef(str);
+        groups[strRef].push_back(index++);
+        forOps.push_back(forOp);
+      }
+    }
+    // Move the forOps with the same attribute to the same tileBand
+    for (const auto &group : groups) {
+      SmallVector<AffineForOp, 4> newForOps;
+      builder.setInsertionPoint(outerTileBand);
+      for (auto loop: tileBand){
+        auto newForOp 
+             = builder.create<AffineForOp>(loc,
+                                           loop.getLowerBoundOperands(),
+                                           loop.getLowerBoundMap(),
+                                           loop.getUpperBoundOperands(),
+                                           loop.getUpperBoundMap(),
+                                           loop.getStepAsInt());
+        newForOps.push_back(newForOp);
+        if(loop->hasAttr("Array_Partition"))
+          newForOp->setAttr("Array_Partition",builder.getUnitAttr());
+        if(loop->hasAttr("reduction"))
+          newForOp->setAttr("reduction",builder.getUnitAttr());
+        builder.setInsertionPointToStart(newForOp.getBody());
+      }
+      auto outerNewloop = newForOps[0];
+      auto innerNewLoop = newForOps[newForOps.size()-1];
+      auto innerNewYiled = innerNewLoop.getBody()->getTerminator();
+      unsigned cnt = 0;
+      for (unsigned idx : group.second) {
+        // Move the forOp to the new loop nests and set new Attrs
+        auto forOp = forOps[idx];
+        forOp->moveBefore(innerNewYiled);
+        auto indexType = builder.getIndexType();
+        auto newAttr = builder.getIntegerAttr(indexType, cnt++);
+        if(auto Attr = forOp->getAttr("load")){
+          outerNewloop->setAttr("load", Attr);
+          forOp->removeAttr("load");
+          forOp->setAttr("merge", builder.getUnitAttr());
+        }else if(auto Attr = forOp->getAttr("store")){
+          outerNewloop->setAttr("store", Attr);
+          forOp->removeAttr("store");
+          forOp->setAttr("merge", builder.getUnitAttr());
+          forOp->setAttr("hoist",builder.getUnitAttr());
+        }else if(auto Attr = forOp->getAttr("send")){
+          outerNewloop->setAttr("send", Attr);
+          forOp->removeAttr("send");
+          forOp->setAttr("module", newAttr);
+        }else if(auto Attr = forOp->getAttr("receive")){
+          outerNewloop->setAttr("receive", Attr);
+          forOp->removeAttr("receive");
+        }
+      }
+      // Update the loop variables
+      auto numVi = newForOps.size();
+      for (unsigned i = 0; i < numVi; ++i) {
+        auto oldvi = tileBand[i].getInductionVar();
+        auto newvi = newForOps[i].getInductionVar();
+        oldvi.replaceUsesWithIf(newvi,[&](OpOperand &use){
+            return innerNewLoop->isProperAncestor(use.getOwner());
+        });
+      }
+    }
+    outerTileBand.erase();
+  }
+
   // Allocate L2 memory & add data movement
   bool PLDataMovement(OpBuilder builder, FuncOp topFunc, FuncOp plFunc, 
                       CallOp& callop){
@@ -1057,34 +1210,11 @@ private:
     pm.addPass(createSimplifyAffineStructuresPass());
     (void)pm.run(plFunc);
 
-    // Tranverse the IOPushOps/IOPopOps and allocate L2 buffers
-    unsigned loadIdx = 0;
-    unsigned storeIdx = 0;
-    unsigned sendIdx = 0;
-    unsigned receiveIdx = 0;
-    SmallVector<std::pair<Value, unsigned>, 4> loadSrcs;
-    SmallVector<std::pair<Value, unsigned>, 4> storeDsts;
-    auto flag = plForOp.walk([&](Operation* op){
-      WalkResult result;
-      if(dyn_cast<IOPushOp>(op))
-        result = IOProcesses(builder, plFunc, op, band, loadIdx, storeIdx,
-                             sendIdx, receiveIdx, loadSrcs, storeDsts, true);
-      else if(dyn_cast<IOPopOp>(op))
-        result = IOProcesses(builder, plFunc, op, band, loadIdx, storeIdx,
-                             sendIdx, receiveIdx, loadSrcs, storeDsts, false);
-      else
-        return WalkResult::advance();
-      return result;
-    });
-    if (flag == WalkResult::interrupt()) 
+    if(!AllocL2Buffer(builder, plFunc, plForOp, band))
       return false;
 
-    // After Processes IOPush/IOPop in the outerloop, safe to erase outerLoop
-    auto outerLoop = band[0];
-    outerLoop.erase();
-
     // Tranverse the IOPushOps/IOPopOps and convert them to affine load/store
-    flag = plForOp.walk([&](Operation* op){
+    auto flag = plForOp.walk([&](Operation* op){
       WalkResult result;
       if(dyn_cast<IOPushOp>(op))
         result = ConvertIOToAffine(builder, op, true);
@@ -1101,122 +1231,22 @@ private:
 
     // Replace arguments with PLIOType by memref arguments
     ArgUpdate(builder, topFunc, plFunc, callop);
-
     // Simplify the loop structure after ConvertToAffine.
     // There won't be any nested affine.apply ops
     pm.addPass(createSimplifyAffineStructuresPass());
     (void)pm.run(plFunc);
+    // Permute loops in order to potentially increase the burst length
+    if(!loopPermutation(plForOp))
+      return false;
+    
     // Tranverse all the outer point dma loops(involve L3 mem) and change the
     // L2 buffer access with stream access
-    for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
-      if(!forOp->hasAttr("load") && !forOp->hasAttr("store"))
-        continue;
-      SmallVector<AffineForOp, 6> band;
-      getNestedLoops(band, forOp);
-      AffineApplyPerfectize(band);
-      auto outerLoop = band[0];
-      auto innerLoop = band[band.size()-1];
-      AffineStoreOp emptyStoreOp;
-      AffineLoadOp emptyLoadOp;
-      if(outerLoop->hasAttr("load"))
-        for (auto storeOp: 
-             llvm::make_early_inc_range(innerLoop.getOps<AffineStoreOp>()))
-          L2BufferProcess(builder, plFunc, storeOp, emptyLoadOp, band, true);
-      else
-        for (auto loadOp: 
-             llvm::make_early_inc_range(innerLoop.getOps<AffineLoadOp>()))
-          L2BufferProcess(builder, plFunc, emptyStoreOp, loadOp, band, false);
-    }
+    L2MemProcessTop(builder, plFunc, plForOp);
 
     // Post processes, move each loop marked by "load,store,receive,send" to the
     // outermost temporal tileBand 
     PLLoopSplit(builder, plFunc, plForOp);
-
-    // For each loop, create with a func marked by adf.pl
-    PLFuncSplit(builder, plFunc);
     return true;
-  }
-
-  // Hoist the loops beyond loops marked by reduction, 
-  // this is to implement the output stationary dataflow
-  // If has reduction, then need to initialize L2 buffer marked by init
-  void hoistBufferStore(ModuleOp mod, OpBuilder builder){
-    auto loc = builder.getUnknownLoc();
-    mod.walk([&](FuncOp func){
-      AffineForOp plforOp; 
-      func.walk([&](AffineForOp op){
-        if(op->hasAttr("Array_Partition")){
-          plforOp = op;
-          return WalkResult::interrupt();
-        }
-        return WalkResult::advance();
-      });
-      if(!func->hasAttr("adf.pl") || !plforOp)
-        return WalkResult::advance();
-      SmallVector<AffineForOp, 6> tileBand;
-      getLoopBandFromInnermost(plforOp, tileBand);
-      auto innerloop = tileBand[tileBand.size()-1];
-      auto reverseBand = tileBand;
-      std::reverse(reverseBand.begin(), reverseBand.end());
-      // Check forOps marked by hoist
-      SmallVector<AffineForOp, 2> forOps;
-      for(auto forOp : innerloop.getOps<AffineForOp>())
-        if(forOp->hasAttr("hoist"))
-          forOps.push_back(forOp);
-      if(!forOps.size())
-        return WalkResult::advance();
-      // Check and find the outmost reduction loop
-      AffineForOp finalLoop;
-      unsigned index = 0;
-      unsigned indexRed = 0;
-      for(auto loop : reverseBand){
-        if(loop->hasAttr("reduction")){
-          finalLoop = loop;
-          if(index>indexRed)
-            assert("Detected loop doesn't support output stationary");
-          indexRed++;
-        }
-        index++;
-      }
-      for(auto forOp : forOps)
-        forOp->moveAfter(finalLoop);
-      // Initialize output buffer as zero
-      for(auto alloc : func.getOps<AllocOp>()){
-        if(alloc->hasAttr("init")){
-          alloc->removeAttr("init");
-          auto memref = alloc.getResult();
-          auto type = dyn_cast<MemRefType>(memref.getType());
-          auto eleType = type.getElementType();
-          auto rank = type.getRank();
-          SmallVector<Value> sizes;
-          SmallVector<AffineForOp, 4> newLoops;
-          builder.setInsertionPointAfter(alloc);
-          SmallVector<Value, 4> ivs;
-          for(unsigned i = 0; i < rank; i++){
-            auto size = type.getDimSize(i);
-            auto newForOp = builder.create<AffineForOp>(loc, 0, size, 1);
-            newLoops.push_back(newForOp);
-            ivs.push_back(newForOp.getInductionVar());
-            builder.setInsertionPointToStart(newForOp.getBody());
-          }
-          auto newInnerLoop = newLoops[newLoops.size()-1];
-          auto newInnerYiled = newInnerLoop.getBody()->getTerminator();
-          builder.setInsertionPoint(newInnerYiled);
-          Value value;
-          if (eleType.isa<IntegerType>()) {
-            auto intType = builder.getI32Type();
-            auto zeroAttr = builder.getIntegerAttr(intType, 0);
-            value = builder.create<arith::ConstantOp>(loc, intType, zeroAttr);
-          }else{
-            auto floatType = builder.getF32Type();
-            auto floatAttr = builder.getF32FloatAttr(0.0);
-            value = builder.create<arith::ConstantOp>(loc, floatType, floatAttr);
-          }
-          builder.create<AffineStoreOp>(loc, value, memref, ivs);
-        }
-      }
-      return WalkResult::advance();
-    });
   }
 
   // Move the collected adf.cell to adf.cell.launch
@@ -1252,7 +1282,6 @@ private:
       PLFuncCreation(builder, topFunc, plFunc, callop, lauchcell);
       if(!PLDataMovement(builder, topFunc, plFunc, callop))
         return false;
-      hoistBufferStore(mod, builder);
       Postprocess(builder, lauchcell, calls);
     }
     return true;
