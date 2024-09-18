@@ -23,9 +23,11 @@ public:
 
 private:
   bool compareAttributes(Operation *op0, Operation *op1) {
-    for (auto attr : op0->getAttrs()) {
-      auto attr2 = op1->getAttr(attr.getName());
-      if (!attr2 || attr.getValue() != attr2) {
+    for (auto attr0 : op0->getAttrs()) {
+      auto attr1 = op1->getAttr(attr0.getName());
+      if(attr1 && attr0.getName() == "sym_name")
+        continue;
+      if (!attr1 || attr0.getValue() != attr1) {
         return false;
       }
     }
@@ -38,14 +40,12 @@ private:
       return false;
     if (op0->getNumResults() != op1->getNumResults())
       return false;
-    for (unsigned i = 0; i < op0->getNumOperands(); ++i) {
+    for (unsigned i = 0; i < op0->getNumOperands(); ++i)
       if (op0->getOperand(i).getType() != op1->getOperand(i).getType())
         return false;
-    }
-    for (unsigned i = 0; i < op0->getNumResults(); ++i) {
+    for (unsigned i = 0; i < op0->getNumResults(); ++i)
       if (op0->getResult(i).getType() != op1->getResult(i).getType())
         return false;
-    }
     if (!compareAttributes(op0, op1))
       return false;
     return true;
@@ -132,28 +132,18 @@ private:
   bool compareFunctions(FuncOp func0, FuncOp func1) {
     if (func0.getFunctionType() != func1.getFunctionType())
       return false;
-    if (func0.getBody().getBlocks().size() != 
-        func1.getBody().getBlocks().size())
-      return false;
+    SmallVector<Operation *> opsFunc0, opsFunc1;
+    func0.walk([&](Operation *op) { opsFunc0.push_back(op); });
+    func1.walk([&](Operation *op) { opsFunc1.push_back(op); });
     
-
-    for (auto blockPair : llvm::zip(func0.getBody().getBlocks(),
-                                    func1.getBody().getBlocks())) {
-      Block &block0 = std::get<0>(blockPair);
-      Block &block1 = std::get<1>(blockPair);
-
-      if (block0.getOperations().size() != block1.getOperations().size())
-        return false;
-
-      for (auto opPair : llvm::zip(block0, block1)) {
-        Operation& op0 = std::get<0>(opPair);
-        Operation& op1 = std::get<1>(opPair);
-        if(dyn_cast<arith::ConstantOp>(op0) && dyn_cast<arith::ConstantOp>(op1))
-          continue;
-        // Compare the operations
-        if (!compareOperations(&op0, &op1))
-          return false;
+    if (opsFunc0.size() != opsFunc1.size())
+      return false;
+    for (auto [op0, op1] : llvm::zip(opsFunc0, opsFunc1)) {
+      if(dyn_cast<arith::ConstantOp>(op0) && dyn_cast<arith::ConstantOp>(op1)){
+        continue;
       }
+      if (!compareOperations(op0, op1))
+        return false;
     }
     return true;
   }
@@ -167,9 +157,7 @@ private:
         for(auto newFunc : group){
           if(func == newFunc)
             continue;
-          llvm::outs() << "Pairing " << func.getName() << ", with " << newFunc.getName() << "\n";
           if(compareFunctions(func, newFunc)){
-            llvm::outs() << "Find src func: " << func.getName() << ", dst func " << newFunc.getName() << "\n";
             group.push_back(func);
             grouped = true;
             break;
