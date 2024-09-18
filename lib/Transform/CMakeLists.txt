@@ -20,7 +20,7 @@ add_mlir_library(MLIRAriesPasses
     AriesPLDataflow.cpp
     AriesPLDoubleBuffer.cpp
     AriesBurstDetection.cpp
-    AriesADFTest.cpp
+    AriesFuncEliminate.cpp
     AriesFileSplit.cpp
     Passes.cpp
     Utils.cpp

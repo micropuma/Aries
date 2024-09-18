@@ -130,7 +130,7 @@ std::unique_ptr<Pass> createAriesAXIPackingPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesPLDataflowPass();
 std::unique_ptr<Pass> createAriesPLDoubleBufferPass();
 std::unique_ptr<Pass> createAriesBurstDetectionPass();
-std::unique_ptr<Pass> createAriesADFTestPass();
+std::unique_ptr<Pass> createAriesFuncEliminatePass();
 std::unique_ptr<Pass> createAriesFileSplitPass();
 std::unique_ptr<Pass> createAriesFileSplitPass(const AriesOptions &opts);
 

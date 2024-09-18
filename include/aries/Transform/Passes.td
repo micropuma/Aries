@@ -235,10 +235,9 @@ def AriesBurstDetection : Pass<"aries-burst-detection"> {
   let dependentDialects = ["mlir::scf::SCFDialect"];
 }
 
-def AriesADFTest : Pass<"aries-adf-test"> {
-  let summary = "Test ADF Dialect Ops";
-  let constructor = "mlir::aries::createAriesADFTestPass()";
-  let dependentDialects = ["mlir::aries::adf::ADFDialect"];
+def AriesFuncEliminate : Pass<"aries-func-eliminate"> {
+  let summary = "Merge func.func with same functionality together";
+  let constructor = "mlir::aries::createAriesFuncEliminatePass()";
 }
 
 // This is just a helper function for translation

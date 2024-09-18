@@ -42,7 +42,7 @@ void mlir::aries::registerAriesPassPipeline() {
     pm.addPass(createAriesPLDataflowPass());
     pm.addPass(createAriesPLDoubleBufferPass());
     pm.addPass(createAriesBurstDetectionPass());
-    pm.addPass(createAriesADFTestPass());
+    pm.addPass(createAriesFuncEliminatePass());
     pm.addPass(createAriesFileSplitPass(opts));
   });
 }
