@@ -995,7 +995,13 @@ void ModuleEmitter::emitCall(func::CallOp op) {
 
   // Emit the function call.
   indent();
-  os << op.getCallee() << "(";
+  os << op.getCallee(); 
+  
+  if(auto attr = op->getAttr("template"))
+    if(auto intAttr = dyn_cast<IntegerAttr>(attr))
+      os << "<" << intAttr.getInt() << ">";
+
+  os << "(";
 
   // Handle input arguments.
   unsigned argIdx = 0;
@@ -2407,6 +2413,8 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
 void ModuleEmitter::emitHLSFunction(func::FuncOp func){
   if (func.getBlocks().size() != 1)
     func->emitError("has zero or more than one basic blocks.");
+  if(func->hasAttr("template"))
+    os << "template<int NC>\n";
 
   os << "void " << func.getName() << "(\n";
   addIndent();

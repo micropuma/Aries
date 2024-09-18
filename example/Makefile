@@ -47,7 +47,7 @@ fileCreate:
 copyFile:
 	cp -r template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
 
-test: burstDetect
+test: doublebuffer
 
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
@@ -143,19 +143,24 @@ ${PROJECT_PATH}/17_${FUNC}.pldataflow.mlir: ${PROJECT_PATH}/16_${FUNC}.axipackin
 			-aries-pl-dataflow \
 			-canonicalize -cse
 
-doublebuffer: ${PROJECT_PATH}/18_${FUNC}.doublebuffer.mlir
-${PROJECT_PATH}/18_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/17_${FUNC}.pldataflow.mlir
+burstDetect: ${PROJECT_PATH}/18_${FUNC}.burstdetect.mlir
+${PROJECT_PATH}/18_${FUNC}.burstdetect.mlir: ${PROJECT_PATH}/17_${FUNC}.pldataflow.mlir
 	aries-opt -o $@ $< \
-			-aries-pl-double-buffer
+			-aries-burst-detection
 
-burstDetect: ${PROJECT_PATH}/19_${FUNC}.burstdetect.mlir
-${PROJECT_PATH}/19_${FUNC}.burstdetect.mlir: ${PROJECT_PATH}/18_${FUNC}.doublebuffer.mlir
+funcEliminate: ${PROJECT_PATH}/19_${FUNC}.funcEliminate.mlir
+${PROJECT_PATH}/19_${FUNC}.funcEliminate.mlir: ${PROJECT_PATH}/18_${FUNC}.burstdetect.mlir
 	aries-opt -o $@ $< \
-			-aries-burst-detection \
+			-aries-func-eliminate
+
+doublebuffer: ${PROJECT_PATH}/20_${FUNC}.doublebuffer.mlir
+${PROJECT_PATH}/20_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/19_${FUNC}.funcEliminate.mlir
+	aries-opt -o $@ $< \
+			-aries-pl-double-buffer \
 			-canonicalize -cse
 
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
-${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/19_${FUNC}.doublebuffer.mlir
+${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/20_${FUNC}.doublebuffer.mlir
 	aries-translate -o $@ $< \
 		-emit-aries-kernels
 
@@ -183,8 +188,9 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-axi-packing="axi-width=${AXIWidth}" \
 			-aries-pl-dataflow \
 			-canonicalize -cse \
-			-aries-pl-double-buffer \
 			-aries-burst-detection \
+			-aries-func-eliminate  \
+			-aries-pl-double-buffer\
 			-canonicalize -cse
 
 translate: file_split kernel_file_split clean_kernel_vec

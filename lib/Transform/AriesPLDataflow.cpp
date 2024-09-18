@@ -62,7 +62,7 @@ private:
       
       builder.setInsertionPoint(plFunc);
       std::string funcName;
-      bool flag = false;
+      std::string funcAttr;
       if(auto Attr = forOp->getAttrOfType<IntegerAttr>("load")){
         if(auto cntAttr = forOp->getAttrOfType<IntegerAttr>("func")){
           funcName = "load" + std::to_string(Attr.getInt()) + "_" 
@@ -72,7 +72,7 @@ private:
           funcName = "load" + std::to_string(Attr.getInt());
         }
         forOp->removeAttr("load");
-        flag = true;
+        funcAttr = "load";
       }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("store")){
         if(auto cntAttr = forOp->getAttrOfType<IntegerAttr>("func")){
           funcName = "store" + std::to_string(Attr.getInt()) + "_" 
@@ -82,13 +82,15 @@ private:
           funcName = "store" + std::to_string(Attr.getInt());
         }
         forOp->removeAttr("store");
-        flag = true;
+        funcAttr = "store";
       }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("send")){
         funcName = "send" + std::to_string(Attr.getInt());
+        funcAttr = "send";
         forOp->removeAttr("send");
       }else if(auto Attr = forOp->getAttrOfType<IntegerAttr>("receive")){
         funcName = "receive" + std::to_string(Attr.getInt());
         forOp->removeAttr("receive");
+        funcAttr = "receive";
       }else{
        continue; 
       }
@@ -97,9 +99,7 @@ private:
                                   builder.getUnknownLoc(), funcName, funcType);
       newfunc->setAttr("adf.pl",builder.getUnitAttr());
       newfunc->setAttr("inline",builder.getBoolAttr(false));
-      if(flag){
-        newfunc->setAttr("L3", builder.getUnitAttr());
-      }
+      newfunc->setAttr(funcAttr, builder.getUnitAttr());
       auto destBlock = newfunc.addEntryBlock();
       builder.setInsertionPointToEnd(destBlock);
       auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
