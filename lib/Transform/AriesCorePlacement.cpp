@@ -226,14 +226,8 @@ private:
       unsigned pid = remi + kSize * height + quot * KSize * height;
       unsigned col = colStart + std::floor(pid / (float)height);
       unsigned row = rowStart + pid % height;
-      if((col > colNum-1) || (row > rowNum-1)){
-        llvm::outs() << "(coreNum, colWidth, colOffset) : " << coreNum << ", " << colWidth << ", " << colOffset << "\n";
-        llvm::outs() << "(KSize, JSize, ISize) : " << KSize << ", " << JSize << ", " << ISize << "\n";
-        llvm::outs() << "(kSize, jSize, iSize) : " << kSize << ", " << jSize << ", " << iSize << "\n";
-        llvm::outs() << "(rowIndex, remi, quot, flag) : " << rowIndex << ", " << remi << ", " << quot << ", " << flag << "\n";
-        llvm::outs() << "(pid, col, row, height) : " << pid << ", " << col << ", " << row << ", " << height << "\n";
+      if((col > colNum-1) || (row > rowNum-1))
         return false;
-      }
       auto colAttr = builder.getIntegerAttr(indexType, col);
       auto rowAttr = builder.getIntegerAttr(indexType, row);
       auto arrayAttr = builder.getArrayAttr({colAttr, rowAttr});
