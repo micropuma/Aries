@@ -42,7 +42,7 @@ private:
   // pid =  (3d cell -> 1d serialization)
   // Height = The number of rows utilized in this placement
   // col = pid % Height
-  // row = ceil (pid/Height)
+  // row = floor (pid/Height)
 
   // In this algorithm, the reduction dim is consecutive vertically
   bool placementNaive0(OpBuilder builder, CellOp cellOp, 
@@ -70,10 +70,10 @@ private:
       }
     }
     unsigned coreNum = KSize * JSize * ISize;
-    unsigned colWidth = std::ceil(coreNum/height);
+    unsigned colWidth = std::ceil(coreNum/(float)height);
     if(colWidth > colNum)
       return false;
-    unsigned colStart = std::floor((colNum - colWidth) / 2) + colOffset;
+    unsigned colStart = std::floor((colNum - colWidth) / 2.0) + colOffset;
 
     for (auto callOp : cellOp.getOps<CallOp>()){
       if(!callOp->hasAttr("adf.kernel"))
@@ -127,14 +127,14 @@ private:
       }
       if(flag == 2 || flag ==3){
         unsigned remi = index % height;
-        unsigned quot = std::floor(index / height);
+        unsigned quot = std::floor(index / (float)height);
         if(quot%2==0){
           pid = quot * height + remi;
         }else{
           pid = quot * height + (height-1) - remi;
         }
       }
-      unsigned col = colStart + std::ceil(pid / height);
+      unsigned col = colStart + std::floor(pid / (float)height);
       unsigned row = rowStart + pid % height;
       if((col > colNum-1) || (row > rowNum-1))
         return false;
@@ -170,11 +170,11 @@ private:
       else
         height = std::min(ISize, rowNum);
     }
-    unsigned coreNum = KSize * JSize * ISize;
-    unsigned colWidth = std::ceil(coreNum/height);
+    unsigned coreNum = JSize * ISize;
+    unsigned colWidth = std::ceil(coreNum/(float)height) * KSize;
     if(colWidth > colNum)
       return false;
-    unsigned colStart = std::floor((colNum - colWidth) / 2) + colOffset;
+    unsigned colStart = std::floor((colNum - colWidth) / 2.0) + colOffset;
 
     for (auto callOp : cellOp.getOps<CallOp>()){
       if(!callOp->hasAttr("adf.kernel"))
@@ -222,12 +222,18 @@ private:
       else if(flag==0)
         rowIndex = iSize + jSize * ISize;
       unsigned remi = rowIndex % height;
-      unsigned quot = std::floor(rowIndex / height);
+      unsigned quot = std::floor(rowIndex / (float)height);
       unsigned pid = remi + kSize * height + quot * KSize * height;
-      unsigned col = colStart + std::ceil(pid / height);
+      unsigned col = colStart + std::floor(pid / (float)height);
       unsigned row = rowStart + pid % height;
-      if((col > colNum-1) || (row > rowNum-1))
+      if((col > colNum-1) || (row > rowNum-1)){
+        llvm::outs() << "(coreNum, colWidth, colOffset) : " << coreNum << ", " << colWidth << ", " << colOffset << "\n";
+        llvm::outs() << "(KSize, JSize, ISize) : " << KSize << ", " << JSize << ", " << ISize << "\n";
+        llvm::outs() << "(kSize, jSize, iSize) : " << kSize << ", " << jSize << ", " << iSize << "\n";
+        llvm::outs() << "(rowIndex, remi, quot, flag) : " << rowIndex << ", " << remi << ", " << quot << ", " << flag << "\n";
+        llvm::outs() << "(pid, col, row, height) : " << pid << ", " << col << ", " << row << ", " << height << "\n";
         return false;
+      }
       auto colAttr = builder.getIntegerAttr(indexType, col);
       auto rowAttr = builder.getIntegerAttr(indexType, row);
       auto arrayAttr = builder.getArrayAttr({colAttr, rowAttr});
