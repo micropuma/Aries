@@ -5,6 +5,7 @@ PROJECT_PATH=./${PROJECT_NAME}
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
+TEMPLATE_PATH = .
 EN_PL = 1
 PLIOWidth = 128
 AXIWidth = 512
@@ -45,7 +46,7 @@ fileCreate:
 	mkdir -p ${PROJECT_Host_PATH}
 
 copyFile:
-	cp -r template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
+	cp -r ${TEMPLATE_PATH}/template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
 
 test: doublebuffer
 

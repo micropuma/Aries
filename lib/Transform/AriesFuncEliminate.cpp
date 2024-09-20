@@ -175,9 +175,8 @@ private:
     }
   }
 
-  // For each func group only keep the first func
-  // Need to replace the caller with template mark and erase the old callee
-  void funcMerge(OpBuilder builder, FuncOp topPLFunc, 
+  // Currently unused func, without collect the newfuncs into a single func
+  void funcMerge0(OpBuilder builder, FuncOp topPLFunc, 
                  SmallVector<SmallVector<FuncOp, 4>>& groups){
     auto indexType = builder.getIndexType();
     for(auto group : groups){
@@ -206,6 +205,87 @@ private:
           call->setAttr("template", attr);
           call.setCallee(firstName);
           return WalkResult::interrupt();
+        });
+      }
+    }
+  }
+
+  // For each func group only keep the first func
+  // Need to replace the caller with template mark and erase the old callee
+  void funcMerge(OpBuilder builder, FuncOp topPLFunc, 
+                 SmallVector<SmallVector<FuncOp, 4>>& groups){
+    auto loc = builder.getUnknownLoc();
+    auto indexType = builder.getIndexType();
+    for(auto group : groups){
+      auto firstFunc = group[0];
+      firstFunc->setAttr("template", builder.getUnitAttr());
+      auto firstName = firstFunc.getName();
+      auto inTypes = SmallVector<Type,8>(firstFunc.getArgumentTypes().begin(),
+                                         firstFunc.getArgumentTypes().end());
+      auto outTypes =SmallVector<Type, 8>(firstFunc.getResultTypes().begin(),
+                                        firstFunc.getResultTypes().end());
+      SmallVector<Value, 16> operands;
+      CallOp firstCall;
+      SmallVector<CallOp, 16> calls; 
+      // Set the first func as the first instance
+      unsigned index = 0;
+      topPLFunc.walk([&](CallOp call){
+        auto callName = call.getCallee();
+        if(callName != firstName)
+          return WalkResult::advance();
+        auto attr = builder.getIntegerAttr(indexType, index++);
+        call->setAttr("template", attr);
+        operands.append(call.getOperands().begin(), call.getOperands().end());
+        firstCall = call;
+        calls.push_back(call);
+        return WalkResult::interrupt();
+      });
+      for(auto func : group){
+        if(func == firstFunc)
+          continue;
+        inTypes.append(func.getArgumentTypes().begin(),
+                       func.getArgumentTypes().end());
+        outTypes.append(func.getResultTypes().begin(),
+                        func.getResultTypes().end());
+        auto funcName = func.getName();
+        topPLFunc.walk([&](CallOp call){
+          auto callName = call.getCallee();
+          if(callName != funcName)
+            return WalkResult::advance();
+          auto attr = builder.getIntegerAttr(indexType, index++);
+          call->setAttr("template", attr);
+          call.setCallee(firstName);
+          operands.append(call.getOperands().begin(), call.getOperands().end());
+          calls.push_back(call);
+          return WalkResult::interrupt();
+        });
+      }
+      // Create new callOp
+      auto newfuncName = firstName.str() + "_top";
+      builder.setInsertionPoint(firstCall);
+      builder.create<CallOp>(loc, newfuncName, outTypes, operands);
+
+      // Create new function that include all the calls
+      auto newFuncType = builder.getFunctionType(inTypes, outTypes);
+      builder.setInsertionPointAfter(firstFunc);
+      auto newFunc = builder.create<FuncOp>(loc, newfuncName, newFuncType);
+      newFunc->setAttr("adf.pl",builder.getUnitAttr());
+      newFunc->setAttr("inline",builder.getBoolAttr(false));
+      auto destBlock = newFunc.addEntryBlock();
+      builder.setInsertionPointToEnd(destBlock);
+      auto returnOp = builder.create<ReturnOp>(loc);
+
+      // Move calls into new func
+      for(auto call : calls)
+        call->moveBefore(returnOp);
+
+      // Update the references in the newFunc after move
+      auto num_arg = destBlock->getNumArguments();
+      for (unsigned i = 0; i < num_arg; ++i) {
+        auto sourceArg = operands[i];
+        auto destArg = destBlock->getArgument(i);
+        sourceArg.replaceUsesWithIf(destArg,[&](OpOperand &use){
+            return newFunc->isProperAncestor(use.getOwner());
         });
       }
     }
