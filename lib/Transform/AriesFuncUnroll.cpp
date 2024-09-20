@@ -152,6 +152,10 @@ private:
           tripCountList.push_back(oneAttr);
       }else{ //listSize=2
         unsigned diff = indexList[1] - indexList[0];
+        auto lastElem = tripCountList[1];
+        tripCountList.pop_back();
+        tripCountList.push_back(oneAttr);
+        tripCountList.push_back(lastElem);
         if(diff>1)
           midFlag =true;
       }
