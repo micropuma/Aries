@@ -27,6 +27,7 @@ public:
     RowNum=opts.OptRowNum;
     ColOffset=opts.OptColOffset;
     RowOffset=opts.OptRowOffset;
+    ColGap = opts.OptColGap;
     CoreAlgo=opts.OptCoreAlgo;
   }
   void runOnOperation() override {
@@ -74,11 +75,11 @@ private:
       return false;
     unsigned colStart = std::floor((colNum - colWidth) / 2.0) + colOffset;
 
-    for (auto callOp : func.getOps<CallOp>()){
+    auto result = func.walk([&](CallOp callOp){
       if(!callOp->hasAttr("adf.kernel"))
-        continue;
+        return WalkResult::advance();
       if(!callOp->hasAttr("ivs"))
-        return true;
+        return WalkResult::advance();
       auto ivArrayAttr = dyn_cast<ArrayAttr>(callOp->getAttr("ivs"));
       callOp->removeAttr("ivs");
       // Check if there are reduction loops need to be placed
@@ -92,7 +93,7 @@ private:
       unsigned jSize=0;
       unsigned iSize=0;
       if(ivIdeices.size()>3){
-        return false;
+        WalkResult::interrupt();
       }else if(ivIdeices.size()==3){
         kSize = ivIdeices[0];
         jSize = ivIdeices[1];
@@ -112,7 +113,7 @@ private:
           kSize = ivIdeices[0];
         }
       }else{
-        return true;
+        return WalkResult::advance();
       }
       unsigned pid=0;
       unsigned index=0;
@@ -137,12 +138,15 @@ private:
       unsigned col = colStart + std::floor(pid / (float)height);
       unsigned row = rowStart + pid % height;
       if((col > colNum-1) || (row > rowNum-1))
-        return false;
+        return WalkResult::interrupt();
       auto colAttr = builder.getIntegerAttr(indexType, col);
       auto rowAttr = builder.getIntegerAttr(indexType, row);
       auto arrayAttr = builder.getArrayAttr({colAttr, rowAttr});
       callOp->setAttr("col, row", arrayAttr);
-    }
+      return WalkResult::advance();
+    });
+    if(result == WalkResult::interrupt())
+      return false;
     return true;
   }
 
@@ -192,8 +196,9 @@ private:
 
   bool bufPlace1(OpBuilder builder, CallOp callOp, 
                  const unsigned bankNum, unsigned col, unsigned row,
-                 SmallVector<int64_t, 4> directions,
-                 SmallVector<std::pair<Value, int64_t>, 4> memInfo,
+                 bool horizental, SmallVector<int64_t, 4> directions,
+                 SmallVector<std::pair<Value, int64_t>, 4>& memInfo,
+                 std::vector<std::vector<int>>& DMACnt,
                  std::vector<std::vector<std::vector<unsigned>>>& bufOffsets){
     const unsigned bankSize = 4096;
     const unsigned stackSize = 1024;
@@ -216,25 +221,97 @@ private:
       // For a new mem change another direction to alleviate bank conflicts
       bool flag_end = false;
       SmallVector<int64_t, 4> invalidDir;
+      invalidDir.clear();
+      unsigned directSize = directions.size();
       while(!flag_end){
-        unsigned directSize = directions.size();
+        // If all the direction has been tested and failed, then no solution
+        if(invalidDir.size()==directSize)
+          return false;
         unsigned directSel = dirIndex % directSize;
         auto it = llvm::find(invalidDir,directSel);
-        if(it != invalidDir.end())
+        if(it != invalidDir.end()){
+          dirIndex++;
           continue;
+        }
         auto direction = directions[directSel];
         unsigned bufCol, bufRow;
-        dirIndex++;
         bufLoc(direction, col, row, bufCol, bufRow);
+        llvm::outs() << "Here 0 (col, row, bufCol, bufRow, direction, dmaBudget): " << col << ", " << row << ", " << bufCol << ", " << bufRow << ", " << direction << ", " << DMACnt[bufCol][bufRow] << ")\n";
+        // Get the number of DMAs remaining
+        auto dmaBudget = DMACnt[bufCol][bufRow];
+        // If no available dma, then mark this dir as invalid
+        if(dmaBudget < 1){
+          invalidDir.push_back(directSel);
+          dirIndex++;
+          continue;
+        }
         // Place the buffer in one of the available bank of dest location
         // Find an empty bank to place, if non-empty one, then insert it in 
         // one of the avialable bank
-        unsigned round_flag = true; // Specify if need to do next round
-        for(unsigned round = 0; round < 2; round++){
-          if(!round_flag)
+        // Round 0, find empty bank first
+        llvm::outs() << "Round 0\n";
+        llvm::outs() << "(col, row, bufCol, bufRow, direction, dmaBudget): " << col << ", " << row << ", " << bufCol << ", " << bufRow << ", " << direction << ", " << DMACnt[bufCol][bufRow] << ")\n";
+        bool round1_flag = true;
+        for(unsigned b = 0; b < bankNum; b++){
+          // an affine map e.g. [0,1,2,3] -> [0,2,1,3]
+          auto remi = b % (bankNum/2);
+          auto quot = std::floor(b / (bankNum/2));
+          unsigned bnew;
+          if(quot == 0)
+            bnew = remi * 2;
+          else
+            bnew = remi * 2 + 1;
+          // Double buffer is interleaved in AIE
+          // [0, 2, 4, 6] where 0,2; 4,6; 1,3; 5,7; are pairs
+          // [1, 3, 5, 7] index should be [0->0] [1->1] [2-->4] [3-->5]
+          unsigned breal;
+          if(bnew%2==0)
+            breal = bnew * 2;
+          else
+            breal = bnew * 2 - 1;
+          auto curBudget = bufOffsets[bufCol][bufRow][b];
+          if(curBudget >= bankSize)
+            continue;
+          unsigned flag = true;
+          if(curBudget!=0)
+            continue;
+          else{
+            // Check if start from this bank the capacity is enough
+            for(unsigned i = 0; i < bankNeeded; i++){
+              auto needBank = i + b;
+              auto needBudget = bufOffsets[bufCol][bufRow][needBank];
+              // The buffer need to be consecutive. If find non-consecutive
+              // banks go to next bank
+              if(needBudget != 0){
+                flag =false;
+                break;
+              }         
+            }
+            if(!flag)
+              continue;
+            // If can be placed then update offsets
+            for(unsigned i = 0; i < bankNeeded; i++){
+              auto needBank = i + b;
+              if(i==bankNeeded-1)
+                bufOffsets[bufCol][bufRow][needBank] = lefSize + 1;
+              else
+                bufOffsets[bufCol][bufRow][needBank] = bankSize;       
+            }
+            unsigned offset0 = breal * bankSize;
+            unsigned offset1 = offset0 +  bankSize * 2;
+            createBufLoc(builder, callOp, buffer, 
+                         bufCol, bufRow, offset0, offset1);
+            DMACnt[bufCol][bufRow] = DMACnt[bufCol][bufRow] - 1;
+            llvm::outs() << "Find in round 0: (col, row, bufCol, bufRow, direction, dmaBudget): " << col << ", " << row << ", " << bufCol << ", " << bufRow << ", " << direction << ", " << DMACnt[bufCol][bufRow] << ")\n";
+            flag_end = true;
+            round1_flag = false;
             break;
+          }  
+        }
+        if(round1_flag){//Run second round
+          llvm::outs() << "Round 1\n";
+          llvm::outs() << "(col, row, bufCol, bufRow, direction, dmaBudget): " << col << ", " << row << ", " << bufCol << ", " << bufRow << ", " << direction << ", " << DMACnt[bufCol][bufRow] << ")\n";
           for(unsigned b = 0; b < bankNum; b++){
-            // an affine map e.g. [0,1,2,3] -> [0,2,1,3]
             auto remi = b % (bankNum/2);
             auto quot = std::floor(b / (bankNum/2));
             unsigned bnew;
@@ -242,9 +319,6 @@ private:
               bnew = remi * 2;
             else
               bnew = remi * 2 + 1;
-            // Double buffer is interleaved in AIE
-            // [0, 2, 4, 6] where 0,2; 4,6; 1,3; 5,7; are pairs
-            // [1, 3, 5, 7] index should be [0->0] [1->1] [2-->4] [3-->5]
             unsigned breal;
             if(bnew%2==0)
               breal = bnew * 2;
@@ -253,78 +327,77 @@ private:
             auto curBudget = bufOffsets[bufCol][bufRow][b];
             if(curBudget >= bankSize)
               continue;
-            if(round == 0){
-              if(curBudget!=0)
-                continue;
-              else{
-                // Check if start from this bank the capacity is enough
-                for(unsigned i = 0; i < bankNeeded; i++){
-                  auto needBank = i + b;
-                  auto needBudget = bufOffsets[bufCol][bufRow][needBank];
-                  if(i==bankNeeded-1)
-                    bufOffsets[bufCol][bufRow][needBank] = lefSize + 1;
-                  else
-                    bufOffsets[bufCol][bufRow][needBank] = bankSize;
-                  if(needBudget != 0)
-                    break;
-                }
-                unsigned offset0 = breal * bankSize;
-                unsigned offset1 = offset0 +  bankSize * 2;
-                createBufLoc(builder, callOp, buffer, 
-                             bufCol, bufRow, offset0, offset1);
-                flag_end = true;
-                round_flag = false;
-                break;
-              }
-            }else{
-              // Check if with the curBudget start from this bank the 
-              // capacity is enough
-              auto availableBank = bankNum - b;
-              auto newSizeInBytes = curBudget + sizeInBytes;
-              auto newLefSize = newSizeInBytes % bankSize;
-              auto newBankNeeded = std::ceil(newSizeInBytes / (float)bankSize);
-              if(newBankNeeded > availableBank || 
-                (bankNeeded==availableBank && newLefSize>=lastBankSize))
-                break;
-              for(unsigned i = 0; i < newBankNeeded; i++){
-                auto needBank = i + b;
-                auto needBudget = bufOffsets[bufCol][bufRow][needBank];
-                if(i==0)
-                  bufOffsets[bufCol][bufRow][needBank] = bankSize;
-                else if(i==newBankNeeded-1)
-                  bufOffsets[bufCol][bufRow][needBank] = newLefSize + 1;
-                else
-                  bufOffsets[bufCol][bufRow][needBank] = bankSize;
-                if(i!=0 && needBudget != 0)
-                  break;
-              }
-              unsigned offset0 = breal * bankSize + curBudget;
-              unsigned offset1 = offset0 +  bankSize * 2 + curBudget;
-              createBufLoc(builder, callOp, buffer, 
-                           bufCol, bufRow, offset0, offset1);
-              flag_end = true;
-              round_flag = false;
+            unsigned flag = true;
+            // Check if with the curBudget start from this bank the 
+            // capacity is enough
+            auto availableBank = bankNum - b;
+            auto newSizeInBytes = curBudget + sizeInBytes;
+            auto newLefSize = newSizeInBytes % bankSize;
+            auto newBankNeeded = std::ceil(newSizeInBytes / (float)bankSize);
+            if(newBankNeeded > availableBank || 
+              (bankNeeded==availableBank && newLefSize>=lastBankSize))
               break;
+            for(unsigned i = 0; i < newBankNeeded; i++){
+              auto needBank = i + b;
+              auto needBudget = bufOffsets[bufCol][bufRow][needBank];
+              // This is already the second round, try another bank
+              if(i!=0 && needBudget != 0){
+                flag =false;
+                break;
+              }
             }
+            if(!flag)
+              continue;
+            for(unsigned i = 0; i < newBankNeeded; i++){
+              auto needBank = i + b;
+              if(i==0 && newBankNeeded==1)
+                bufOffsets[bufCol][bufRow][needBank] = newLefSize + 1;
+              else if(i==newBankNeeded-1)
+                bufOffsets[bufCol][bufRow][needBank] = newLefSize + 1;
+              else
+                bufOffsets[bufCol][bufRow][needBank] = bankSize;
+            }
+            unsigned offset0 = breal * bankSize + curBudget;
+            unsigned offset1 = offset0 +  bankSize * 2;
+            createBufLoc(builder, callOp, buffer, 
+                         bufCol, bufRow, offset0, offset1);
+            DMACnt[bufCol][bufRow] = DMACnt[bufCol][bufRow] - 1;
+            llvm::outs() << "Find in round 1: (col, row, bufCol, bufRow, direction, dmaBudget): " << col << ", " << row << ", " << bufCol << ", " << bufRow << ", " << direction << ", " << DMACnt[bufCol][bufRow] << ")\n";
+            flag_end = true;
+            round1_flag = false;
+            break;
           }
         }
         // After check all the banks in this direction, still not find, then
-        // mark this direction as invalid, skip in the next while loop,
-        // If all the direction has been tested and failed, then no solution
-        if(!flag_end){
-          invalidDir.push_back(directSel);
-          if(invalidDir.size()==directSize){
-            flag_end=true;
-            return false;
+        // mark this direction as invalid and change another direction
+        if(horizental){ // For horizental buff placement only change direction
+          if(!flag_end){ // can't find available banks
+            invalidDir.push_back(directSel);
+            dirIndex++;
           }
+        }else{ //Change direction no matter find or not
+          if(!flag_end){
+            invalidDir.push_back(directSel);
+          }
+          dirIndex++;
         }
+        
       }
     }
     return true;
   }
 
+  // This algorithm is different from 0 and 1, as it is a specific zipzap
+  // Placement algorithm
+  bool placementNaive2(OpBuilder builder, FuncOp func, 
+                       const unsigned colNum, const unsigned rowNum, 
+                       unsigned colOffset, unsigned rowOffset,
+                       unsigned KSize, unsigned JSize, unsigned ISize){
+    return true;
+  }
+
   void determineDir(const unsigned colNum, const unsigned rowNum,
-                    unsigned col, unsigned row, bool dir,
+                    unsigned col, unsigned row, bool dir, bool horizental,
                     SmallVector<int64_t, 4>& directions){
     // Determine the directions that a buffer can be placed
     // 0: down, 1: up, 2:left, 3:right
@@ -333,6 +406,41 @@ private:
     // Deal with first 4 cases
     if(dir){
       directions.push_back(3);
+      return;
+    }
+    if(horizental){ //Only allow horizental direction
+      if(col == 0 && row == 0){ // left bottom
+        directions.push_back(3);
+      }else if(col == 0 && row == rowNum-1){ // left top
+        directions.push_back(3);
+      }else if(col == colNum -1 && row == 0){ // right bottom
+        directions.push_back(2);
+      }else if(col == colNum -1 && row == rowNum-1){ // right top
+        directions.push_back(2);
+      }else if(col == 0){   // left
+        directions.push_back(3);
+      }else if(row == 0){   // bottom
+        directions.push_back(2);
+        directions.push_back(3);
+      }else if(col == colNum -1){ // right
+        directions.push_back(2);
+      }else if(row == rowNum -1){ // up
+        if(row%2==0){ // left first then right
+          directions.push_back(2);
+          directions.push_back(3);
+        }else{ // right first then left
+          directions.push_back(3);
+          directions.push_back(2);
+        }
+      }else{
+        if(row%2==0){ 
+          directions.push_back(2);
+          directions.push_back(3);
+        }else{
+          directions.push_back(3);
+          directions.push_back(2);
+        }
+      }
       return;
     }
     if(col == 0 && row == 0){ // left bottom
@@ -374,15 +482,15 @@ private:
   // This buffer placement algorithm is built upon the placementNaive1
   bool bufPlacement(OpBuilder builder, CallOp callOp, const unsigned colNum, 
                     const unsigned rowNum, const unsigned bankNum,
-                    unsigned col, unsigned row,
+                    unsigned col, unsigned row, unsigned sel,
+                    std::vector<std::vector<int>>& DMAINCnt,
+                    std::vector<std::vector<int>>& DMAOUTCnt,
                    std::vector<std::vector<std::vector<unsigned>>>& bufOffsets){
     
     SmallVector<int64_t, 4> dirIns;
     SmallVector<int64_t, 4> dirOuts;
     dirIns.clear();
     dirOuts.clear();
-    determineDir(colNum, rowNum, col, row, 0, dirIns);
-    determineDir(colNum, rowNum, col, row, 1, dirOuts);
 
     // Place input buffer
     SmallVector<std::pair<Value, int64_t>, 4> memIn; // <mem, size in byte>
@@ -416,10 +524,17 @@ private:
         memIn.push_back(std::pair(operand, sizeInBytes-1));
       }
     }
-
-    if(!bufPlace1(builder, callOp, bankNum, col, row, dirIns, 
-              memIn, bufOffsets))
+    // For a single core with more than 2 inputs then only allow horizental
+    // Buffer placement
+    bool horizentalIn = (memIn.size()>2);
+    determineDir(colNum, rowNum, col, row, false, horizentalIn, dirIns);
+    if(sel==0){
+      if(!bufPlace1(builder, callOp, bankNum, col, row, horizentalIn, dirIns,
+                    memIn, DMAINCnt, bufOffsets))
+        return false;
+    }else{
       return false;
+    }
     
     // Place output buffer
     SmallVector<std::pair<Value, int64_t>, 4> memOut; // <mem, size in byte>
@@ -432,10 +547,15 @@ private:
         continue;
       memOut.push_back(std::pair(result, sizeInBytes-1));
     }
-    if(!bufPlace1(builder, callOp, bankNum, col, row, dirOuts, 
-              memOut, bufOffsets))
+    bool horizentalOut = (memOut.size()>2);
+    determineDir(colNum, rowNum, col, row, true, horizentalOut, dirOuts);
+    if(sel==0){
+      if(!bufPlace1(builder, callOp, bankNum, col, row, horizentalOut, dirOuts, 
+              memOut, DMAOUTCnt, bufOffsets))
+        return false;
+    }else{
       return false;
-    
+    }
     return true;
   }
 
@@ -443,7 +563,7 @@ private:
   // J dim will first be placed vertically
   bool placementNaive1(OpBuilder builder, FuncOp func, 
                        const unsigned colNum, const unsigned rowNum, 
-                       unsigned colOffset, unsigned rowOffset,
+                       unsigned colOffset, unsigned rowOffset, unsigned colGap,
                        unsigned KSize, unsigned JSize, unsigned ISize){
     auto indexType = builder.getIndexType();
     unsigned rowStart = rowOffset;
@@ -464,22 +584,29 @@ private:
         height = std::min(ISize, rowNum);
     }
     unsigned coreNum = JSize * ISize;
-    unsigned colWidth = std::ceil(coreNum/(float)height) * KSize;
+    unsigned colWidth = std::ceil(coreNum/(float)height) * (KSize+colGap);
     if(colWidth > colNum)
       return false;
     unsigned colStart = std::floor((colNum - colWidth) / 2.0) + colOffset;
 
     const unsigned bankNum = (8/2); // 2:Double buffer
+    //Stores the start available offset of the current bank 
     std::vector<std::vector<std::vector<unsigned>>> bufOffsets(
       colNum, std::vector<std::vector<unsigned>>(
       rowNum, std::vector<unsigned>(bankNum, 0))); 
-      //Stores the start available offset of the current bank 
-        
-    for (auto callOp : func.getOps<CallOp>()){
+    
+    unsigned numDMA = 2;
+    //Stores the number of available DMAs in each tile
+    std::vector<std::vector<int>> DMAINCnt(
+      colNum, std::vector<int>(rowNum,numDMA)); 
+    std::vector<std::vector<int>> DMAOUTCnt(
+      colNum, std::vector<int>(rowNum,numDMA)); 
+      
+    auto result = func.walk([&](CallOp callOp){
       if(!callOp->hasAttr("adf.kernel"))
-        continue;
+        return WalkResult::advance();
       if(!callOp->hasAttr("ivs"))
-        return true;
+        return WalkResult::advance();
       auto ivArrayAttr = dyn_cast<ArrayAttr>(callOp->getAttr("ivs"));
       // Check if there are reduction loops need to be placed
       
@@ -492,7 +619,7 @@ private:
       unsigned jSize=0;
       unsigned iSize=0;
       if(ivIdeices.size()>3){
-        return false;
+        WalkResult::interrupt();
       }else if(ivIdeices.size()==3){
         kSize = ivIdeices[0];
         jSize = ivIdeices[1];
@@ -512,7 +639,7 @@ private:
           kSize = ivIdeices[0];
         }
       }else{
-        return true;
+        return WalkResult::advance();
       }
       
       unsigned rowIndex = 0;
@@ -522,19 +649,22 @@ private:
         rowIndex = iSize + jSize * ISize;
       unsigned remi = rowIndex % height;
       unsigned quot = std::floor(rowIndex / (float)height);
-      unsigned pid = remi + kSize * height + quot * KSize * height;
+      unsigned pid = remi + kSize * height + quot * (KSize + colGap) * height;
       unsigned col = colStart + std::floor(pid / (float)height);
       unsigned row = rowStart + pid % height;
       if((col > colNum-1) || (row > rowNum-1))
-        return false;
+        return WalkResult::interrupt();
       auto colAttr = builder.getIntegerAttr(indexType, col);
       auto rowAttr = builder.getIntegerAttr(indexType, row);
       auto arrayAttr = builder.getArrayAttr({colAttr, rowAttr});
       callOp->setAttr("col, row", arrayAttr);
-      if(!bufPlacement(builder, callOp, colNum, rowNum, bankNum, col, row, 
-                        bufOffsets))
-        return false;
-    }
+      if(!bufPlacement(builder, callOp, colNum, rowNum, bankNum, col, row, 0,
+                       DMAINCnt, DMAOUTCnt, bufOffsets))
+        return WalkResult::interrupt();
+      return WalkResult::advance();
+    });
+    if(result == WalkResult::interrupt())
+      return false;
     return true;
   }
 
@@ -544,6 +674,7 @@ private:
     unsigned rowNum = RowNum;
     unsigned colOffset = ColOffset;
     unsigned rowOffset = RowOffset;
+    unsigned colGap = ColGap;
 
     auto flag = mod.walk([&](FuncOp func){
       if(!func->hasAttr("adf.cell") || !func->hasAttr("tripCount"))
@@ -565,11 +696,14 @@ private:
         if(!placementNaive0(builder, func, colNum, rowNum, colOffset, rowOffset,
                             KSize, JSize, ISize))
           return WalkResult::interrupt();
-      }
-      else{
+      }else if(CoreAlgo == 1){
         if(!placementNaive1(builder, func, colNum, rowNum, colOffset, rowOffset,
-                            KSize, JSize, ISize))
+                            colGap, KSize, JSize, ISize))
           return WalkResult::interrupt();
+      }else{
+        if(!placementNaive2(builder, func, colNum, rowNum, colOffset, rowOffset,
+                            KSize, JSize, ISize))
+        return WalkResult::interrupt();
       }
       return WalkResult::advance();
     });

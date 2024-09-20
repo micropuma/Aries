@@ -150,7 +150,7 @@ private:
       if(listSize<=1){
         for(int i = 0; i < (3-listSize); i++)
           tripCountList.push_back(oneAttr);
-      }else{ //listSize=2
+      }else if(listSize==2){ //listSize=2
         unsigned diff = indexList[1] - indexList[0];
         auto lastElem = tripCountList[1];
         tripCountList.pop_back();

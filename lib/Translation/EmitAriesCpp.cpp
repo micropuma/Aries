@@ -2440,8 +2440,8 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
       os <<  "adf::location<kernel>(" << KName << ") = " << "adf::tile(" 
          << std::to_string(col) << ", " << std::to_string(row) << ");\n";
       indent();
-      os <<  "adf::location<stack>(" << KName << ") = " << "adf::address(" 
-        << std::to_string(col) << ", " << std::to_string(row) << ", 0x7000);\n";
+      os <<  "adf::location<stack>(" << KName << ") = " << "adf::bank(" 
+        << std::to_string(col) << ", " << std::to_string(row) << ", 3);\n";
       return;
     }
   });

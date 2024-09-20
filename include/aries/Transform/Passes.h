@@ -47,6 +47,9 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
   Option<int64_t> OptRowOffset{
       *this, "row-offset", llvm::cl::init(0), llvm::cl::desc(
       "Specify the offset for core placement in the row direction")};
+  Option<int64_t> OptColGap{
+      *this, "core-gap", llvm::cl::init(0), llvm::cl::desc(
+      "Specify the gap between columns to improve corner cases")};
   Option<int64_t> OptCoreAlgo{
       *this, "core-algo", llvm::cl::init(0), llvm::cl::desc(
       "Specify the algorithm for core placement 0:vertical,1:horizontally")};

@@ -101,6 +101,8 @@ def AriesCorePlacement : Pass<"aries-core-placement"> {
            "Specify the offset for core placement in the col direction">,
     Option<"RowOffset", "row-offset", "int64_t", /*default=*/"0",
            "Specify the offset for core placement in the row direction">,
+    Option<"ColGap", "core-gap", "int64_t", /*default=*/"0",
+           "Specify the gap between columns to improve corner cases">,
     Option<"CoreAlgo", "core-algo", "int64_t", /*default=*/"0",
            "Specify the algorithm for core placement 0:vertical,1:horizontally">
   ];
