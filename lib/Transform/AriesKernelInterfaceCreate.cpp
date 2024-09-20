@@ -202,9 +202,9 @@ private:
     }
     // Erase the old call operation
     newCallOp->setAttr("adf.kernel", builder.getUnitAttr());
-    if(auto attr = caller->getAttr("col, row"))
+    if(auto attr = caller->getAttr("ivs"))
       if(auto arrayAttr = dyn_cast<ArrayAttr>(attr))
-        newCallOp->setAttr("col, row", arrayAttr);
+        newCallOp->setAttr("ivs", arrayAttr);
     auto calleeName = caller.getCallee();
     auto intAttr = dyn_cast<IntegerAttr>(caller->getAttr(calleeName));
     auto newCalleeName = newCallOp.getCallee();

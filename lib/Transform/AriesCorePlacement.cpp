@@ -31,9 +31,8 @@ public:
   }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
-    StringRef topFuncName = "top_func";
   
-    if (!CorePlacement(mod,topFuncName))
+    if (!CorePlacement(mod))
       signalPassFailure();
   }
 
@@ -45,8 +44,8 @@ private:
   // row = floor (pid/Height)
 
   // In this algorithm, the reduction dim is consecutive vertically
-  bool placementNaive0(OpBuilder builder, CellOp cellOp, 
-                       unsigned colNum, unsigned rowNum, 
+  bool placementNaive0(OpBuilder builder, FuncOp func, 
+                       const unsigned colNum, const unsigned rowNum, 
                        unsigned colOffset, unsigned rowOffset,
                        unsigned KSize, unsigned JSize, unsigned ISize){
     auto indexType = builder.getIndexType();
@@ -75,12 +74,13 @@ private:
       return false;
     unsigned colStart = std::floor((colNum - colWidth) / 2.0) + colOffset;
 
-    for (auto callOp : cellOp.getOps<CallOp>()){
+    for (auto callOp : func.getOps<CallOp>()){
       if(!callOp->hasAttr("adf.kernel"))
         continue;
       if(!callOp->hasAttr("ivs"))
         return true;
       auto ivArrayAttr = dyn_cast<ArrayAttr>(callOp->getAttr("ivs"));
+      callOp->removeAttr("ivs");
       // Check if there are reduction loops need to be placed
       
       SmallVector<unsigned, 3> ivIdeices;
@@ -146,10 +146,303 @@ private:
     return true;
   }
 
+  // Given direction and core placement, determine the buffer location,
+  // since buffer change directions at odd row and even row
+  void bufLoc(unsigned direction, unsigned col, unsigned row,
+              unsigned& bufCol, unsigned& bufRow){
+    bufCol = col;
+    bufRow = row;
+    if(direction == 0){ // down
+      bufRow = row - 1;
+    }else if(direction == 1){ // up
+      bufRow = row + 1;
+    }else if(direction == 2){ // left
+      if(row%2==0){
+        bufCol = col - 1;
+      }else{
+        bufCol = col;
+      }
+    }else{ // right
+      if(row%2==0){
+        bufCol = col;
+      }else{
+        bufCol = col + 1;
+      }
+    }
+  }
+
+  void createBufLoc(OpBuilder builder, CallOp call, Value buffer,
+                    unsigned col, unsigned row,
+                    unsigned offset0, unsigned offset1){
+    auto loc = builder.getUnknownLoc();
+    auto indexType = builder.getIndexType();
+    auto colAttr = builder.getIntegerAttr(indexType, col);
+    auto rowAttr = builder.getIntegerAttr(indexType, row);
+    auto offsetAttr0 = builder.getIntegerAttr(indexType, offset0);
+    auto offsetAttr1 = builder.getIntegerAttr(indexType, offset1);
+    builder.setInsertionPoint(call);
+    auto colVal = builder.create<arith::ConstantOp>(loc, colAttr);
+    auto rowVal = builder.create<arith::ConstantOp>(loc, rowAttr);
+    auto offsetVal0 = builder.create<arith::ConstantOp>(loc, offsetAttr0);
+    auto offsetVal1 = builder.create<arith::ConstantOp>(loc, offsetAttr1);
+    builder.setInsertionPointAfter(call);
+    builder.create<BuffLocOp>(loc, buffer, colVal, rowVal, 
+                              offsetVal0, offsetVal1);
+  }
+
+  bool bufPlace1(OpBuilder builder, CallOp callOp, 
+                 const unsigned bankNum, unsigned col, unsigned row,
+                 SmallVector<int64_t, 4> directions,
+                 SmallVector<std::pair<Value, int64_t>, 4> memInfo,
+                 std::vector<std::vector<std::vector<unsigned>>>& bufOffsets){
+    const unsigned bankSize = 4096;
+    const unsigned stackSize = 1024;
+    const unsigned lastBankSize = bankSize - stackSize;
+    // Place larger mem first
+    llvm::sort(memInfo.begin(), memInfo.end(), 
+        [](const std::pair<Value, int>& a, const std::pair<Value, int>& b) {
+        return a.second > b.second;
+    });
+    unsigned dirIndex = 0;
+    for(auto pair : memInfo){
+      auto buffer = pair.first;
+      auto sizeInBytes = pair.second;
+      unsigned lefSize = sizeInBytes % bankSize;
+      unsigned bankNeeded = std::ceil(sizeInBytes / (float)bankSize);
+      // Check if buffer exceed the local memory size
+      if(bankNeeded > bankNum || (bankNeeded==bankNum && lefSize>=lastBankSize))
+        return false;
+      // Find the location of the buffer
+      // For a new mem change another direction to alleviate bank conflicts
+      bool flag_end = false;
+      SmallVector<int64_t, 4> invalidDir;
+      while(!flag_end){
+        unsigned directSize = directions.size();
+        unsigned directSel = dirIndex % directSize;
+        auto it = llvm::find(invalidDir,directSel);
+        if(it != invalidDir.end())
+          continue;
+        auto direction = directions[directSel];
+        unsigned bufCol, bufRow;
+        dirIndex++;
+        bufLoc(direction, col, row, bufCol, bufRow);
+        // Place the buffer in one of the available bank of dest location
+        // Find an empty bank to place, if non-empty one, then insert it in 
+        // one of the avialable bank
+        unsigned round_flag = true; // Specify if need to do next round
+        for(unsigned round = 0; round < 2; round++){
+          if(!round_flag)
+            break;
+          for(unsigned b = 0; b < bankNum; b++){
+            // an affine map e.g. [0,1,2,3] -> [0,2,1,3]
+            auto remi = b % (bankNum/2);
+            auto quot = std::floor(b / (bankNum/2));
+            unsigned bnew;
+            if(quot == 0)
+              bnew = remi * 2;
+            else
+              bnew = remi * 2 + 1;
+            // Double buffer is interleaved in AIE
+            // [0, 2, 4, 6] where 0,2; 4,6; 1,3; 5,7; are pairs
+            // [1, 3, 5, 7] index should be [0->0] [1->1] [2-->4] [3-->5]
+            unsigned breal;
+            if(bnew%2==0)
+              breal = bnew * 2;
+            else
+              breal = bnew * 2 - 1;
+            auto curBudget = bufOffsets[bufCol][bufRow][b];
+            if(curBudget >= bankSize)
+              continue;
+            if(round == 0){
+              if(curBudget!=0)
+                continue;
+              else{
+                // Check if start from this bank the capacity is enough
+                for(unsigned i = 0; i < bankNeeded; i++){
+                  auto needBank = i + b;
+                  auto needBudget = bufOffsets[bufCol][bufRow][needBank];
+                  if(i==bankNeeded-1)
+                    bufOffsets[bufCol][bufRow][needBank] = lefSize + 1;
+                  else
+                    bufOffsets[bufCol][bufRow][needBank] = bankSize;
+                  if(needBudget != 0)
+                    break;
+                }
+                unsigned offset0 = breal * bankSize;
+                unsigned offset1 = offset0 +  bankSize * 2;
+                createBufLoc(builder, callOp, buffer, 
+                             bufCol, bufRow, offset0, offset1);
+                flag_end = true;
+                round_flag = false;
+                break;
+              }
+            }else{
+              // Check if with the curBudget start from this bank the 
+              // capacity is enough
+              auto availableBank = bankNum - b;
+              auto newSizeInBytes = curBudget + sizeInBytes;
+              auto newLefSize = newSizeInBytes % bankSize;
+              auto newBankNeeded = std::ceil(newSizeInBytes / (float)bankSize);
+              if(newBankNeeded > availableBank || 
+                (bankNeeded==availableBank && newLefSize>=lastBankSize))
+                break;
+              for(unsigned i = 0; i < newBankNeeded; i++){
+                auto needBank = i + b;
+                auto needBudget = bufOffsets[bufCol][bufRow][needBank];
+                if(i==0)
+                  bufOffsets[bufCol][bufRow][needBank] = bankSize;
+                else if(i==newBankNeeded-1)
+                  bufOffsets[bufCol][bufRow][needBank] = newLefSize + 1;
+                else
+                  bufOffsets[bufCol][bufRow][needBank] = bankSize;
+                if(i!=0 && needBudget != 0)
+                  break;
+              }
+              unsigned offset0 = breal * bankSize + curBudget;
+              unsigned offset1 = offset0 +  bankSize * 2 + curBudget;
+              createBufLoc(builder, callOp, buffer, 
+                           bufCol, bufRow, offset0, offset1);
+              flag_end = true;
+              round_flag = false;
+              break;
+            }
+          }
+        }
+        // After check all the banks in this direction, still not find, then
+        // mark this direction as invalid, skip in the next while loop,
+        // If all the direction has been tested and failed, then no solution
+        if(!flag_end){
+          invalidDir.push_back(directSel);
+          if(invalidDir.size()==directSize){
+            flag_end=true;
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  void determineDir(const unsigned colNum, const unsigned rowNum,
+                    unsigned col, unsigned row, bool dir,
+                    SmallVector<int64_t, 4>& directions){
+    // Determine the directions that a buffer can be placed
+    // 0: down, 1: up, 2:left, 3:right
+    // There are 9 cases, 4 cases when core adjacent with two edge,
+    // 4 cases when core adjacent with one edges, 1 case for no edges
+    // Deal with first 4 cases
+    if(dir){
+      directions.push_back(3);
+      return;
+    }
+    if(col == 0 && row == 0){ // left bottom
+      directions.push_back(1);
+      directions.push_back(3);
+    }else if(col == 0 && row == rowNum-1){ // left top
+      directions.push_back(0);
+      directions.push_back(3);
+    }else if(col == colNum -1 && row == 0){ // right bottom
+      directions.push_back(1);
+      directions.push_back(2);
+    }else if(col == colNum -1 && row == rowNum-1){ // right top
+      directions.push_back(0);
+      directions.push_back(2);
+    }else if(col == 0){   // left
+      directions.push_back(0);
+      directions.push_back(1);
+      directions.push_back(3);
+    }else if(row == 0){   // bottom
+      directions.push_back(1);
+      directions.push_back(2);
+      directions.push_back(3);
+    }else if(col == colNum -1){ // right
+      directions.push_back(0);
+      directions.push_back(1);
+      directions.push_back(2);
+    }else if(row == rowNum -1){ // up
+      directions.push_back(0);
+      directions.push_back(2);
+      directions.push_back(3);
+    }else{
+      directions.push_back(0);
+      directions.push_back(1);
+      directions.push_back(2);
+      directions.push_back(3);
+    }
+  }
+
+  // This buffer placement algorithm is built upon the placementNaive1
+  bool bufPlacement(OpBuilder builder, CallOp callOp, const unsigned colNum, 
+                    const unsigned rowNum, const unsigned bankNum,
+                    unsigned col, unsigned row,
+                   std::vector<std::vector<std::vector<unsigned>>>& bufOffsets){
+    
+    SmallVector<int64_t, 4> dirIns;
+    SmallVector<int64_t, 4> dirOuts;
+    dirIns.clear();
+    dirOuts.clear();
+    determineDir(colNum, rowNum, col, row, 0, dirIns);
+    determineDir(colNum, rowNum, col, row, 1, dirOuts);
+
+    // Place input buffer
+    SmallVector<std::pair<Value, int64_t>, 4> memIn; // <mem, size in byte>
+    for(unsigned i = 0; i < callOp.getNumOperands(); i++){
+      auto operand = callOp.getOperand(i);
+      auto defineOp = operand.getDefiningOp();
+      if(!defineOp)
+        continue;
+      unsigned in_flag = true;
+      // Skip placement for shared memory
+      for(auto use: operand.getUsers()){
+        if(auto connectOp = dyn_cast<ConnectOp>(use)){
+          auto src = connectOp.getSrc();
+          auto srcType = src.getType();
+          if(auto memrefType = dyn_cast<MemRefType>(srcType)){
+            if(memrefType.getMemorySpaceAsInt() == (int)MemorySpace::L1){
+              in_flag = false;
+              break;
+            }
+          }
+        }
+      }
+      if(!in_flag)
+        continue;
+      if(auto bufferOp = dyn_cast<BufferOp>(defineOp)){
+        auto memrefType =  dyn_cast<MemRefType>(operand.getType());
+        auto EPB = memrefType.getElementTypeBitWidth()/8;
+        auto sizeInBytes = memrefType.getNumElements() * EPB;
+        if(sizeInBytes <= 1)
+          continue;
+        memIn.push_back(std::pair(operand, sizeInBytes-1));
+      }
+    }
+
+    if(!bufPlace1(builder, callOp, bankNum, col, row, dirIns, 
+              memIn, bufOffsets))
+      return false;
+    
+    // Place output buffer
+    SmallVector<std::pair<Value, int64_t>, 4> memOut; // <mem, size in byte>
+    for(unsigned i = 0; i < callOp.getNumResults(); i++){
+      auto result = callOp.getResult(i);
+      auto memrefType =  dyn_cast<MemRefType>(result.getType());
+      auto EPB = memrefType.getElementTypeBitWidth()/8;
+      auto sizeInBytes = memrefType.getNumElements() * EPB;
+      if(sizeInBytes <= 1)
+        continue;
+      memOut.push_back(std::pair(result, sizeInBytes-1));
+    }
+    if(!bufPlace1(builder, callOp, bankNum, col, row, dirOuts, 
+              memOut, bufOffsets))
+      return false;
+    
+    return true;
+  }
+
   // In this algorithm, the reduction dim is consecutive horizontally
   // J dim will first be placed vertically
-  bool placementNaive1(OpBuilder builder, CellOp cellOp, 
-                       unsigned colNum, unsigned rowNum, 
+  bool placementNaive1(OpBuilder builder, FuncOp func, 
+                       const unsigned colNum, const unsigned rowNum, 
                        unsigned colOffset, unsigned rowOffset,
                        unsigned KSize, unsigned JSize, unsigned ISize){
     auto indexType = builder.getIndexType();
@@ -176,7 +469,13 @@ private:
       return false;
     unsigned colStart = std::floor((colNum - colWidth) / 2.0) + colOffset;
 
-    for (auto callOp : cellOp.getOps<CallOp>()){
+    const unsigned bankNum = (8/2); // 2:Double buffer
+    std::vector<std::vector<std::vector<unsigned>>> bufOffsets(
+      colNum, std::vector<std::vector<unsigned>>(
+      rowNum, std::vector<unsigned>(bankNum, 0))); 
+      //Stores the start available offset of the current bank 
+        
+    for (auto callOp : func.getOps<CallOp>()){
       if(!callOp->hasAttr("adf.kernel"))
         continue;
       if(!callOp->hasAttr("ivs"))
@@ -232,55 +531,50 @@ private:
       auto rowAttr = builder.getIntegerAttr(indexType, row);
       auto arrayAttr = builder.getArrayAttr({colAttr, rowAttr});
       callOp->setAttr("col, row", arrayAttr);
+      if(!bufPlacement(builder, callOp, colNum, rowNum, bankNum, col, row, 
+                        bufOffsets))
+        return false;
     }
     return true;
   }
 
-  bool CorePlacement (ModuleOp mod, StringRef topFuncName) {
+  bool CorePlacement (ModuleOp mod) {
     auto builder = OpBuilder(mod);
     unsigned colNum = ColNum;
     unsigned rowNum = RowNum;
     unsigned colOffset = ColOffset;
     unsigned rowOffset = RowOffset;
-    FuncOp topFunc;
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
+
+    auto flag = mod.walk([&](FuncOp func){
+      if(!func->hasAttr("adf.cell") || !func->hasAttr("tripCount"))
+        return WalkResult::advance();
+
+      auto arrayAttr = dyn_cast<ArrayAttr>(func->getAttr("tripCount"));
+      SmallVector<unsigned, 3> tripCounts;
+      for(auto attr : arrayAttr){
+        auto intAttr = dyn_cast<IntegerAttr>(attr);
+        tripCounts.push_back((unsigned)intAttr.getInt());
+      }
+      // Here we need to identify the KSize, which assume should be innermost
+      // but don't care about the order of ISize and JSize
+      unsigned KSize = tripCounts[0];
+      unsigned JSize = tripCounts[1];
+      unsigned ISize = tripCounts[2];
+
+      if(CoreAlgo == 0){
+        if(!placementNaive0(builder, func, colNum, rowNum, colOffset, rowOffset,
+                            KSize, JSize, ISize))
+          return WalkResult::interrupt();
+      }
+      else{
+        if(!placementNaive1(builder, func, colNum, rowNum, colOffset, rowOffset,
+                            KSize, JSize, ISize))
+          return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    if(flag == WalkResult::interrupt())
       return false;
-    }
-
-    // Find the CellOp
-    // TODO: Handle Multiple CellOps
-    CellOp cellOp = getFirstOpOfType<CellOp>(topFunc.getBody());
-    if(!cellOp)
-      return true;
-
-    if(!cellOp->getAttr("tripCount"))
-      return true;
-    
-    auto arrayAttr = dyn_cast<ArrayAttr>(cellOp->getAttr("tripCount"));
-    
-    SmallVector<unsigned, 3> tripCounts;
-    for(auto attr : arrayAttr){
-      auto intAttr = dyn_cast<IntegerAttr>(attr);
-      tripCounts.push_back((unsigned)intAttr.getInt());
-    }
-    // Here we need to identify the KSize, which assume should be innermost
-    // but don't care about the order of ISize and JSize
-    unsigned KSize = tripCounts[0];
-    unsigned JSize = tripCounts[1];
-    unsigned ISize = tripCounts[2];
-
-    if(CoreAlgo == 0){
-      if(!placementNaive0(builder, cellOp, colNum, rowNum, colOffset, rowOffset,
-                          KSize, JSize, ISize))
-        return false;
-    }
-    else{
-      if(!placementNaive1(builder, cellOp, colNum, rowNum, colOffset, rowOffset,
-                          KSize, JSize, ISize))
-        return false;
-    }
-
     return true;
   }
 
