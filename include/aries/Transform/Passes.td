@@ -203,7 +203,7 @@ def AriesPLIOMaterialize : Pass<"aries-plio-materialize"> {
   let constructor = "mlir::aries::createAriesPLIOMaterializePass()";
   let options = [
     ListOption<"BuffSels", "buf-sels", "unsigned",
-               "Specify a list of buffer selection 0:BRAM, 1:URAM",
+               "Specify a list of buffer selection 1:BRAM, 0:URAM",
                "llvm::cl::ZeroOrMore">
   ];
 }

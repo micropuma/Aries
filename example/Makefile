@@ -30,9 +30,9 @@ L2_2=4
 L3_0=4
 L3_1=6
 L3_2=1
-BUFF_0=0
-BUFF_1=0
-BUFF_2=1
+BUFF_0=1#1:BRAM 0:URAM
+BUFF_1=1
+BUFF_2=0
 ifeq ($(EN_PL),1)
 	IOType=PLIO
 else

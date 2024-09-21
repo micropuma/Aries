@@ -300,9 +300,9 @@ private:
       else
         sel = 0;
       if(sel==0)
-        bufferType = "bram_s2p";
-      else
         bufferType = "uram_t2p";
+      else
+        bufferType = "bram_s2p";
       allocOp->setAttr("buffer_type", builder.getStringAttr(bufferType));
     }else{
       auto it = llvm::find_if(argIndeices, 
@@ -316,9 +316,9 @@ private:
       else
         sel = 0;
       if(sel==0)
-        bufferType = "bram_s2p";
-      else
         bufferType = "uram_t2p";
+      else
+        bufferType = "bram_s2p";
       allocOp->setAttr("buffer_type", builder.getStringAttr(bufferType));
       allocOp->setAttr("init", builder.getUnitAttr());
     }

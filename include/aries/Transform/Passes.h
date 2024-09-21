@@ -94,7 +94,7 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
   /// Configure the PLIOMaterialize pass.
   ListOption<unsigned> OptBuffSels{
       *this, "buf-sels", llvm::cl::ZeroOrMore,
-      llvm::cl::desc("Specify a list of buffer selection 0:BRAM, 1:URAM")};
+      llvm::cl::desc("Specify a list of buffer selection 1:BRAM, 0:URAM")};
 
   /// Configure the AXIPacking pass.
   Option<int64_t> OptAXIWidth{
