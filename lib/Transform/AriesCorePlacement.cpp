@@ -52,11 +52,12 @@ private:
     auto indexType = builder.getIndexType();
     unsigned rowStart = rowOffset;
     // Determine the height and formula for pid
-    unsigned height= std::min(KSize, rowNum);
+    unsigned realRowNum = rowNum - rowStart;
+    unsigned height= std::min(KSize, realRowNum);
     unsigned flag;
-    if(KSize<=rowNum){
-      if(rowNum%KSize==0)
-        height= rowNum;
+    if(KSize<=realRowNum){
+      if(realRowNum%KSize==0)
+        height= realRowNum;
       if(ISize < JSize){
         flag = 0;
       }else{
@@ -236,7 +237,6 @@ private:
         auto direction = directions[directSel];
         unsigned bufCol, bufRow;
         bufLoc(direction, col, row, bufCol, bufRow);
-        llvm::outs() << "Here 0 (col, row, bufCol, bufRow, direction, dmaBudget): " << col << ", " << row << ", " << bufCol << ", " << bufRow << ", " << direction << ", " << DMACnt[bufCol][bufRow] << ")\n";
         // Get the number of DMAs remaining
         auto dmaBudget = DMACnt[bufCol][bufRow];
         // If no available dma, then mark this dir as invalid
@@ -249,8 +249,6 @@ private:
         // Find an empty bank to place, if non-empty one, then insert it in 
         // one of the avialable bank
         // Round 0, find empty bank first
-        llvm::outs() << "Round 0\n";
-        llvm::outs() << "(col, row, bufCol, bufRow, direction, dmaBudget): " << col << ", " << row << ", " << bufCol << ", " << bufRow << ", " << direction << ", " << DMACnt[bufCol][bufRow] << ")\n";
         bool round1_flag = true;
         for(unsigned b = 0; b < bankNum; b++){
           // an affine map e.g. [0,1,2,3] -> [0,2,1,3]
@@ -302,15 +300,12 @@ private:
             createBufLoc(builder, callOp, buffer, 
                          bufCol, bufRow, offset0, offset1);
             DMACnt[bufCol][bufRow] = DMACnt[bufCol][bufRow] - 1;
-            llvm::outs() << "Find in round 0: (col, row, bufCol, bufRow, direction, dmaBudget): " << col << ", " << row << ", " << bufCol << ", " << bufRow << ", " << direction << ", " << DMACnt[bufCol][bufRow] << ")\n";
             flag_end = true;
             round1_flag = false;
             break;
           }  
         }
         if(round1_flag){//Run second round
-          llvm::outs() << "Round 1\n";
-          llvm::outs() << "(col, row, bufCol, bufRow, direction, dmaBudget): " << col << ", " << row << ", " << bufCol << ", " << bufRow << ", " << direction << ", " << DMACnt[bufCol][bufRow] << ")\n";
           for(unsigned b = 0; b < bankNum; b++){
             auto remi = b % (bankNum/2);
             auto quot = std::floor(b / (bankNum/2));
@@ -362,7 +357,6 @@ private:
             createBufLoc(builder, callOp, buffer, 
                          bufCol, bufRow, offset0, offset1);
             DMACnt[bufCol][bufRow] = DMACnt[bufCol][bufRow] - 1;
-            llvm::outs() << "Find in round 1: (col, row, bufCol, bufRow, direction, dmaBudget): " << col << ", " << row << ", " << bufCol << ", " << bufRow << ", " << direction << ", " << DMACnt[bufCol][bufRow] << ")\n";
             flag_end = true;
             round1_flag = false;
             break;
@@ -392,7 +386,111 @@ private:
   bool placementNaive2(OpBuilder builder, FuncOp func, 
                        const unsigned colNum, const unsigned rowNum, 
                        unsigned colOffset, unsigned rowOffset,
-                       unsigned KSize, unsigned JSize, unsigned ISize){
+                       unsigned realKSize, unsigned JSize, unsigned ISize){
+    auto indexType = builder.getIndexType();
+    unsigned rowStart = rowOffset;
+    if(rowStart%2!=0){
+      llvm::outs() << "Algorithm requires rowOffset is a even number\n";
+      return false;
+    }
+    unsigned realRowNum = std::floor((rowNum-rowStart)/2);
+    // Determine the height and formula for pid
+    unsigned height;
+    unsigned flag;
+    if(JSize >= ISize){
+      flag = 0;
+      if(realRowNum>JSize && realRowNum%JSize==0)
+        height = realRowNum;
+      else
+        height = std::min(JSize, realRowNum);
+    }else{
+      flag = 1;
+      if(realRowNum>ISize && realRowNum%ISize==0)
+        height = realRowNum;
+      else
+        height = std::min(ISize, realRowNum);
+    }
+    unsigned coreNum = JSize * ISize;
+    unsigned KSize;
+    unsigned halfKSize =  std::ceil(realKSize/2.0);
+    if(realKSize == 1 || realKSize == 2)
+      KSize = realKSize;
+    else
+      KSize = std::ceil(realKSize/2.0) + std::floor(realKSize/2.0) - 1;
+    unsigned colWidth = std::ceil(coreNum/(float)height) * (KSize);
+    if(colWidth > colNum)
+      return false;
+    unsigned colStart = std::floor((colNum - colWidth) / 2.0) + colOffset;
+
+    auto result = func.walk([&](CallOp callOp){
+      if(!callOp->hasAttr("adf.kernel"))
+        return WalkResult::advance();
+      if(!callOp->hasAttr("ivs"))
+        return WalkResult::advance();
+      auto ivArrayAttr = dyn_cast<ArrayAttr>(callOp->getAttr("ivs"));
+      // Check if there are reduction loops need to be placed
+      
+      SmallVector<unsigned, 3> ivIdeices;
+      for(auto attr : ivArrayAttr){
+        auto intAttr = dyn_cast<IntegerAttr>(attr);
+        ivIdeices.push_back((unsigned)intAttr.getInt());
+      }
+      unsigned kSize=0;
+      unsigned jSize=0;
+      unsigned iSize=0;
+      if(ivIdeices.size()>3){
+        WalkResult::interrupt();
+      }else if(ivIdeices.size()==3){
+        kSize = ivIdeices[0];
+        jSize = ivIdeices[1];
+        iSize = ivIdeices[2];
+      }else if(ivIdeices.size()==2){
+        if(KSize ==1){
+          jSize = ivIdeices[0];
+          iSize = ivIdeices[1];
+        }else{
+          kSize = ivIdeices[0];
+          jSize = ivIdeices[1];
+        }
+      }else if(ivIdeices.size()==1){
+        if(KSize ==1){
+          jSize = ivIdeices[0];
+        }else{
+          kSize = ivIdeices[0];
+        }
+      }else{
+        return WalkResult::advance();
+      }
+      
+      unsigned rowIndex = 0;
+      if(flag==1)
+        rowIndex = jSize + iSize * JSize;
+      else if(flag==0)
+        rowIndex = iSize + jSize * ISize;
+      unsigned remi = rowIndex % height;
+      unsigned quot = std::floor(rowIndex / (float)height);
+      // Calculate if exceed the half of the Ksize, then need to go up
+      unsigned upOffset = 0;
+      unsigned newkSize = kSize;
+      if(kSize >= halfKSize){
+        upOffset = 1;
+        newkSize = kSize - 1;
+      }
+      unsigned pid = remi * 2 + newkSize * (height*2) + upOffset 
+                     + quot * (KSize) * height * 2;
+      unsigned col = colStart + std::floor(pid / (float)(height*2));
+      unsigned row = rowStart + pid % (height*2);
+      if((col > colNum-1) || (row > rowNum-1))
+        return WalkResult::interrupt();
+      auto colAttr = builder.getIntegerAttr(indexType, col);
+      auto rowAttr = builder.getIntegerAttr(indexType, row);
+      auto arrayAttr = builder.getArrayAttr({colAttr, rowAttr});
+      callOp->setAttr("col, row", arrayAttr);
+      return WalkResult::advance();
+    });
+    if(result == WalkResult::interrupt())
+      return false;
+
     return true;
   }
 
@@ -570,18 +668,19 @@ private:
     // Determine the height and formula for pid
     unsigned height;
     unsigned flag;
+    unsigned realRowNum = rowNum - rowStart;
     if(JSize >= ISize){
       flag = 0;
-      if(rowNum>JSize && rowNum%JSize==0)
-        height = rowNum;
+      if(realRowNum>JSize && realRowNum%JSize==0)
+        height = realRowNum;
       else
-        height = std::min(JSize, rowNum);
+        height = std::min(JSize, realRowNum);
     }else{
       flag = 1;
-      if(rowNum>ISize && rowNum%ISize==0)
-        height = rowNum;
+      if(realRowNum>ISize && realRowNum%ISize==0)
+        height = realRowNum;
       else
-        height = std::min(ISize, rowNum);
+        height = std::min(ISize, realRowNum);
     }
     unsigned coreNum = JSize * ISize;
     unsigned colWidth = std::ceil(coreNum/(float)height) * (KSize+colGap);
