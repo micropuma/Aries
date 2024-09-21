@@ -26,6 +26,12 @@ namespace {
 
 struct AriesPLIOMaterialize : public AriesPLIOMaterializeBase<AriesPLIOMaterialize> {
 public:
+  AriesPLIOMaterialize() = default;
+  AriesPLIOMaterialize(const AriesOptions &opts) {
+    for (unsigned i = 0; i < opts.OptBuffSels.size(); ++i) {
+      BuffSels=opts.OptBuffSels[i];
+    }
+  }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
     StringRef topFuncName = "top_func";
@@ -204,6 +210,26 @@ private:
       strides = iopopOp.getDstStrides();
     }
 
+    // Get the buffer implementation selection: 0:BRAM 1:URAM
+    SmallVector<std::pair<Value, unsigned>, 4> argIndeices; //Arg, sel
+    for(auto arg: plFunc.getArguments()){
+      if(auto memref = dyn_cast<MemRefType>(arg.getType())){
+        auto memSpace = memref.getMemorySpace();
+        if(memSpace){
+          if(auto memIntAttr = dyn_cast<IntegerAttr>(memSpace)){
+            auto memSpaceVal = memIntAttr.getInt();
+            if(memSpaceVal == (int)MemorySpace::L3){
+              argIndeices.push_back(std::pair(arg, 0));
+            }
+          }
+        }else{
+          argIndeices.push_back(std::pair(arg, 0));
+        }
+      }
+    }
+    for (unsigned i = 0; i < std::min(argIndeices.size(),BuffSels.size()); ++i)
+        argIndeices[i].second = BuffSels[i];
+
     //////////////////////////TODO////////////////////////
     /*
     Need to handle more general cases of the offest in IOPushOp/IOPopOp
@@ -262,10 +288,38 @@ private:
          = builder.create<AllocOp>(loc, MemRefType::get(bufSizes,
                                    type.getElementType(), AffineMap(),
                                    (int)MemorySpace::L2));
-    if(iopush)
-      allocOp->setAttr("buffer_type", builder.getStringAttr("bram_s2p"));
-    else{
-      allocOp->setAttr("buffer_type", builder.getStringAttr("uram_t2p"));
+    if(iopush){
+      auto it = llvm::find_if(argIndeices, 
+        [&](const std::pair<Value, unsigned>&p){
+        return p.first == src;
+      });
+      unsigned sel;
+      std::string bufferType;
+      if(it!=argIndeices.end())
+        sel = it->second;
+      else
+        sel = 0;
+      if(sel==0)
+        bufferType = "bram_s2p";
+      else
+        bufferType = "uram_t2p";
+      allocOp->setAttr("buffer_type", builder.getStringAttr(bufferType));
+    }else{
+      auto it = llvm::find_if(argIndeices, 
+        [&](const std::pair<Value, unsigned>&p){
+        return p.first == dst;
+      });
+      unsigned sel;
+      std::string bufferType;
+      if(it!=argIndeices.end())
+        sel = it->second;
+      else
+        sel = 0;
+      if(sel==0)
+        bufferType = "bram_s2p";
+      else
+        bufferType = "uram_t2p";
+      allocOp->setAttr("buffer_type", builder.getStringAttr(bufferType));
       allocOp->setAttr("init", builder.getUnitAttr());
     }
     // Create static size and strides for dma & IOPush/IOPop
@@ -1297,6 +1351,11 @@ namespace aries {
 std::unique_ptr<Pass> createAriesPLIOMaterializePass() {
   return std::make_unique<AriesPLIOMaterialize>();
 }
+
+std::unique_ptr<Pass> createAriesPLIOMaterializePass(const AriesOptions &opts) {
+  return std::make_unique<AriesPLIOMaterialize>(opts);
+}
+
 
 } // namespace aries
 } // namespace mlir

@@ -30,6 +30,9 @@ L2_2=4
 L3_0=4
 L3_1=6
 L3_2=1
+BUFF_0=0
+BUFF_1=0
+BUFF_2=1
 ifeq ($(EN_PL),1)
 	IOType=PLIO
 else
@@ -132,7 +135,7 @@ iomaterialize: ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir
 ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
 	aries-opt -o $@ $< \
 			-aries-gmio-materialize \
-			-aries-plio-materialize
+			-aries-plio-materialize="buf-sels=${BUFF_0},${BUFF_1},${BUFF_2}"
 
 axipacking: ${PROJECT_PATH}/16_${FUNC}.axipacking.mlir
 ${PROJECT_PATH}/16_${FUNC}.axipacking.mlir: ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir
@@ -186,7 +189,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-core-placement="col-num=${ColNum} row-num=${RowNum} col-offset=${ColOffset} row-offset=${RowOffset} core-gap=${ColGap} core-algo=${CoreAlgo}" \
 			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${MidLine} chal-in=${ChalIn} chal-out=${ChalOut} iocons=${EnableIOCons}" \
 			-aries-gmio-materialize \
-			-aries-plio-materialize \
+			-aries-plio-materialize="buf-sels=${BUFF_0},${BUFF_1},${BUFF_2}" \
 			-aries-axi-packing="axi-width=${AXIWidth}" \
 			-aries-pl-dataflow \
 			-canonicalize -cse \

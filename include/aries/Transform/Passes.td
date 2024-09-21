@@ -201,6 +201,11 @@ def AriesPLIOMaterialize : Pass<"aries-plio-materialize"> {
     and materialize the IOPush/IOPop Ops with specific DMA.
   }];
   let constructor = "mlir::aries::createAriesPLIOMaterializePass()";
+  let options = [
+    ListOption<"BuffSels", "buf-sels", "unsigned",
+               "Specify a list of buffer selection 0:BRAM, 1:URAM",
+               "llvm::cl::ZeroOrMore">
+  ];
 }
 
 def AriesAXIPacking : Pass<"aries-axi-packing"> {

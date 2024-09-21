@@ -91,6 +91,11 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       *this, "iocons", llvm::cl::init(false), llvm::cl::desc(
       "Enable limiting the IO used in a shim for certain PLIOs")};
   
+  /// Configure the PLIOMaterialize pass.
+  ListOption<unsigned> OptBuffSels{
+      *this, "buf-sels", llvm::cl::ZeroOrMore,
+      llvm::cl::desc("Specify a list of buffer selection 0:BRAM, 1:URAM")};
+
   /// Configure the AXIPacking pass.
   Option<int64_t> OptAXIWidth{
       *this, "axi-width", llvm::cl::init(32), llvm::cl::desc(
@@ -128,6 +133,7 @@ std::unique_ptr<Pass> createAriesIOPlacementPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesGMIOMaterializePass();
 std::unique_ptr<Pass> createAriesPLIOMaterializePass();
+std::unique_ptr<Pass> createAriesPLIOMaterializePass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesAXIPackingPass();
 std::unique_ptr<Pass> createAriesAXIPackingPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesPLDataflowPass();
