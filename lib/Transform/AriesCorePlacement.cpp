@@ -381,14 +381,7 @@ private:
           else{
             // Check if start from this bank the capacity is enough
             for(unsigned i = 0; i < bankNeeded; i++){
-              auto tempBank = i + b; //Need to convert before update offset
-              auto remi1 = tempBank % (bankNum/2);
-              auto quot1 = std::floor(tempBank / (bankNum/2));
-              unsigned needBank;
-              if(quot1 == 0)
-                needBank = remi1 * 2;
-              else
-                needBank = remi1 * 2 + 1;
+              auto needBank = i + bnew;
               auto needBudget = bufOffsets[bufCol][bufRow][needBank];
               // The buffer need to be consecutive. If find non-consecutive
               // banks go to next bank
@@ -401,14 +394,7 @@ private:
               continue;
             // If can be placed then update offsets
             for(unsigned i = 0; i < bankNeeded; i++){
-              auto tempBank = i + b; //Need to convert before update offset
-              auto remi1 = tempBank % (bankNum/2);
-              auto quot1 = std::floor(tempBank / (bankNum/2));
-              unsigned needBank;
-              if(quot1 == 0)
-                needBank = remi1 * 2;
-              else
-                needBank = remi1 * 2 + 1;
+              auto needBank = i + bnew;
               if(i==bankNeeded-1)
                 bufOffsets[bufCol][bufRow][needBank] = lefSize + 1;
               else
@@ -452,14 +438,7 @@ private:
               (bankNeeded==availableBank && newLefSize>=lastBankSize))
               break;
             for(unsigned i = 0; i < newBankNeeded; i++){
-              auto tempBank = i + b; //Need to convert before update offset
-              auto remi1 = tempBank % (bankNum/2);
-              auto quot1 = std::floor(tempBank / (bankNum/2));
-              unsigned needBank;
-              if(quot1 == 0)
-                needBank = remi1 * 2;
-              else
-                needBank = remi1 * 2 + 1;
+              auto needBank = i + bnew;
               auto needBudget = bufOffsets[bufCol][bufRow][needBank];
               // This is already the second round, try another bank
               if(i!=0 && needBudget != 0){
@@ -470,14 +449,7 @@ private:
             if(!flag)
               continue;
             for(unsigned i = 0; i < newBankNeeded; i++){
-              auto tempBank = i + b; //Need to convert before update offset
-              auto remi1 = tempBank % (bankNum/2);
-              auto quot1 = std::floor(tempBank / (bankNum/2));
-              unsigned needBank;
-              if(quot1 == 0)
-                needBank = remi1 * 2;
-              else
-                needBank = remi1 * 2 + 1;
+              auto needBank = i + bnew;
               if(i==0 && newBankNeeded==1)
                 bufOffsets[bufCol][bufRow][needBank] = newLefSize + 1;
               else if(i==newBankNeeded-1)
@@ -544,7 +516,13 @@ private:
         // If no available dma, then change another direction
         if(dmaBudget < 1)
           continue;
+                // Place the buffer in one of the available bank of dest location
+        // Find an empty bank to place, if non-empty one, then insert it in 
+        // one of the avialable bank
+        // Round 0, find empty bank first
+        bool round1_flag = true;
         for(unsigned b = 0; b < bankNum; b++){
+          // an affine map e.g. [0,1,2,3] -> [0,2,1,3]
           auto remi = b % (bankNum/2);
           auto quot = std::floor(b / (bankNum/2));
           unsigned bnew;
@@ -552,6 +530,9 @@ private:
             bnew = remi * 2;
           else
             bnew = remi * 2 + 1;
+          // Double buffer is interleaved in AIE
+          // [0, 2, 4, 6] where 0,2; 4,6; 1,3; 5,7; are pairs
+          // [1, 3, 5, 7] index should be [0->0] [1->1] [2-->4] [3-->5]
           unsigned breal;
           if(bnew%2==0)
             breal = bnew * 2;
@@ -561,48 +542,99 @@ private:
           if(curBudget >= bankSize)
             continue;
           unsigned flag = true;
-          // Check if with the curBudget start from this bank the 
-          // capacity is enough
-          auto availableBank = bankNum - bnew;
-          auto newSizeInBytes = curBudget + sizeInBytes;
-          unsigned newLefSize = newSizeInBytes % bankSize;
-          unsigned newBankNeeded = std::ceil(newSizeInBytes / (float)bankSize);
-          if(newBankNeeded > availableBank || 
-            (bankNeeded==availableBank && newLefSize>=lastBankSize))
-            break;
-          for(unsigned i = 0; i < newBankNeeded; i++){
-            auto tempBank = i + b; //Need to convert before update offset
-            auto remi1 = tempBank % (bankNum/2);
-            auto quot1 = std::floor(tempBank / (bankNum/2));
-            unsigned needBank;
-            if(quot1 == 0)
-              needBank = remi1 * 2;
-            else
-              needBank = remi1 * 2 + 1;
-            auto needBudget = bufOffsets[bufCol][bufRow][needBank];
-            if(i!=0 && needBudget != 0){
-              flag =false;
-              break;
-            }
-          }
-          if(!flag)
+          if(curBudget!=0)
             continue;
-          for(unsigned i = 0; i < newBankNeeded; i++){
-            auto needBank = i + b;
-            if(i==0 && newBankNeeded==1)
-              bufOffsets[bufCol][bufRow][needBank] = newLefSize + 1;
-            else if(i==newBankNeeded-1)
-              bufOffsets[bufCol][bufRow][needBank] = newLefSize + 1;
-            else
-              bufOffsets[bufCol][bufRow][needBank] = bankSize;
+          else{
+            // Check if start from this bank the capacity is enough
+            for(unsigned i = 0; i < bankNeeded; i++){
+              auto needBank = i + bnew;
+              auto needBudget = bufOffsets[bufCol][bufRow][needBank];
+              // The buffer need to be consecutive. If find non-consecutive
+              // banks go to next bank
+              if(needBudget != 0){
+                flag =false;
+                break;
+              }         
+            }
+            if(!flag)
+              continue;
+            // If can be placed then update offsets
+            for(unsigned i = 0; i < bankNeeded; i++){
+              auto needBank = i + bnew;
+              if(i==bankNeeded-1)
+                bufOffsets[bufCol][bufRow][needBank] = lefSize + 1;
+              else
+                bufOffsets[bufCol][bufRow][needBank] = bankSize;       
+            }
+            unsigned offset0 = breal * bankSize;
+            unsigned offset1 = offset0 +  bankSize * 2;
+            createBufLoc(builder, callOp, buffer, 
+                         bufCol, bufRow, offset0, offset1);
+            DMACnt[bufCol][bufRow] = DMACnt[bufCol][bufRow] - 1;
+            flag_end = true;
+            round1_flag = false;
+            break;
           }
-          unsigned offset0 = breal * bankSize + curBudget;
-          unsigned offset1 = offset0 +  bankSize * 2;
-          createBufLoc(builder, callOp, buffer, 
-                       bufCol, bufRow, offset0, offset1);
-          DMACnt[bufCol][bufRow] = DMACnt[bufCol][bufRow] - 1;
-          flag_end = true;
-          break;
+          if(flag_end)
+            break;
+        }
+        if(round1_flag){//Run second round
+          for(unsigned b = 0; b < bankNum; b++){
+            auto remi = b % (bankNum/2);
+            auto quot = std::floor(b / (bankNum/2));
+            unsigned bnew;
+            if(quot == 0)
+              bnew = remi * 2;
+            else
+              bnew = remi * 2 + 1;
+            unsigned breal;
+            if(bnew%2==0)
+              breal = bnew * 2;
+            else
+              breal = bnew * 2 - 1;
+            auto curBudget = bufOffsets[bufCol][bufRow][bnew];
+            if(curBudget >= bankSize)
+              continue;
+            unsigned flag = true;
+            // Check if with the curBudget start from this bank the 
+            // capacity is enough
+            auto availableBank = bankNum - bnew;
+            auto newSizeInBytes = curBudget + sizeInBytes;
+            unsigned newLefSize = newSizeInBytes % bankSize;
+            unsigned newBankNeeded = std::ceil(newSizeInBytes / (float)bankSize);
+            if(newBankNeeded > availableBank || 
+              (bankNeeded==availableBank && newLefSize>=lastBankSize))
+              break;
+            for(unsigned i = 0; i < newBankNeeded; i++){
+              auto needBank = i + bnew;
+              auto needBudget = bufOffsets[bufCol][bufRow][needBank];
+              // This is already the second round, try another bank
+              if(i!=0 && needBudget != 0){
+                flag =false;
+                break;
+              }
+            }
+            if(!flag)
+              continue;
+            for(unsigned i = 0; i < newBankNeeded; i++){
+              auto needBank = i + bnew;
+              if(i==0 && newBankNeeded==1)
+                bufOffsets[bufCol][bufRow][needBank] = newLefSize + 1;
+              else if(i==newBankNeeded-1)
+                bufOffsets[bufCol][bufRow][needBank] = newLefSize + 1;
+              else
+                bufOffsets[bufCol][bufRow][needBank] = bankSize;
+            }
+            unsigned offset0 = breal * bankSize + curBudget;
+            unsigned offset1 = offset0 +  bankSize * 2;
+            createBufLoc(builder, callOp, buffer, 
+                         bufCol, bufRow, offset0, offset1);
+            DMACnt[bufCol][bufRow] = DMACnt[bufCol][bufRow] - 1;
+            flag_end = true;
+            break;
+          }
+          if(flag_end)
+            break;
         }
         if(flag_end)
           break;
