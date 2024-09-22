@@ -1049,8 +1049,6 @@ private:
   // This function does the loop permutation for load/store from DDR->L2 mem
   // in order to potential increase the burst length, the loops involved in
   // the access of last dim should be put inside.
-  // TODO::This permutation is not safe, since it can not pass 
-  //       the interchange verification, need to figure it out why
   bool loopPermutation(AffineForOp plForOp){
     for (AffineForOp forOp : plForOp.getOps<AffineForOp>()) {
       if(!forOp->hasAttr("load") && !forOp->hasAttr("store"))
@@ -1136,14 +1134,17 @@ private:
       });
       // Merge the depth of OuterLoops and InnerLoops
       SmallVector<unsigned, 6> permMap;
+      SmallVector<unsigned, 6> orderedDepth;
       for (auto pair : outerLoops)
-        permMap.push_back(pair.first);
+        orderedDepth.push_back(pair.first);
       for (auto pair : innerLoops)
-        permMap.push_back(pair.first);
-      // TODO::This permutation is not safe, since it can not pass 
-      //       the interchange verification, need to figure it out why
-      //if (isValidLoopInterchangePermutation(originBand, permMap))
-      permuteLoops(originBand, permMap);
+        orderedDepth.push_back(pair.first);
+      for(unsigned i=0; i< bandSize; i++){
+        auto newPos = llvm::find(orderedDepth, i) - orderedDepth.begin();
+        permMap.push_back(newPos);
+      }
+      if (isValidLoopInterchangePermutation(originBand, permMap))
+        permuteLoops(originBand, permMap);
     }
     return true;
   }
