@@ -1269,9 +1269,10 @@ private:
     pm.addPass(createSimplifyAffineStructuresPass());
     (void)pm.run(plFunc);
 
-    if(!AllocL2Buffer(builder, plFunc, plForOp, band))
+    if(!AllocL2Buffer(builder, plFunc, plForOp, band)){
+      llvm::outs() << "Alloc L2 buffer failed\n";
       return false;
-
+    }
     // Tranverse the IOPushOps/IOPopOps and convert them to affine load/store
     auto flag = plForOp.walk([&](Operation* op){
       WalkResult result;
@@ -1285,9 +1286,10 @@ private:
         return WalkResult::advance();
       return result;
     });
-    if (flag == WalkResult::interrupt()) 
+    if (flag == WalkResult::interrupt()){
+      llvm::outs() << "ConverIOTOAffine failed\n";
       return false;
-
+    }
     // Replace arguments with PLIOType by memref arguments
     ArgUpdate(builder, topFunc, plFunc, callop);
     // Simplify the loop structure after ConvertToAffine.
@@ -1295,9 +1297,10 @@ private:
     pm.addPass(createSimplifyAffineStructuresPass());
     (void)pm.run(plFunc);
     // Permute loops in order to potentially increase the burst length
-    if(!loopPermutation(plForOp))
+    if(!loopPermutation(plForOp)){
+      llvm::outs() << "Loop permutation failed\n";
       return false;
-    
+    }
     // Tranverse all the outer point dma loops(involve L3 mem) and change the
     // L2 buffer access with stream access
     L2MemProcessTop(builder, plFunc, plForOp);
