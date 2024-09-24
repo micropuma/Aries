@@ -205,6 +205,10 @@ private:
     if(auto attr = caller->getAttr("ivs"))
       if(auto arrayAttr = dyn_cast<ArrayAttr>(attr))
         newCallOp->setAttr("ivs", arrayAttr);
+    if(auto attr = caller->getAttr("kernel"))
+      if(auto intAttr = dyn_cast<IntegerAttr>(attr))
+        if(intAttr.getInt() == 0)
+          newCallOp->setAttr("kernel", intAttr);
     auto calleeName = caller.getCallee();
     auto intAttr = dyn_cast<IntegerAttr>(caller->getAttr(calleeName));
     auto newCalleeName = newCallOp.getCallee();
