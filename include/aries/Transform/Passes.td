@@ -129,6 +129,15 @@ def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
   let dependentDialects = ["mlir::memref::MemRefDialect"];
 }
 
+def AriesBroadcastToForwarding : Pass<"aries-broadcast-to-forwarding"> {
+  let summary = "Change the broadcast in the reduction chain by forwarding";
+  let description = [{
+    This pass tranverses every reduction chain, detects the broadcast pattern
+    exists on the entire chain and replace it by direct data forwarding.
+  }];
+  let constructor = "mlir::aries::createAriesBroadcastToForwardingPass()";
+}
+
 def AriesDMAToIO : Pass<"aries-dma-to-io"> {
   let summary = "Convert DmaOp to GraphIOs";
   let description = [{

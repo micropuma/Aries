@@ -10,6 +10,7 @@ add_mlir_library(MLIRAriesPasses
     AriesCorePlacement.cpp
     AriesLocalDataForward.cpp
     AriesKernelInterfaceCreate.cpp
+    AriesBroadcastToForwarding.cpp
     AriesDMAToIO.cpp
     AriesADFCellCreate.cpp
     AriesIOPlacement.cpp
