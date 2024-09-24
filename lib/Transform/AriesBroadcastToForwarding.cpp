@@ -140,66 +140,65 @@ private:
 
   // This is a work around need to be generalized
   bool BroadcastToForwarding (ModuleOp mod, StringRef topFuncName) {
-    return true;
-    auto builder = OpBuilder(mod);
-    FuncOp topFunc;
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
-      return false;
-    }
+    // auto builder = OpBuilder(mod);
+    // FuncOp topFunc;
+    // if(!topFind(mod, topFunc, topFuncName)){
+    //   topFunc->emitOpError("Top function not found\n");
+    //   return false;
+    // }
 
-    // Find the CellOp
-    // TODO: Handle Multiple CellOp
-    CellOp cell = getFirstOpOfType<CellOp>(topFunc.getBody());
-    if(!cell)
-      return true;
+    // // Find the CellOp
+    // // TODO: Handle Multiple CellOp
+    // CellOp cell = getFirstOpOfType<CellOp>(topFunc.getBody());
+    // if(!cell)
+    //   return true;
 
-    cell.walk([&](CallOp call){
-      // Deal with the calls at start of the reduction chain
-      // Here only support for 1d reduction chain
-      if(call->hasAttr("kernel"))
-        return WalkResult::advance();
+    // cell.walk([&](CallOp call){
+    //   // Deal with the calls at start of the reduction chain
+    //   // Here only support for 1d reduction chain
+    //   if(call->hasAttr("kernel"))
+    //     return WalkResult::advance();
       
-      // Find the next kernel in the reduction chain
-      auto numResult = call.getNumResults();
-      if(numResult!=1)
-        return WalkResult::advance();
-      Value res = call.getResult(0);
-      SmallVector<CallOp> calls;
-      calls.push_back(call);
-      callCollection(res, calls);
-      if(calls.size()==1)
-        return WalkResult::advance();
+    //   // Find the next kernel in the reduction chain
+    //   auto numResult = call.getNumResults();
+    //   if(numResult!=1)
+    //     return WalkResult::advance();
+    //   Value res = call.getResult(0);
+    //   SmallVector<CallOp> calls;
+    //   calls.push_back(call);
+    //   callCollection(res, calls);
+    //   if(calls.size()==1)
+    //     return WalkResult::advance();
       
-      //Collect all the operands of these calls
-      SmallVector<SmallVector<Value, 4>> operandList;
-      for(auto call : calls){
-        auto operands = call.getOperands();
-        operandList.push_back(operands);
-      }
-      // Tranverse the chain to detect broadcast dmas on all calls
-      SmallVector<SmallVector<DmaOp,4>> broadcastList;
-      SmallVector<unsigned, 4> indeices;
-      findBroadcast(operandList, broadcastList, indeices);
-      if(!broadcastList.size())
-        return WalkResult::advance();
+    //   //Collect all the operands of these calls
+    //   SmallVector<SmallVector<Value, 4>> operandList;
+    //   for(auto call : calls){
+    //     auto operands = call.getOperands();
+    //     operandList.push_back(operands);
+    //   }
+    //   // Tranverse the chain to detect broadcast dmas on all calls
+    //   SmallVector<SmallVector<DmaOp,4>> broadcastList;
+    //   SmallVector<unsigned, 4> indeices;
+    //   findBroadcast(operandList, broadcastList, indeices);
+    //   if(!broadcastList.size())
+    //     return WalkResult::advance();
       
-      // TODO: Here have a very preservative assumpssion:
-      // Only do this optimization when all the callers need to do the same
-      // update by marking the functions with attributes first
-      // Mark the middle calls with the argument needs to be returned
-      SmallVector<Attribute, 4> integerAttrs;
-      for(unsigned i=1; i < calls.size(); i++){
-        auto call = calls[i];
-        for(auto index : indeices){
+    //   // TODO: Here have a very preservative assumpssion:
+    //   // Only do this optimization when all the callers need to do the same
+    //   // update by marking the functions with attributes first
+    //   // Mark the middle calls with the argument needs to be returned
+    //   SmallVector<Attribute, 4> integerAttrs;
+    //   for(unsigned i=1; i < calls.size(); i++){
+    //     auto call = calls[i];
+    //     for(auto index : indeices){
 
-        }
+    //     }
         
-      }
+    //   }
       
       
-      return WalkResult::advance();
-    });
+    //   return WalkResult::advance();
+    // });
 
     return true;
   }

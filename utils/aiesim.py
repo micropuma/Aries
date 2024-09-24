@@ -92,7 +92,33 @@ def mttkrp_gen(file_0, file_1, file_2, file_golden):
   sim_gen(data_2_1d, BPE, PLIO_WIDTH, file_2)
   sim_gen(data_result_1d, BPE, PLIO_WIDTH, file_golden)
 
-test_case=1
+############ ttmc: D(i, j, k)+ = A(i, l, m) * B(l, j) * C(m, k)
+def ttmc(I, J, K, L, M):
+  np.random.seed(0)
+  data_0 = np.random.randint(0, 3, size=(I, L, M))
+  data_1 = np.random.randint(0, 3, size=(L, J))
+  data_2 = np.random.randint(0, 3, size=(M, K))
+  data_result = np.zeros([I, J, K])
+  data_0_1d = data_0.reshape(-1)
+  data_1_1d = data_1.reshape(-1)
+  data_2_1d = data_2.reshape(-1)
+  for i in range(I):
+    for j in range(J):
+      for k in range(K):
+        for l in range(L):
+          for m in range(M):
+            data_result[i, j, k] = data_result[i, j, k] + data_0[i,l,m] * data_1[l,j] * data_2[m,k]
+  data_result_1d = data_result.reshape(-1)
+  return data_0_1d, data_1_1d, data_2_1d, data_result_1d
+
+def ttmc_gen(file_0, file_1, file_2, file_golden):
+  data_0_1d, data_1_1d, data_2_1d, data_result_1d = ttmc(2, 16, 16, 16, 32)
+  sim_gen(data_0_1d, BPE, PLIO_WIDTH, file_0)
+  sim_gen(data_1_1d, BPE, PLIO_WIDTH, file_1)
+  sim_gen(data_2_1d, BPE, PLIO_WIDTH, file_2)
+  sim_gen(data_result_1d, BPE, PLIO_WIDTH, file_golden)
+
+test_case=2
 verfify = False
 
 if test_case==0: #matmul
@@ -112,6 +138,16 @@ elif test_case==1: #mttkrp
   file_final = 'data/v3.txt'
   file_golden = 'data/golden.txt'
   mttkrp_gen(file_0, file_1, file_2, file_golden)
+  if verfify:
+    result_verify(file_out, file_final, file_golden)
+elif test_case==2: #ttmc
+  file_0 = 'data/v0.txt'
+  file_1 = 'data/v1.txt'
+  file_2 = 'data/v2.txt'
+  file_out = 'aiesimulator_output/data/v3.txt'
+  file_final = 'data/v3.txt'
+  file_golden = 'data/golden.txt'
+  ttmc_gen(file_0, file_1, file_2, file_golden)
   if verfify:
     result_verify(file_out, file_final, file_golden)
    

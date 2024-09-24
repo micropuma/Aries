@@ -2143,7 +2143,7 @@ int main(int argc, char ** argv) {
     }
     for(auto call: calls){
       indent();
-      os << getCall(call) << ".run(4);\n";
+      os << getCall(call) << ".run(1);\n";
     }
     for(auto call: calls){
       indent();
