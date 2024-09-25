@@ -107,6 +107,7 @@ def ttmc(I, J, K, L, M):
       for k in range(K):
         for l in range(L):
           for m in range(M):
+            #print(f"D[i][j][k]  = A[i][l][m] * B[l][j] * C[m][k], D[{i}][{j}][{k}] = A[{i}][{l}][{m}] * B[{l}][{j}] * C[{m}][{k}]")
             data_result[i, j, k] = data_result[i, j, k] + data_0[i,l,m] * data_1[l,j] * data_2[m,k]
   data_result_1d = data_result.reshape(-1)
   return data_0_1d, data_1_1d, data_2_1d, data_result_1d
