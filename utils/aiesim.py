@@ -119,7 +119,7 @@ def ttmc_gen(file_0, file_1, file_2, file_golden):
   sim_gen(data_2_1d, BPE, PLIO_WIDTH, file_2)
   sim_gen(data_result_1d, BPE, PLIO_WIDTH, file_golden)
 
-test_case=2
+test_case=0
 verfify = False
 
 if test_case==0: #matmul

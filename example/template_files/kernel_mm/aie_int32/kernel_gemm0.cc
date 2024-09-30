@@ -17,6 +17,9 @@ using namespace adf;
 const int h1=32;
 const int w1=32;
 const int w2=32;
+const int A_SIZE=h1*w1;
+const int B_SIZE=w1*w2;
+const int C_SIZE=h1*w2;
 const int boundary_i=h1/2;
 const int boundary_j=w2/8;
 const int boundary_k=w1/8-1;
@@ -31,7 +34,7 @@ const int out_jump1=-8;
 
 // Assumes all the operands are row-major
 // The basic block is 2*8*8 (i, j, k)
-void kernel_gemm0(input_buffer<int32_t, adf::extents<1024>>& __restrict in0, input_buffer<int32_t, adf::extents<1024>>& __restrict in1, output_buffer<int32_t, adf::extents<1024>>& __restrict out0) {
+void kernel_gemm0(input_buffer<int32_t, adf::extents<A_SIZE>>& __restrict in0, input_buffer<int32_t, adf::extents<B_SIZE>>& __restrict in1, output_buffer<int32_t, adf::extents<C_SIZE>>& __restrict out0) {
   int32_t * __restrict lhs = (int32_t *)in0.data();
   int32_t * __restrict rhs = (int32_t *)in1.data();
   int32_t * __restrict out = (int32_t *)out0.data();
