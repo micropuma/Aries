@@ -154,9 +154,8 @@ private:
       if(edgeKernel){
         auto eleType = type.getElementType();
         if (eleType.isa<IntegerType>()) {
-          auto intType = builder.getI32Type();
-          auto zeroAttr = builder.getIntegerAttr(intType, 0);
-          value = builder.create<arith::ConstantOp>(loc, intType, zeroAttr);
+          auto zeroAttr = builder.getIntegerAttr(eleType, 0);
+          value = builder.create<arith::ConstantOp>(loc, eleType, zeroAttr);
         }else{
           auto floatType = builder.getF32Type();
           auto floatAttr = builder.getF32FloatAttr(0.0);

@@ -925,9 +925,8 @@ private:
         auto intAttr = builder.getIntegerAttr(elementType, 0);
         value = builder.create<arith::ConstantOp>(loc, elementType, intAttr);
       }else{
-        auto floatType = builder.getF32Type();
         auto floatAttr = builder.getF32FloatAttr(0.0);
-        value = builder.create<arith::ConstantOp>(loc, floatType, floatAttr);
+        value = builder.create<arith::ConstantOp>(loc, elementType, floatAttr);
       }
       builder.create<AffineStoreOp>(loc, value, memref, indices);
       loadOp.erase();
