@@ -49,19 +49,23 @@ def result_verify(file_out, file_final, file_golden):
   verification(file_golden, file_final)
 
 ############ matmul: C(i, j)+ = A(i, k) * B(k, j)
-def matmul(I, J, K):
+def matmul(I, J, K, BPE):
   np.random.seed(0)
   data_0 = np.random.randint(0, 3, size=(I, K))
   data_1 = np.random.randint(0, 3, size=(K, J))
-  data_0_1d = data_0.reshape(-1)
-  data_1_1d = data_1.reshape(-1)
-  
   data_result = np.matmul(data_0, data_1)
-  data_result_1d = data_result.reshape(-1)
+  if(BPE==1): #Need to do reshape for int8
+    data_0_1d = np.vstack(np.split(data_0, K//8, axis=1)).reshape(-1)
+    data_1_1d = np.vstack(np.split(data_1, J//8, axis=1)).reshape(-1)
+    data_result_1d = np.vstack(np.split(data_result, J//8, axis=1)).reshape(-1)
+  else:
+    data_0_1d = data_0.reshape(-1)
+    data_1_1d = data_1.reshape(-1)
+    data_result_1d = data_result.reshape(-1)
   return data_0_1d, data_1_1d, data_result_1d
 
-def matmul_gen(file_lhs, file_rhs, file_golden):
-  data_0_1d, data_1_1d, data_result_1d = matmul(32, 32, 32)
+def matmul_gen(file_lhs, file_rhs, file_golden, BPE):
+  data_0_1d, data_1_1d, data_result_1d = matmul(32, 32, 32, BPE)
   sim_gen(data_0_1d, BPE, PLIO_WIDTH, file_lhs)
   sim_gen(data_1_1d, BPE, PLIO_WIDTH, file_rhs)
   sim_gen(data_result_1d, BPE, PLIO_WIDTH, file_golden)
@@ -128,7 +132,7 @@ if test_case==0: #matmul
   file_out = 'aiesimulator_output/data/v2.txt'
   file_final = 'data/v2.txt'
   file_golden = 'data/golden.txt'
-  matmul_gen(file_0, file_1, file_golden)
+  matmul_gen(file_0, file_1, file_golden, BPE)
   if verfify:
     result_verify(file_out, file_final, file_golden)
 elif test_case==1: #mttkrp
