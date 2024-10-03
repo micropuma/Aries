@@ -1,11 +1,11 @@
-FUNC:=gemm
+FUNC:=mttkrp
 PROJECT_NAME:=adf_graph_${FUNC}
 KERNEL_NAME:=kernel_${FUNC}
 PROJECT_PATH=./${PROJECT_NAME}
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
-TEMPLATE_PATH = .
+Template_PATH=..
 EN_PL = 1
 PLIOWidth = 128
 AXIWidth = 512
@@ -14,25 +14,73 @@ RowNum = 8
 ColOffset = 0 
 RowOffset = 0
 ColGap = 0
-CoreAlgo = 1
+CoreAlgo = 2
 FirstCol = 6
 NumShim = 39
 MidLine = 24
 ChalIn = 3
 ChalOut = 3
-EnableIOCons = "false"
-L1_0=32
+EnableIOCons = "true"
+# L1_0=2
+# L1_1=32
+# L1_2=16
+# L1_3=32
+# L2_0=8
+# L2_1=12
+# L2_2=1
+# L2_3=2
+# L3_0=2
+# L3_1=8
+# L3_2=6
+# L3_3=4
+# BUFF_0=0
+# BUFF_1=1
+# BUFF_2=0
+# BUFF_3=1
+# L1_0=2
+# L1_1=32
+# L1_2=16
+# L1_3=32
+# L2_0=5
+# L2_1=12
+# L2_2=1
+# L2_3=4
+# L3_0=3
+# L3_1=8
+# L3_2=8
+# L3_3=1
+# BUFF_0=0
+# BUFF_1=0
+# BUFF_2=1
+# BUFF_3=0
+# L1_0=2
+# L1_1=32
+# L1_2=16
+# L1_3=32
+# L2_0=5
+# L2_1=12
+# L2_2=4
+# L2_3=1
+# L3_0=2
+# L3_1=6
+# L3_2=2
+# L3_3=4
+L1_0=2
 L1_1=32
-L1_2=32
-L2_0=11
-L2_1=8
-L2_2=4
-L3_0=4
-L3_1=6
-L3_2=1
-BUFF_0=1#1:BRAM 0:URAM
+L1_2=16
+L1_3=32
+L2_0=1
+L2_1=1
+L2_2=1
+L2_3=4
+L3_0=1#I3
+L3_1=1#J3
+L3_2=1#K3
+L3_3=1#L3
+BUFF_0=0
 BUFF_1=1
 BUFF_2=0
+BUFF_3=1
 ifeq ($(EN_PL),1)
 	IOType=PLIO
 else
@@ -42,7 +90,7 @@ endif
 all: fileCreate copyFile pass translate copyplhost printcommand
 
 printcommand:
-	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, ColGap=${ColGap}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, EnableIOCons=${EnableIOCons}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, IOType=${IOType}" >${PROJECT_PATH}/command
+	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, ColGap=${ColGap}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, EnableIOCons=${EnableIOCons}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L1_3=${L1_3}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L2_3=${L2_3}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, L3_3=${L3_3}, IOType=${IOType}" >${PROJECT_PATH}/command.txt
 
 fileCreate:
 	mkdir -p ${PROJECT_AIE_PATH}
@@ -50,14 +98,14 @@ fileCreate:
 	mkdir -p ${PROJECT_Host_PATH}
 
 copyFile:
-	cp -r ${TEMPLATE_PATH}/template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
+	cp -r ${Template_PATH}/template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
 
 test: doublebuffer
 
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}"
+			-aries-tiling="l1-tile-sizes=${L1_0},${L1_1},${L1_2},${L1_3} l2-tile-sizes=${L2_0},${L2_1},${L2_2},${L2_3} l3-tile-sizes=${L3_0},${L3_1},${L3_2},${L3_3}"
 
 exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
@@ -177,7 +225,7 @@ ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/21_${FUNC}.doublebuffer.
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}" \
+			-aries-tiling="l1-tile-sizes=${L1_0},${L1_1},${L1_2},${L1_3} l2-tile-sizes=${L2_0},${L2_1},${L2_2},${L2_3} l3-tile-sizes=${L3_0},${L3_1},${L3_2},${L3_3}" \
 			-aries-func-extract \
 			-aries-loop-simplify \
 			-aries-mem-subview \
@@ -195,7 +243,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-core-placement="col-num=${ColNum} row-num=${RowNum} col-offset=${ColOffset} row-offset=${RowOffset} core-gap=${ColGap} core-algo=${CoreAlgo}" \
 			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${MidLine} chal-in=${ChalIn} chal-out=${ChalOut} iocons=${EnableIOCons}" \
 			-aries-gmio-materialize \
-			-aries-plio-materialize="buf-sels=${BUFF_0},${BUFF_1},${BUFF_2}" \
+			-aries-plio-materialize="buf-sels=${BUFF_0},${BUFF_1},${BUFF_2},${BUFF_3}" \
 			-aries-axi-packing="axi-width=${AXIWidth}" \
 			-aries-pl-dataflow \
 			-canonicalize -cse \
@@ -204,7 +252,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-pl-double-buffer\
 			-canonicalize -cse
 
-translate: file_split kernel_file_split clean_kernel_vec
+translate: file_split clean_kernel_vec#kernel_file_split
 file_split: tempfile
 	aries-opt <${FUNC}.mlir \
 		-aries-file-split="inputfile-name=temp.cpp path-name=${PROJECT_AIE_PATH}/" \
