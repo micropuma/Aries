@@ -154,9 +154,8 @@ private:
       if(edgeKernel){
         auto eleType = type.getElementType();
         if (eleType.isa<IntegerType>()) {
-          auto intType = builder.getI32Type();
-          auto zeroAttr = builder.getIntegerAttr(intType, 0);
-          value = builder.create<arith::ConstantOp>(loc, intType, zeroAttr);
+          auto zeroAttr = builder.getIntegerAttr(eleType, 0);
+          value = builder.create<arith::ConstantOp>(loc, eleType, zeroAttr);
         }else{
           auto floatType = builder.getF32Type();
           auto floatAttr = builder.getF32FloatAttr(0.0);
@@ -202,9 +201,13 @@ private:
     }
     // Erase the old call operation
     newCallOp->setAttr("adf.kernel", builder.getUnitAttr());
-    if(auto attr = caller->getAttr("col, row"))
+    if(auto attr = caller->getAttr("ivs"))
       if(auto arrayAttr = dyn_cast<ArrayAttr>(attr))
-        newCallOp->setAttr("col, row", arrayAttr);
+        newCallOp->setAttr("ivs", arrayAttr);
+    if(auto attr = caller->getAttr("kernel"))
+      if(auto intAttr = dyn_cast<IntegerAttr>(attr))
+        if(intAttr.getInt() == 0)
+          newCallOp->setAttr("kernel", intAttr);
     auto calleeName = caller.getCallee();
     auto intAttr = dyn_cast<IntegerAttr>(caller->getAttr(calleeName));
     auto newCalleeName = newCallOp.getCallee();

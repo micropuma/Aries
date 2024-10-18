@@ -126,6 +126,12 @@ private:
                       || srcSizes   != dstSizes
                       || srcStrides != dstStrides)
           continue;
+        if(opIndex>0){
+          llvm::outs() 
+              << "More than one flow dependencies found\n";
+          return false;
+        }
+        opIndex++;
         // If the loop variable is not included inside the access then
         // it will cause loop-carried flow dependency
         unsigned bandIndex=0;
@@ -147,24 +153,20 @@ private:
             if(std::find(srcOffsets.begin(), srcOffsets.end(), temp) 
                !=  srcOffsets.end())
               continue;
-            if(opIndex>0){
-              llvm::outs() 
-                  << "More than one flow dependencies found\n";
-              return false;
-            }else if(bandIndex>1){
+            if(bandIndex>1){
               llvm::outs() 
                 << "More than two non-single parallel loops lead"
                 << "to a flow dependency\n";
               return false;
             }else if(initial_flag){
             //Only set one loop, but can monitor more non-single loops
-              initial_flag = false;
-              loop->setAttr("flow", builder.getUnitAttr());
-              dmaWrite->setAttr("write", zeroAttr);
-              dmaRead->setAttr("read", zeroAttr);
-              opIndex++;
-              if(getConstantTripCount(loop)>1)
+              if(getConstantTripCount(loop)>1){
+                initial_flag = false;
+                loop->setAttr("flow", builder.getUnitAttr());
+                dmaWrite->setAttr("write", zeroAttr);
+                dmaRead->setAttr("read", zeroAttr);
                 bandIndex++; 
+              }
             }else {
               if(getConstantTripCount(loop)>1)
                 bandIndex++; 

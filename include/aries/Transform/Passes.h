@@ -47,6 +47,9 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
   Option<int64_t> OptRowOffset{
       *this, "row-offset", llvm::cl::init(0), llvm::cl::desc(
       "Specify the offset for core placement in the row direction")};
+  Option<int64_t> OptColGap{
+      *this, "core-gap", llvm::cl::init(0), llvm::cl::desc(
+      "Specify the gap between columns to improve corner cases")};
   Option<int64_t> OptCoreAlgo{
       *this, "core-algo", llvm::cl::init(0), llvm::cl::desc(
       "Specify the algorithm for core placement 0:vertical,1:horizontally")};
@@ -88,6 +91,11 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       *this, "iocons", llvm::cl::init(false), llvm::cl::desc(
       "Enable limiting the IO used in a shim for certain PLIOs")};
   
+  /// Configure the PLIOMaterialize pass.
+  ListOption<unsigned> OptBuffSels{
+      *this, "buf-sels", llvm::cl::ZeroOrMore,
+      llvm::cl::desc("Specify a list of buffer selection 1:BRAM, 0:URAM")};
+
   /// Configure the AXIPacking pass.
   Option<int64_t> OptAXIWidth{
       *this, "axi-width", llvm::cl::init(32), llvm::cl::desc(
@@ -117,6 +125,7 @@ std::unique_ptr<Pass> createAriesCorePlacementPass();
 std::unique_ptr<Pass> createAriesCorePlacementPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesLocalDataForwardPass();
 std::unique_ptr<Pass> createAriesKernelInterfaceCreatePass();
+std::unique_ptr<Pass> createAriesBroadcastToForwardingPass();
 std::unique_ptr<Pass> createAriesDMAToIOPass();
 std::unique_ptr<Pass> createAriesDMAToIOPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesADFCellCreatePass();
@@ -125,12 +134,13 @@ std::unique_ptr<Pass> createAriesIOPlacementPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesKernelSplitPass();
 std::unique_ptr<Pass> createAriesGMIOMaterializePass();
 std::unique_ptr<Pass> createAriesPLIOMaterializePass();
+std::unique_ptr<Pass> createAriesPLIOMaterializePass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesAXIPackingPass();
 std::unique_ptr<Pass> createAriesAXIPackingPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesPLDataflowPass();
 std::unique_ptr<Pass> createAriesPLDoubleBufferPass();
 std::unique_ptr<Pass> createAriesBurstDetectionPass();
-std::unique_ptr<Pass> createAriesADFTestPass();
+std::unique_ptr<Pass> createAriesFuncEliminatePass();
 std::unique_ptr<Pass> createAriesFileSplitPass();
 std::unique_ptr<Pass> createAriesFileSplitPass(const AriesOptions &opts);
 

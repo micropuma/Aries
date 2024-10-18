@@ -209,7 +209,7 @@ private:
     // Step 3: Check if all the loops share the same lbs, ubs and steps
     for(unsigned i = 0; i < srcSize; i++){
       auto srcForOp = srcBand[i];
-      auto dstForOp = srcBand[i];
+      auto dstForOp = dstBand[i];
       if(srcForOp.getConstantLowerBound()!=dstForOp.getConstantLowerBound() ||
          srcForOp.getConstantUpperBound()!=dstForOp.getConstantUpperBound() ||
          srcForOp.getStepAsInt()!=dstForOp.getStepAsInt())
@@ -493,7 +493,8 @@ private:
     // This pass tries to merge the memory access together, in order to
     // increase the burst length.
     mod.walk([&](FuncOp func){
-      if(!func->hasAttr("adf.pl") || !func->hasAttr("L3"))
+      if(!func->hasAttr("adf.pl") || 
+         ! (func->hasAttr("load") || func->hasAttr("store")))
         return WalkResult::advance();
       SmallVector<SmallVector<std::pair<int64_t, AffineForOp>, 4>> groups;
       // Separate loops that can be merged into groups

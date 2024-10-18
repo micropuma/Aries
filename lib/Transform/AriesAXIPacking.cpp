@@ -560,6 +560,16 @@ private:
       });
       return WalkResult::advance();
     });
+    // Check if there are arguments used
+    bool non_arg = true;
+    for(unsigned index=0; index < argNum; index++){
+      if(cnt[index]!=0){
+        non_arg =false;
+        break;
+      }
+    }
+    if(non_arg)
+      return true;
     if(!topFuncUpdate(builder, topFunc, axiWidth, cnt))
       return false;
     return true;

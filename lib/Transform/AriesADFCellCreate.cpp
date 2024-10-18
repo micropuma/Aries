@@ -78,6 +78,9 @@ private:
          = builder.getFunctionType(ValueRange(ArgIns), ValueRange());
     auto newfunc = builder.create<FuncOp>(loc, funcName, funcType);
     newfunc->setAttr("adf.cell",builder.getUnitAttr());
+    if(auto attr = cellOp->getAttr("tripCount"))
+      if(auto arrayAttr = dyn_cast<ArrayAttr>(attr))
+        newfunc->setAttr("tripCount", arrayAttr);
     auto destBlock = newfunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
     auto returnOp = builder.create<ReturnOp>(loc);

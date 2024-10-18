@@ -5,6 +5,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/IntegerSet.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/Debug.h"
 #include "aries/Translation/Emitter.h"
 #include "aries/Transform/Utils.h"
@@ -373,6 +374,7 @@ public:
   void emitADFIOWait(adf::IOWaitOp op);
   void emitADFIOWrite(adf::IOWriteOp op);
   void emitADFIORead(adf::IOReadOp op);
+  void emitADFBuffLoc(adf::BuffLocOp op);
   void emitIntToAP(adf::IntToAPInt op);
   void emitAPToInt(adf::APIntToInt op);
   void emitGetBit(adf::GetIntBitOp op);
@@ -533,6 +535,7 @@ public:
   bool visitOp(adf::IOWaitOp op) { return emitter.emitADFIOWait(op), true; };
   bool visitOp(adf::IOWriteOp op) { return emitter.emitADFIOWrite(op), true;};
   bool visitOp(adf::IOReadOp op) { return emitter.emitADFIORead(op), true; };
+  bool visitOp(adf::BuffLocOp op) { return emitter.emitADFBuffLoc(op), true; };
   bool visitOp(adf::IntToAPInt op) { return emitter.emitIntToAP(op), true; };
   bool visitOp(adf::APIntToInt op) { return emitter.emitAPToInt(op), true; };
   bool visitOp(arith::BitcastOp op) { return emitter.emitBitcast(op), true; };
@@ -926,6 +929,46 @@ void ModuleEmitter::emitADFIORead(adf::IOReadOp op){
   os << ".read();\n";
 }
 
+void ModuleEmitter::emitADFBuffLoc(adf::BuffLocOp op){
+  auto memref = op.getBuffer();
+  auto col = op.getCol();
+  auto row = op.getRow();
+  auto offset0 = op.getOffset0();
+  auto offset1 = op.getOffset1();
+  int colInt=-1, rowInt=-1, offsetInt0=-1, offsetInt1=-1;
+  if(auto constOp = col.getDefiningOp<arith::ConstantOp>()){
+    auto attr = dyn_cast<IntegerAttr>(constOp.getValue());
+    if(attr)
+      colInt = attr.getInt();
+  }
+  if(auto constOp = row.getDefiningOp<arith::ConstantOp>()){
+    auto attr = dyn_cast<IntegerAttr>(constOp.getValue());
+    if(attr)
+      rowInt = attr.getInt();
+  }
+  if(auto constOp = offset0.getDefiningOp<arith::ConstantOp>()){
+    auto attr = dyn_cast<IntegerAttr>(constOp.getValue());
+    if(attr)
+      offsetInt0 = attr.getInt();
+  }
+  if(auto constOp = offset1.getDefiningOp<arith::ConstantOp>()){
+    auto attr = dyn_cast<IntegerAttr>(constOp.getValue());
+    if(attr)
+      offsetInt1 = attr.getInt();
+  }
+  if(colInt < 0 || rowInt < 0 || offsetInt0 < 0 || offsetInt1 < 0)
+    op.emitError("has negative operands.");
+  indent();
+  os << "location<buffer>(" << getName(memref) << ") =\n";
+  indent();
+  os << "{ address(" << colInt << ", " << rowInt << ", "
+     << llvm::format_hex(offsetInt0, 6)  << "),\n";
+  indent();
+  os << "  address(" << colInt << ", " << rowInt << ", " 
+     << llvm::format_hex(offsetInt1, 6)  << ")};";
+  os << "\n";
+}
+
 void ModuleEmitter::emitIntToAP(adf::IntToAPInt op){
   indent();
   auto val = op.getInput();
@@ -995,7 +1038,13 @@ void ModuleEmitter::emitCall(func::CallOp op) {
 
   // Emit the function call.
   indent();
-  os << op.getCallee() << "(";
+  os << op.getCallee(); 
+  
+  if(auto attr = op->getAttr("template"))
+    if(auto intAttr = dyn_cast<IntegerAttr>(attr))
+      os << "<" << intAttr.getInt() << ">";
+
+  os << "(";
 
   // Handle input arguments.
   unsigned argIdx = 0;
@@ -2094,7 +2143,7 @@ int main(int argc, char ** argv) {
     }
     for(auto call: calls){
       indent();
-      os << getCall(call) << ".run(4);\n";
+      os << getCall(call) << ".run(1);\n";
     }
     for(auto call: calls){
       indent();
@@ -2390,6 +2439,9 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
       indent();
       os <<  "adf::location<kernel>(" << KName << ") = " << "adf::tile(" 
          << std::to_string(col) << ", " << std::to_string(row) << ");\n";
+      indent();
+      os <<  "adf::location<stack>(" << KName << ") = " << "adf::bank(" 
+        << std::to_string(col) << ", " << std::to_string(row) << ", 3);\n";
       return;
     }
   });
@@ -2407,6 +2459,8 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
 void ModuleEmitter::emitHLSFunction(func::FuncOp func){
   if (func.getBlocks().size() != 1)
     func->emitError("has zero or more than one basic blocks.");
+  if(func->hasAttr("template"))
+    os << "template<int NC>\n";
 
   os << "void " << func.getName() << "(\n";
   addIndent();

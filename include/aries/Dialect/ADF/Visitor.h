@@ -30,7 +30,7 @@ public:
             EndLauchCellOp, WaitLauchCellOp, KernelOp, CreateGraphIOOp, 
             ConfigPLIOOp, ConfigGMIOOp, BufferOp, StreamOp, CascadeOp, 
             CreateKernelIOOp, DmaOp, ConnectOp, IOPushOp, IOPopOp, IOWaitOp,
-            IOWriteOp, IOReadOp, IntToAPInt, APIntToInt, GetIntBitOp, 
+            IOWriteOp, IOReadOp, BuffLocOp, IntToAPInt, APIntToInt, GetIntBitOp, 
             SetIntBitOp, GetIntSliceOp, SetIntSliceOp, BitReverseOp,
 
             // Function operations.
@@ -124,6 +124,7 @@ public:
   HANDLE(IOWaitOp);
   HANDLE(IOWriteOp);
   HANDLE(IOReadOp);
+  HANDLE(BuffLocOp);
   HANDLE(IntToAPInt);
   HANDLE(APIntToInt);
   HANDLE(GetIntBitOp);

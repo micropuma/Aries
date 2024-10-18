@@ -5,6 +5,7 @@ PROJECT_PATH=./${PROJECT_NAME}
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
+TEMPLATE_PATH = .
 EN_PL = 1
 PLIOWidth = 128
 AXIWidth = 512
@@ -12,6 +13,7 @@ ColNum = 50
 RowNum = 8
 ColOffset = 0 
 RowOffset = 0
+ColGap = 0
 CoreAlgo = 1
 FirstCol = 6
 NumShim = 39
@@ -22,12 +24,15 @@ EnableIOCons = "false"
 L1_0=32
 L1_1=32
 L1_2=32
-L2_0=10
+L2_0=11
 L2_1=8
 L2_2=4
 L3_0=4
-L3_1=5
+L3_1=6
 L3_2=1
+BUFF_0=1#1:BRAM 0:URAM
+BUFF_1=1
+BUFF_2=0
 ifeq ($(EN_PL),1)
 	IOType=PLIO
 else
@@ -37,7 +42,7 @@ endif
 all: fileCreate copyFile pass translate copyplhost printcommand
 
 printcommand:
-	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, EnableIOCons=${EnableIOCons}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, IOType=${IOType}" >${PROJECT_PATH}/command.txt
+	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, ColGap=${ColGap}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, EnableIOCons=${EnableIOCons}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, IOType=${IOType}" >${PROJECT_PATH}/command
 
 fileCreate:
 	mkdir -p ${PROJECT_AIE_PATH}
@@ -45,9 +50,9 @@ fileCreate:
 	mkdir -p ${PROJECT_Host_PATH}
 
 copyFile:
-	cp -r template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
+	cp -r ${TEMPLATE_PATH}/template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
 
-test: burstDetect
+test: doublebuffer
 
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
@@ -95,23 +100,23 @@ ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir: ${PROJECT_PATH}/7_${FUNC}.flow.mlir
 	aries-opt -o $@ $< \
 			-aries-func-unroll
 
-coreplacement: ${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir
-${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir: ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir
-	aries-opt -o $@ $< \
-			-aries-core-placement="col-num=${ColNum} row-num=${RowNum} col-offset=${ColOffset} row-offset=${RowOffset} core-algo=${CoreAlgo}"
-
-dataforward: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
-${PROJECT_PATH}/10_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/9_${FUNC}.coreplacement.mlir
+dataforward: ${PROJECT_PATH}/9_${FUNC}.dataforward.mlir
+${PROJECT_PATH}/9_${FUNC}.dataforward.mlir: ${PROJECT_PATH}/8_${FUNC}.unrollfunc.mlir
 	aries-opt -o $@ $< \
 			-aries-local-data-forward
 
-kernelio: ${PROJECT_PATH}/11_${FUNC}.kernelio.mlir
-${PROJECT_PATH}/11_${FUNC}.kernelio.mlir: ${PROJECT_PATH}/10_${FUNC}.dataforward.mlir
+kernelio: ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir
+${PROJECT_PATH}/10_${FUNC}.kernelio.mlir: ${PROJECT_PATH}/9_${FUNC}.dataforward.mlir
 	aries-opt -o $@ $< \
 			-aries-kernel-interface-create
 
+boradcasttoforward: ${PROJECT_PATH}/11_${FUNC}.boradcasttoforward.mlir
+${PROJECT_PATH}/11_${FUNC}.boradcasttoforward.mlir: ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir
+	aries-opt -o $@ $< \
+			-aries-broadcast-to-forwarding
+
 dmaio: ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir
-${PROJECT_PATH}/12_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/11_${FUNC}.kernelio.mlir
+${PROJECT_PATH}/12_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/11_${FUNC}.boradcasttoforward.mlir
 	aries-opt -o $@ $< \
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
 			-canonicalize -cse
@@ -121,41 +126,51 @@ ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir: ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir
 	aries-opt -o $@ $< \
 			-aries-adf-cell-create
 
-ioplacement: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
-${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
+coreplacement: ${PROJECT_PATH}/14_${FUNC}.coreplacement.mlir
+${PROJECT_PATH}/14_${FUNC}.coreplacement.mlir: ${PROJECT_PATH}/13_${FUNC}.adfgraph.mlir
+	aries-opt -o $@ $< \
+			-aries-core-placement="col-num=${ColNum} row-num=${RowNum} col-offset=${ColOffset} row-offset=${RowOffset} core-algo=${CoreAlgo}"
+
+ioplacement: ${PROJECT_PATH}/15_${FUNC}.ioplacement.mlir
+${PROJECT_PATH}/15_${FUNC}.ioplacement.mlir: ${PROJECT_PATH}/14_${FUNC}.coreplacement.mlir
 	aries-opt -o $@ $< \
 			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${MidLine} chal-in=${ChalIn} chal-out=${ChalOut} iocons=${EnableIOCons}"
 
-iomaterialize: ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir
-${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/14_${FUNC}.ioplacement.mlir
+iomaterialize: ${PROJECT_PATH}/16_${FUNC}.iomaterialize.mlir
+${PROJECT_PATH}/16_${FUNC}.iomaterialize.mlir: ${PROJECT_PATH}/15_${FUNC}.ioplacement.mlir
 	aries-opt -o $@ $< \
 			-aries-gmio-materialize \
-			-aries-plio-materialize
+			-aries-plio-materialize="buf-sels=${BUFF_0},${BUFF_1},${BUFF_2}"
 
-axipacking: ${PROJECT_PATH}/16_${FUNC}.axipacking.mlir
-${PROJECT_PATH}/16_${FUNC}.axipacking.mlir: ${PROJECT_PATH}/15_${FUNC}.iomaterialize.mlir
+axipacking: ${PROJECT_PATH}/17_${FUNC}.axipacking.mlir
+${PROJECT_PATH}/17_${FUNC}.axipacking.mlir: ${PROJECT_PATH}/16_${FUNC}.iomaterialize.mlir
 	aries-opt -o $@ $< \
 			-aries-axi-packing="axi-width=${AXIWidth}"
 
-pldataflow: ${PROJECT_PATH}/17_${FUNC}.pldataflow.mlir
-${PROJECT_PATH}/17_${FUNC}.pldataflow.mlir: ${PROJECT_PATH}/16_${FUNC}.axipacking.mlir
+pldataflow: ${PROJECT_PATH}/18_${FUNC}.pldataflow.mlir
+${PROJECT_PATH}/18_${FUNC}.pldataflow.mlir: ${PROJECT_PATH}/17_${FUNC}.axipacking.mlir
 	aries-opt -o $@ $< \
 			-aries-pl-dataflow \
 			-canonicalize -cse
 
-doublebuffer: ${PROJECT_PATH}/18_${FUNC}.doublebuffer.mlir
-${PROJECT_PATH}/18_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/17_${FUNC}.pldataflow.mlir
-	aries-opt -o $@ $< \
-			-aries-pl-double-buffer
-
 burstDetect: ${PROJECT_PATH}/19_${FUNC}.burstdetect.mlir
-${PROJECT_PATH}/19_${FUNC}.burstdetect.mlir: ${PROJECT_PATH}/18_${FUNC}.doublebuffer.mlir
+${PROJECT_PATH}/19_${FUNC}.burstdetect.mlir: ${PROJECT_PATH}/18_${FUNC}.pldataflow.mlir
 	aries-opt -o $@ $< \
-			-aries-burst-detection \
+			-aries-burst-detection
+
+funcEliminate: ${PROJECT_PATH}/20_${FUNC}.funcEliminate.mlir
+${PROJECT_PATH}/20_${FUNC}.funcEliminate.mlir: ${PROJECT_PATH}/19_${FUNC}.burstdetect.mlir
+	aries-opt -o $@ $< \
+			-aries-func-eliminate
+
+doublebuffer: ${PROJECT_PATH}/21_${FUNC}.doublebuffer.mlir
+${PROJECT_PATH}/21_${FUNC}.doublebuffer.mlir: ${PROJECT_PATH}/20_${FUNC}.funcEliminate.mlir
+	aries-opt -o $@ $< \
+			-aries-pl-double-buffer \
 			-canonicalize -cse
 
 testgen: ${PROJECT_AIE_PATH}/adf_graph_test.cpp
-${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/19_${FUNC}.doublebuffer.mlir
+${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/21_${FUNC}.doublebuffer.mlir
 	aries-translate -o $@ $< \
 		-emit-aries-kernels
 
@@ -171,20 +186,22 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-lower-to-adf \
 			-aries-dependency-extract \
 			-aries-func-unroll \
-			-aries-core-placement="col-num=${ColNum} row-num=${RowNum} col-offset=${ColOffset} row-offset=${RowOffset} core-algo=${CoreAlgo}" \
 			-aries-local-data-forward \
 			-aries-kernel-interface-create \
+			-aries-broadcast-to-forwarding \
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \
+			-aries-core-placement="col-num=${ColNum} row-num=${RowNum} col-offset=${ColOffset} row-offset=${RowOffset} core-gap=${ColGap} core-algo=${CoreAlgo}" \
 			-aries-io-placement="first-col=${FirstCol} num-shim=${NumShim} mid-line=${MidLine} chal-in=${ChalIn} chal-out=${ChalOut} iocons=${EnableIOCons}" \
 			-aries-gmio-materialize \
-			-aries-plio-materialize \
+			-aries-plio-materialize="buf-sels=${BUFF_0},${BUFF_1},${BUFF_2}" \
 			-aries-axi-packing="axi-width=${AXIWidth}" \
 			-aries-pl-dataflow \
 			-canonicalize -cse \
-			-aries-pl-double-buffer \
 			-aries-burst-detection \
+			-aries-func-eliminate  \
+			-aries-pl-double-buffer\
 			-canonicalize -cse
 
 translate: file_split kernel_file_split clean_kernel_vec

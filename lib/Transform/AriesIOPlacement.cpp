@@ -187,7 +187,7 @@ private:
           return WalkResult::advance();
         unsigned col;
         unsigned chl;
-        int avgToMid = std::ceil(disToMid/cnt);
+        int avgToMid = std::ceil(disToMid/(float)cnt);
         unsigned startPos = avgToMid + midLine;
         // when enableIOCons is enabled check if the variance of the position
         // of the broadcast ops is too small (<1) then limit the number used in

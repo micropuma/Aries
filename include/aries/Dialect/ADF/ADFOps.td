@@ -414,6 +414,22 @@ def IOReadOp: ADF_Op<"io.read", []> {
   }];
 }
 
+def BuffLocOp : ADF_Op<"buffer.location", []> {
+  let summary = "Specify buffer location";
+  let description = [{
+    This operation specify the location of an AIE local buffer.
+
+    ```mlir
+      %buffer0 = adf.buffer.create() : memref<32x32xi32>
+      adf.buffer.location(%buffer0, %col, %row, %offset)
+    ```
+  }];
+  let arguments = (ins AnyMemRef:$buffer, Index:$col, Index:$row, Index:$offset0, Index:$offset1);
+  let assemblyFormat = [{ 
+  `(` $buffer `,` $col `,` $row `,` $offset0 `,` $offset1 `)` attr-dict `:` `(` type($buffer) `,` type($col) `,` type($row) `,` type($offset0) `,` type($offset1) `)`
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Bitwise operations proposed in hcl-dialect. TODO need to consider how to 
 // leverage the existing dialects to construct the PL logic

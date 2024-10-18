@@ -26,6 +26,12 @@ namespace {
 
 struct AriesPLIOMaterialize : public AriesPLIOMaterializeBase<AriesPLIOMaterialize> {
 public:
+  AriesPLIOMaterialize() = default;
+  AriesPLIOMaterialize(const AriesOptions &opts) {
+    for (unsigned i = 0; i < opts.OptBuffSels.size(); ++i) {
+      BuffSels=opts.OptBuffSels[i];
+    }
+  }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
     StringRef topFuncName = "top_func";
@@ -204,6 +210,26 @@ private:
       strides = iopopOp.getDstStrides();
     }
 
+    // Get the buffer implementation selection: 0:BRAM 1:URAM
+    SmallVector<std::pair<Value, unsigned>, 4> argIndeices; //Arg, sel
+    for(auto arg: plFunc.getArguments()){
+      if(auto memref = dyn_cast<MemRefType>(arg.getType())){
+        auto memSpace = memref.getMemorySpace();
+        if(memSpace){
+          if(auto memIntAttr = dyn_cast<IntegerAttr>(memSpace)){
+            auto memSpaceVal = memIntAttr.getInt();
+            if(memSpaceVal == (int)MemorySpace::L3){
+              argIndeices.push_back(std::pair(arg, 0));
+            }
+          }
+        }else{
+          argIndeices.push_back(std::pair(arg, 0));
+        }
+      }
+    }
+    for (unsigned i = 0; i < std::min(argIndeices.size(),BuffSels.size()); ++i)
+        argIndeices[i].second = BuffSels[i];
+
     //////////////////////////TODO////////////////////////
     /*
     Need to handle more general cases of the offest in IOPushOp/IOPopOp
@@ -262,10 +288,38 @@ private:
          = builder.create<AllocOp>(loc, MemRefType::get(bufSizes,
                                    type.getElementType(), AffineMap(),
                                    (int)MemorySpace::L2));
-    if(iopush)
-      allocOp->setAttr("buffer_type", builder.getStringAttr("bram_s2p"));
-    else{
-      allocOp->setAttr("buffer_type", builder.getStringAttr("uram_t2p"));
+    if(iopush){
+      auto it = llvm::find_if(argIndeices, 
+        [&](const std::pair<Value, unsigned>&p){
+        return p.first == src;
+      });
+      unsigned sel;
+      std::string bufferType;
+      if(it!=argIndeices.end())
+        sel = it->second;
+      else
+        sel = 0;
+      if(sel==0)
+        bufferType = "uram_t2p";
+      else
+        bufferType = "bram_s2p";
+      allocOp->setAttr("buffer_type", builder.getStringAttr(bufferType));
+    }else{
+      auto it = llvm::find_if(argIndeices, 
+        [&](const std::pair<Value, unsigned>&p){
+        return p.first == dst;
+      });
+      unsigned sel;
+      std::string bufferType;
+      if(it!=argIndeices.end())
+        sel = it->second;
+      else
+        sel = 0;
+      if(sel==0)
+        bufferType = "uram_t2p";
+      else
+        bufferType = "bram_s2p";
+      allocOp->setAttr("buffer_type", builder.getStringAttr(bufferType));
       allocOp->setAttr("init", builder.getUnitAttr());
     }
     // Create static size and strides for dma & IOPush/IOPop
@@ -871,9 +925,8 @@ private:
         auto intAttr = builder.getIntegerAttr(elementType, 0);
         value = builder.create<arith::ConstantOp>(loc, elementType, intAttr);
       }else{
-        auto floatType = builder.getF32Type();
         auto floatAttr = builder.getF32FloatAttr(0.0);
-        value = builder.create<arith::ConstantOp>(loc, floatType, floatAttr);
+        value = builder.create<arith::ConstantOp>(loc, elementType, floatAttr);
       }
       builder.create<AffineStoreOp>(loc, value, memref, indices);
       loadOp.erase();
@@ -1082,10 +1135,15 @@ private:
       });
       // Merge the depth of OuterLoops and InnerLoops
       SmallVector<unsigned, 6> permMap;
+      SmallVector<unsigned, 6> orderedDepth;
       for (auto pair : outerLoops)
-        permMap.push_back(pair.first);
+        orderedDepth.push_back(pair.first);
       for (auto pair : innerLoops)
-        permMap.push_back(pair.first);
+        orderedDepth.push_back(pair.first);
+      for(unsigned i=0; i< bandSize; i++){
+        auto newPos = llvm::find(orderedDepth, i) - orderedDepth.begin();
+        permMap.push_back(newPos);
+      }
       // TODO::This permutation is not safe, since it can not pass 
       //       the interchange verification, need to figure it out why
       //if (isValidLoopInterchangePermutation(originBand, permMap))
@@ -1210,9 +1268,10 @@ private:
     pm.addPass(createSimplifyAffineStructuresPass());
     (void)pm.run(plFunc);
 
-    if(!AllocL2Buffer(builder, plFunc, plForOp, band))
+    if(!AllocL2Buffer(builder, plFunc, plForOp, band)){
+      llvm::outs() << "Alloc L2 buffer failed\n";
       return false;
-
+    }
     // Tranverse the IOPushOps/IOPopOps and convert them to affine load/store
     auto flag = plForOp.walk([&](Operation* op){
       WalkResult result;
@@ -1226,9 +1285,10 @@ private:
         return WalkResult::advance();
       return result;
     });
-    if (flag == WalkResult::interrupt()) 
+    if (flag == WalkResult::interrupt()){
+      llvm::outs() << "ConverIOTOAffine failed\n";
       return false;
-
+    }
     // Replace arguments with PLIOType by memref arguments
     ArgUpdate(builder, topFunc, plFunc, callop);
     // Simplify the loop structure after ConvertToAffine.
@@ -1236,9 +1296,10 @@ private:
     pm.addPass(createSimplifyAffineStructuresPass());
     (void)pm.run(plFunc);
     // Permute loops in order to potentially increase the burst length
-    if(!loopPermutation(plForOp))
+    if(!loopPermutation(plForOp)){
+      llvm::outs() << "Loop permutation failed\n";
       return false;
-    
+    }
     // Tranverse all the outer point dma loops(involve L3 mem) and change the
     // L2 buffer access with stream access
     L2MemProcessTop(builder, plFunc, plForOp);
@@ -1297,6 +1358,11 @@ namespace aries {
 std::unique_ptr<Pass> createAriesPLIOMaterializePass() {
   return std::make_unique<AriesPLIOMaterialize>();
 }
+
+std::unique_ptr<Pass> createAriesPLIOMaterializePass(const AriesOptions &opts) {
+  return std::make_unique<AriesPLIOMaterialize>(opts);
+}
+
 
 } // namespace aries
 } // namespace mlir

@@ -101,6 +101,8 @@ def AriesCorePlacement : Pass<"aries-core-placement"> {
            "Specify the offset for core placement in the col direction">,
     Option<"RowOffset", "row-offset", "int64_t", /*default=*/"0",
            "Specify the offset for core placement in the row direction">,
+    Option<"ColGap", "core-gap", "int64_t", /*default=*/"0",
+           "Specify the gap between columns to improve corner cases">,
     Option<"CoreAlgo", "core-algo", "int64_t", /*default=*/"0",
            "Specify the algorithm for core placement 0:vertical,1:horizontally">
   ];
@@ -125,6 +127,15 @@ def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
   }];
   let constructor = "mlir::aries::createAriesKernelInterfaceCreatePass()";
   let dependentDialects = ["mlir::memref::MemRefDialect"];
+}
+
+def AriesBroadcastToForwarding : Pass<"aries-broadcast-to-forwarding"> {
+  let summary = "Change the broadcast in the reduction chain by forwarding";
+  let description = [{
+    This pass tranverses every reduction chain, detects the broadcast pattern
+    exists on the entire chain and replace it by direct data forwarding.
+  }];
+  let constructor = "mlir::aries::createAriesBroadcastToForwardingPass()";
 }
 
 def AriesDMAToIO : Pass<"aries-dma-to-io"> {
@@ -199,6 +210,11 @@ def AriesPLIOMaterialize : Pass<"aries-plio-materialize"> {
     and materialize the IOPush/IOPop Ops with specific DMA.
   }];
   let constructor = "mlir::aries::createAriesPLIOMaterializePass()";
+  let options = [
+    ListOption<"BuffSels", "buf-sels", "unsigned",
+               "Specify a list of buffer selection 1:BRAM, 0:URAM",
+               "llvm::cl::ZeroOrMore">
+  ];
 }
 
 def AriesAXIPacking : Pass<"aries-axi-packing"> {
@@ -235,10 +251,9 @@ def AriesBurstDetection : Pass<"aries-burst-detection"> {
   let dependentDialects = ["mlir::scf::SCFDialect"];
 }
 
-def AriesADFTest : Pass<"aries-adf-test"> {
-  let summary = "Test ADF Dialect Ops";
-  let constructor = "mlir::aries::createAriesADFTestPass()";
-  let dependentDialects = ["mlir::aries::adf::ADFDialect"];
+def AriesFuncEliminate : Pass<"aries-func-eliminate"> {
+  let summary = "Merge func.func with same functionality together";
+  let constructor = "mlir::aries::createAriesFuncEliminatePass()";
 }
 
 // This is just a helper function for translation
