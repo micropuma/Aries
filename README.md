@@ -43,18 +43,16 @@ export PATH=$PATH:$PWD/build/bin
 
 
 ##  Test Examples
-### 1. Vector Add
+### 1. GEMM (FP32)
+#### Generate code for Host + PL + AIE
 ```sh
-cd example
-make all FUNC=add
-cd adf_graph_add
-make aie
+cd example/example_gemm/fp32
+make all PROJECT_NAME=my_project
 ```
 
-### 2. GEMM
+#### Use optimized GEMM Code
 ```sh
-cd example
-make all FUNC=gemm
-cd adf_graph_gemm
-make aie
+cd my_project
+cp -r ${ARIES_HOME}/example/template_files/kernel_mm/aie_fp32_v1/kernel_gemm* ./aie
+make all
 ```
