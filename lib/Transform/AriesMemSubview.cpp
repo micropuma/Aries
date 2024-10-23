@@ -44,6 +44,12 @@ private:
     return true;
   }
 
+  // This pass analyzes the memref arguments used by affine.load and store ops.
+  // And then it creates a subview of the mem access to represent the local mem.
+  // 1) Flatten the experssion of the map to [dims, symbols, locals, constant]
+  // 2) Dims and Constant determine the size of the subview
+  // 3) Symbols determine the offset of the subview 
+  // 4) TODO: Handle Locals
   void createMemsubview(ModuleOp mod, FuncOp topFunc){
     auto builder = OpBuilder(mod);
     auto context = mod.getContext();
@@ -62,67 +68,84 @@ private:
         auto affineOp = *arg.user_begin();
         SmallVector<Value, 4> operands;
         AffineMap map;
-
+        SmallVector<AffineForOp, 6> band;
         if (auto loadOp = dyn_cast<AffineLoadOp>(affineOp)) {
           operands = SmallVector<Value, 4>(loadOp.getMapOperands());
           map = loadOp.getAffineMap();
         } else if (auto storeOp = dyn_cast<AffineStoreOp>(affineOp)) {
           operands = SmallVector<Value, 4>(storeOp.getMapOperands());
           map = storeOp.getAffineMap();
+        } else{
+          continue;
         }
-
+        getSurroundingLoops(*affineOp, band);
+        auto mapSize = map.getNumResults();
+        auto dimSize = map.getNumDims();
+        auto symSize = map.getNumSymbols();
         //Used to build memref.subview
         SmallVector<OpFoldResult, 4> memOffsets;
         SmallVector<OpFoldResult, 4> memSizes;
         SmallVector<OpFoldResult, 4> memStrides;
-        //Traverse the operands of affine.load and affine.store
+        SmallVector<Value, 4> newOperands;
+        SmallVector<AffineExpr, 4> newExprs;
+        for (unsigned i = 0; i < dimSize; i++)
+          newOperands.push_back(operands[i]);
         builder.setInsertionPointToStart(&calleeFuncOp.front());
-        for (auto operand: operands){
-          // Get the applyOp that defines the memory access operands
-          auto applyOp = dyn_cast<AffineApplyOp>(operand.getDefiningOp());
-          auto applyOperands = applyOp.getOperands();
-          auto applyOperandsMap = applyOp.getAffineMap();
-          auto mapResult = applyOperandsMap.getResult(0);
-          auto binaryExpr = dyn_cast<AffineBinaryOpExpr>(mapResult);
-          SmallVector<Value, 4> newoperands;
-
-          // TODO:: Need to handle more complexed expressions
-          // Now assume the map is in form <(d0, d1) -> (d0 + d1*step)>
-          // where d0 could be another experssion
-          // Collect the step info which is in the left most of the AffineExpr
-          auto RHS = binaryExpr.getRHS();
-          if (auto binaryExpr1 = dyn_cast<AffineBinaryOpExpr>(RHS)){
-            if (auto RHS1 = dyn_cast<AffineConstantExpr>(binaryExpr1.getRHS())){
-              auto step = RHS1.getValue();
-              memStrides.push_back(builder.getIndexAttr(step));
-            }else{
-              memStrides.push_back(builder.getIndexAttr(1));
-            }
-          }else{
-            memStrides.push_back(builder.getIndexAttr(1));
+        // Tranverse the maps of the load/store ops
+        for(unsigned i = 0; i < mapSize; i++){
+          auto mapExpr = map.getResult(i);
+          // flattened form [dims, symbols, locals, constant]
+          llvm::SmallVector<int64_t> flattenedExpr;
+          llvm::SmallVector<int64_t> newFlattenedExpr;
+          if (failed(getFlattenedAffineExpr(mapExpr, dimSize, symSize,
+                                            &flattenedExpr)))
+            return WalkResult::interrupt();
+          int64_t cons = flattenedExpr[flattenedExpr.size()-1];
+          // Deal with Dims to get the size of the subview and create new access
+          int64_t size = cons + 1;
+          for (unsigned i = 0; i < dimSize; i++) {
+            auto coeff = flattenedExpr[i];
+            newFlattenedExpr.push_back(coeff);
+            auto loop = getForInductionVarOwner(operands[i]);
+            auto it = llvm::find(band, loop);
+            if(it==band.end())
+              return WalkResult::interrupt();
+            auto ub = loop.getConstantUpperBound();
+            if(ub < 1)
+              continue;
+            size += (ub-1) * coeff;
           }
-
-          //Collect the offset and size info
-          for (auto applyOperand: applyOperands){
-            auto definedOp = applyOperand.getParentBlock()->getParentOp();
-            if (auto funcOp = dyn_cast<FuncOp>(definedOp))
-              newoperands.push_back(applyOperand);
-            else if (auto forOp = dyn_cast<AffineForOp>(definedOp)){
-              auto size = forOp.getConstantUpperBound();
-              memSizes.push_back(builder.getIndexAttr(size));
-            }
+          newFlattenedExpr.push_back(cons);
+          auto newMemExpr = getAffineExprFromFlatForm(newFlattenedExpr, 
+                                                      dimSize, 0, {}, context);
+          newExprs.push_back(newMemExpr);
+          memSizes.push_back(builder.getIndexAttr(size));
+          // TODO : Strides need to be more general 
+          memStrides.push_back(builder.getIndexAttr(1));
+          AffineExpr expr;
+          SmallVector<Value> symbolOperands;
+          unsigned dimCnt = 0;
+          // Deal with Symbols to get the offsets of the subview
+          for (unsigned i = dimSize; i < (dimSize + symSize); i++) {
+            auto coeff = flattenedExpr[i];
+            if (coeff==0)
+              continue;
+            symbolOperands.push_back(operands[i]);
+            auto dim = builder.getAffineDimExpr(dimCnt);
+            if(dimCnt==0)
+              expr = dim * coeff;
+            else
+              expr = expr + dim * coeff;
+            dimCnt++;
           }
-
-          //Collect the offset info
-          auto LHS = binaryExpr.getLHS();
-          AffineMap newMap = AffineMap::get(newoperands.size(),0, LHS, context);
-          auto newApplyOp = 
-               builder.create<AffineApplyOp>(loc, newMap, newoperands);
-          memOffsets.push_back(newApplyOp.getResult());
-          builder.setInsertionPointAfter(newApplyOp);
+          auto newDimSize = symbolOperands.size();
+          auto newMap = AffineMap::get(newDimSize, 0, expr, context);
+          auto applyOp 
+               = builder.create<AffineApplyOp>(loc, newMap, symbolOperands);
+          memOffsets.push_back(applyOp.getResult());
+          builder.setInsertionPointAfter(applyOp);
         }
-
-        // Create the SubViewOp with dynmic and entries and inferred result type
+        // Create the SubViewOp with dynmic entries and inferred result type
         auto subviewOutputType =
         SubViewOp::inferResultType(arg.getType().dyn_cast<MemRefType>(),
                                    memOffsets, memSizes, memStrides)
@@ -133,20 +156,29 @@ private:
                                       memSizes, memStrides);
 
         arg.replaceAllUsesExcept(subview.getResult(), subview);
-      }
 
-      //Replace the memory access and erase the affine.apply op 
-      calleeFuncOp.walk([&](AffineApplyOp applyOp){
-        auto applyOperands = applyOp.getOperands();
-        for (auto applyOperand: applyOperands){
-          auto definedOp = applyOperand.getParentBlock()->getParentOp();
-          if (dyn_cast<AffineForOp>(definedOp)){
-            applyOp.replaceAllUsesWith(applyOperand);
-            applyOp.erase();
-            break;
+        // Create new affineMap and update the memory access
+        auto newMap = AffineMap::get(dimSize, 0, newExprs, context);
+        for(auto use : subview->getUsers()){
+          if (auto loadOp = dyn_cast<AffineLoadOp>(use)) {
+            auto mem = loadOp.getMemRef();
+            builder.setInsertionPoint(loadOp);
+            auto newLoadOp = builder.create<AffineLoadOp>(
+                             loc, mem, newMap, newOperands);
+            loadOp.getResult().replaceAllUsesWith(newLoadOp);
+            loadOp.erase();
+          } else if (auto storeOp = dyn_cast<AffineStoreOp>(use)) {
+            auto mem = storeOp.getMemRef();
+            auto val = storeOp.getValue();
+            builder.setInsertionPoint(storeOp);
+            builder.create<AffineStoreOp>(loc, val, mem, newMap, newOperands);
+            storeOp.erase();
+          } else{
+            continue;
           }
         }
-      });
+      }
+      return WalkResult::advance();
     });
   }
 
