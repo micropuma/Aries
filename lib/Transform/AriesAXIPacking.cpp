@@ -29,9 +29,7 @@ public:
   }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
-    StringRef topFuncName = "top_func";
-
-    if (!AXIPacking(mod,topFuncName))
+    if (!AXIPacking(mod))
       signalPassFailure();
   }
 
@@ -79,12 +77,12 @@ private:
           return false;
         auto coeff = flattenedExpr[i];
         unsigned depth = it - band.begin();
-        if(depth != (unsigned)(band.size()-1)){
+        if(depth != (unsigned)(band.size()-1)){ // If not, update the expr
           if(coeff%packNum!=0)
             return false;
           auto newCoeff = (int64_t)(coeff / packNum);
           newFlattenedExpr.push_back(newCoeff);
-        }else{
+        }else{ // If used by the innermost loop, update the upperbound && record
           auto upbound = loop.getConstantUpperBound();
           auto newBound = (int64_t)(upbound/packNum);
           loopList.push_back(std::pair(loop, newBound));
@@ -112,107 +110,6 @@ private:
       packList.push_back(std::pair(affineOp, newMap));
     }
     return true;
-  }
-
-  void applyPacking(OpBuilder builder, BlockArgument arg, unsigned index,
-                    MemRefType type, unsigned packNum,
-                    SmallVector<Type,8>& inTypes,
-                    SmallVector<std::pair<AffineForOp, int64_t>, 4> loopList,
-                    SmallVector<std::pair<Operation*, AffineMap>, 4> packlist,
-                    SmallVector<AffineLoadOp, 4>& eliminateOps){
-    auto loc = builder.getUnknownLoc();
-    auto shape = type.getShape();
-    auto rank = type.getRank();
-    auto elemType = type.getElementType();
-    auto typeWidth = type.getElementTypeBitWidth();
-    auto newTypeWidth = typeWidth * packNum;
-    auto newType = builder.getIntegerType(newTypeWidth);
-    // Update innerLoop Upperbound
-    for(auto loopPair : loopList){
-      auto loop = loopPair.first;
-      auto ub = loopPair.second;
-      loop.setConstantUpperBound(ub);
-    }
-
-    // Update arguments in func
-    SmallVector<int64_t> sizesInt(shape.begin(),shape.end());
-    sizesInt[rank-1] = sizesInt[rank-1] / packNum;
-    auto newMemRefType = MemRefType::get(sizesInt, newType);
-    inTypes[index] = newMemRefType;
-    arg.setType(newMemRefType);
-
-    // Update access map && add logic to send new data to stream
-    for(auto packPair : packlist){
-      auto op = packPair.first;
-      auto map = packPair.second;
-      if(auto read = dyn_cast<AffineLoadOp>(op)){
-        // Update the access map
-        read.setMap(map);
-        auto result = read.getResult();
-        auto operands = read.getOperands();
-        SmallVector<Value, 4> indices(operands.begin() + 1, operands.end()); 
-        builder.setInsertionPoint(read);
-        auto newRead 
-             = builder.create<AffineLoadOp>(loc, newType, arg, indices, map);
-        eliminateOps.push_back(read);
-        auto newResult = newRead.getResult(); 
-        // Insert GetIntSliceOp to transfer data from newType to oldType 
-        builder.setInsertionPointAfter(newRead);
-        auto forOp = builder.create<AffineForOp>(loc, 0, packNum);
-        auto entryBlock = forOp.getBody();
-        auto forYiledOp = dyn_cast<AffineYieldOp>(entryBlock->getTerminator());
-        builder.setInsertionPoint(forYiledOp);
-        // Create the ub for slicing
-        auto hiExpr = builder.getAffineDimExpr(0) * typeWidth + typeWidth-1;
-        auto hiMap = AffineMap::get(1, 0, hiExpr);
-        SmallVector<Value, 1> hiOperands = {forOp.getInductionVar()};
-        auto hiVal = builder.create<AffineApplyOp>(loc, hiMap, hiOperands);
-        // Create the lb for slicing
-        auto loExpr = builder.getAffineDimExpr(0) * typeWidth;
-        auto loMap = AffineMap::get(1, 0, loExpr);
-        SmallVector<Value, 1> loOperands = {forOp.getInductionVar()};
-        auto loVal = builder.create<AffineApplyOp>(loc, loMap, loOperands);
-        auto slice = builder.create<GetIntSliceOp>(loc, elemType, newResult,
-                                                   hiVal, loVal);
-        // Move the use into the AffineForOp
-        SmallVector<Operation*, 4> users;
-        for(auto use: result.getUsers()){
-          use->moveBefore(forYiledOp);
-        }
-        result.replaceAllUsesWith(slice);
-      }else if(auto write = dyn_cast<AffineStoreOp>(op)){
-        // Update the access map
-        write.setMap(map);
-        // Insert SetIntSliceOp to transfer data from oldType to newType 
-        builder.setInsertionPoint(write);
-        auto forOp = builder.create<AffineForOp>(loc, 0, packNum);
-        auto entryBlock = forOp.getBody();
-        auto forYiledOp = dyn_cast<AffineYieldOp>(entryBlock->getTerminator());
-        // Create temp reg to store newType
-        builder.setInsertionPoint(forOp);
-        auto attr = builder.getIntegerAttr(newType, 0);
-        auto zeroVal = builder.create<arith::ConstantOp>(loc, newType, attr);
-        auto temp = builder.create<IntToAPInt>(loc, newType, zeroVal);
-        builder.setInsertionPoint(forYiledOp);
-        // Move definingOp of val inside forOp
-        auto val = write.getValueToStore();
-        auto defineOp = val.getDefiningOp();
-        if(defineOp)
-          defineOp->moveBefore(forYiledOp);
-        // Create the ub for slicing
-        auto hiExpr = builder.getAffineDimExpr(0) * typeWidth + typeWidth-1;
-        auto hiMap = AffineMap::get(1, 0, hiExpr);
-        SmallVector<Value, 1> hiOperands = {forOp.getInductionVar()};
-        auto hiVal = builder.create<AffineApplyOp>(loc, hiMap, hiOperands);
-        // Create the lb for slicing
-        auto loExpr = builder.getAffineDimExpr(0) * typeWidth;
-        auto loMap = AffineMap::get(1, 0, loExpr);
-        SmallVector<Value, 1> loOperands = {forOp.getInductionVar()};
-        auto loVal = builder.create<AffineApplyOp>(loc, loMap, loOperands);
-        builder.create<SetIntSliceOp>(loc, temp, hiVal, loVal, val);
-        write.setOperand(0, temp);
-      }
-    }             
   }
 
   void loadMerge(OpBuilder builder, AffineLoadOp read, MemRefType type, 
@@ -383,7 +280,7 @@ private:
     write.setOperand(0, newResult);
   }
 
-  void applyPacking1(OpBuilder builder, BlockArgument arg, unsigned index,
+  void applyPacking(OpBuilder builder, BlockArgument arg, unsigned index,
                      MemRefType type, unsigned packNum,
                      SmallVector<Type,8>& inTypes,
                      SmallVector<std::pair<AffineForOp, int64_t>, 4>& loopList,
@@ -436,7 +333,9 @@ private:
   }
   
   // This function pack the L3 memory to specified port width in order to
-  // increase the L3 access bandwidth
+  // increase the L3 access bandwidth.
+  // Arguments of plFunc with MemRefType will be packed and the index will be
+  // returned in argList
   void mergeAXIPort (OpBuilder builder,FuncOp& plFunc, unsigned axiWidth,
                      SmallVector<unsigned, 4>& argList){
     auto inTypes = SmallVector<Type,8>(plFunc.getArgumentTypes().begin(),
@@ -466,7 +365,7 @@ private:
       
       if(loopList.size()!=packlist.size() || loopList.size()!= numUser)
         continue;
-      applyPacking1(builder, arg, i, type, packNum, inTypes, loopList, packlist, 
+      applyPacking(builder, arg, i, type, packNum, inTypes, loopList, packlist, 
                    eliminateOps);
       argList.push_back(i);
 
@@ -476,105 +375,134 @@ private:
     plFunc.setType(builder.getFunctionType(inTypes, outTypes));
   }
 
-  // Verify if the number of the use of the argument by callOps
-  // equals the time need to be changed.
-  // This is to gurantee all the callOp change the argument type
-  bool topFuncUpdate(OpBuilder builder, FuncOp& topFunc, unsigned axiWidth,
-                     std::vector<unsigned> cnt){
-    auto inTypes = SmallVector<Type,8>(topFunc.getArgumentTypes().begin(),
-                                       topFunc.getArgumentTypes().end());
-    auto outTypes = topFunc.getResultTypes();
-    auto argNum = cnt.size();
-    std::vector<unsigned> callCnt(argNum, 0);
-    for(unsigned index=0; index < argNum; index++){
-      auto arg = topFunc.getArgument(index);
-      for(auto use: arg.getUsers()){
-        if(auto call = dyn_cast<CallOp>(use)){
-          callCnt[index]++;
-        }
-      }
-    }
-    for(unsigned index=0; index < argNum; index++){
-      if(callCnt[index] != cnt[index])
+  // Update the function and the corresponding argument list and newType
+  bool updatePair(CallOp call, SmallVector<unsigned, 4> argIdxs, FuncOp topFunc,
+              FuncOp func, SmallVector<std::pair<unsigned, Type>, 4>& pairVec){
+    auto inTypes = SmallVector<Type,8>(func.getArgumentTypes().begin(),
+                                       func.getArgumentTypes().end());
+    // Tranverse the args need to be updated in the callee function
+    for(auto idx : argIdxs){
+      auto operand = call.getOperand(idx);
+      auto typeNew = inTypes[idx];
+      // Get the argument index in the topFunc
+      auto args = topFunc.getArguments();
+      auto itArg = std::find(args.begin(), args.end(), operand);
+      unsigned dis;
+      if (itArg != args.end())
+        dis = std::distance(args.begin(), itArg);
+      else //TODO:: Handle MemRef not included in the argument list 
         return false;
-      if(callCnt[index]==0)
-        continue;
-      auto arg = topFunc.getArgument(index);
-      if(!dyn_cast<MemRefType>(arg.getType()))
-        continue;
-      auto type = dyn_cast<MemRefType>(arg.getType());
-      auto shape = type.getShape();
-      auto rank = type.getRank();
-      if(auto memSpace = type.getMemorySpace()){
-        auto intSpace = dyn_cast<IntegerAttr>(memSpace);
-        if(!intSpace || intSpace.getInt()!=(int)MemorySpace::L3)
-          continue;
+      auto itPair = std::find_if(pairVec.begin(), pairVec.end(),
+                                 [&](std::pair<unsigned, Type> &pair) {
+                                 return pair.first == dis;});
+      // Check if the arguments has already been recorded
+      if(itPair != pairVec.end()){
+        // If already recorded, make sure the saved type is the same
+        if(itPair->second!=typeNew)
+          return false;
+      }else{ // Add the pair into the Smallvector
+         std::pair<unsigned, Type> newPair = {dis, typeNew};
+         pairVec.push_back(newPair);
       }
-      auto typeWidth = type.getElementTypeBitWidth();
-      auto packNum = (unsigned)(axiWidth / typeWidth); 
-      auto newType = builder.getIntegerType(axiWidth);
-      if(packNum<=1)
-        continue;
-      // Update arguments in topFunc
-      SmallVector<int64_t> sizesInt(shape.begin(),shape.end());
-      sizesInt[rank-1] = sizesInt[rank-1] / packNum;
-      auto newMemRefType = MemRefType::get(sizesInt, newType);
-      inTypes[index] = newMemRefType;
-      arg.setType(newMemRefType);
     }
-    topFunc.setType(builder.getFunctionType(inTypes, outTypes));
+    return true;             
+  }
+
+  // This function collects the top functions and the modified argument lists
+  // that contains the caller function of the updated callee functions
+  bool getTopFuncList(ModuleOp mod, FuncOp func, SmallVector<unsigned,4>argIdxs,
+       SmallVector<std::pair<FuncOp, 
+       SmallVector<std::pair<unsigned, Type>, 4>>, 4>& topArgList){
+    auto calleeName = func.getName();
+    auto result = mod.walk([&](CallOp call){
+      auto symbolName = call.getCallee();
+      if(calleeName!=symbolName)
+        return WalkResult::advance();
+      auto topFunc = call->getParentOfType<FuncOp>();
+      auto it = std::find_if(topArgList.begin(), topArgList.end(),
+          [&](std::pair<FuncOp, SmallVector<std::pair<unsigned, Type>, 4>> 
+              &pair) {return pair.first == topFunc;});
+      // If the FuncOp has already been added in the List
+      // then check and update the arguments that need to be updated
+      if(it != topArgList.end()){
+        auto& pairVec = it->second;
+        if(!updatePair(call, argIdxs, topFunc, func, pairVec))
+          return WalkResult::interrupt();
+      }else{ // FuncOp hasn't been put into the recording list
+        SmallVector<std::pair<unsigned, Type>, 4> pairVec;
+        if(!updatePair(call, argIdxs, topFunc, func, pairVec))
+          return WalkResult::interrupt();
+        topArgList.push_back(std::pair(topFunc, pairVec));
+      }
+      return WalkResult::advance();       
+    });
+    if (result == WalkResult::interrupt())
+      return false;
+    return true;
+  }
+  
+  void funcUpdate( OpBuilder builder, SmallVector<unsigned, 4>& argList,
+       std::pair<FuncOp, SmallVector<std::pair<unsigned, Type>, 4>> & pair){
+    auto& func = pair.first;
+    auto inTypes = SmallVector<Type,8>(func.getArgumentTypes().begin(),
+                                       func.getArgumentTypes().end());
+    auto outTypes = func.getResultTypes();
+    auto& argPairs = pair.second;
+    for(auto& argPair : argPairs){
+      auto idx = argPair.first;
+      auto newType = argPair.second;
+      auto arg = func.getArgument(idx);
+      inTypes[idx] = newType;
+      arg.setType(newType);
+      argList.push_back(idx);
+    }
+    func.setType(builder.getFunctionType(inTypes, outTypes));
+  }
+
+  // According to the topArgList, update the function and argument type 
+  bool topFuncUpdate(ModuleOp mod, OpBuilder builder, 
+                    SmallVector<std::pair<FuncOp, 
+                    SmallVector<std::pair<unsigned, Type>, 4>>, 4>& topArgList){
+    SmallVector<std::pair<FuncOp, 
+    SmallVector<std::pair<unsigned, Type>, 4>>, 4> ArgList;
+    for (auto& pair: topArgList){
+      SmallVector<unsigned, 4> argList;
+      funcUpdate(builder, argList, pair);
+      // Update the caller function and it's parent function of func
+      // TODO:: This can be generalized by using an recursive function
+      auto func = pair.first;
+      if(!getTopFuncList(mod, func, argList, ArgList))
+        return false;
+    }
+    for (auto& pair: ArgList){
+      SmallVector<unsigned, 4> argList;
+      funcUpdate(builder, argList, pair);
+    }
     return true;
   }
 
-  bool AXIPacking (ModuleOp mod, StringRef topFuncName) {
+  bool AXIPacking (ModuleOp mod) {
     auto builder = OpBuilder(mod);
-    FuncOp topFunc;
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
-      return false;
-    }
-    unsigned argNum = topFunc.getNumArguments();
     unsigned axiWidth = AXIWidth;
-    std::vector<unsigned> cnt(argNum, 0);
-    mod.walk([&](FuncOp func){
+    // Stores function, the corresponding arguments need to be updated
+    // and the newMemRefType
+    SmallVector<std::pair<FuncOp, 
+    SmallVector<std::pair<unsigned, Type>, 4>>, 4> topArgList;
+    auto result = mod.walk([&](FuncOp func){
       if(!func->hasAttr("adf.pl"))
         return WalkResult::advance();
       SmallVector<unsigned, 4> argList;
       mergeAXIPort(builder, func, axiWidth, argList);
-      auto calleeName = func.getName();
-      topFunc.walk([&](CallOp call){
-        auto symbolName = call.getCallee();
-        if(calleeName!=symbolName)
-          return WalkResult::advance();
-        for(auto idx : argList){
-          auto operand = call.getOperand(idx);
-          for(unsigned index=0; index < argNum; index++){
-            auto arg = topFunc.getArgument(index);
-            if(operand != arg)
-              continue;
-            cnt[index]++;
-            break;
-          }
-        }
-        return WalkResult::advance();
-      });
+      if(!getTopFuncList(mod, func, argList, topArgList))
+        return WalkResult::interrupt();
       return WalkResult::advance();
     });
-    // Check if there are arguments used
-    bool non_arg = true;
-    for(unsigned index=0; index < argNum; index++){
-      if(cnt[index]!=0){
-        non_arg =false;
-        break;
-      }
-    }
-    if(non_arg)
-      return true;
-    if(!topFuncUpdate(builder, topFunc, axiWidth, cnt))
+    if(result == WalkResult::interrupt())
+      return false;
+    if(!topFuncUpdate(mod, builder, topArgList))
       return false;
     return true;
   }
-
 };
 } // namespace
 

@@ -30,9 +30,7 @@ public:
   }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
-    StringRef topFuncName = "top_func";
-  
-    if (!DMAToIO(mod,topFuncName))
+    if (!DMAToIO(mod))
       signalPassFailure();
   }
 
@@ -148,7 +146,7 @@ private:
     return true;
   }
 
-  LogicalResult LowerDMAToIO(OpBuilder builder, FuncOp topFunc, 
+  LogicalResult LowerDMAToIO(OpBuilder builder, ModuleOp mod, FuncOp topFunc, 
                              std::string portType, 
                              int64_t portWidth, int64_t pliofreq, 
                              int64_t portBurst, int64_t gmiobw){
@@ -307,6 +305,39 @@ private:
     }
     topFunc.setType(builder.getFunctionType(inTypes, outTypes));
 
+    // Update the caller functions
+    // TODO:: Now assumes that the operands of the caller functions are defined
+    // by the argument list in the parent func of the callers
+    for (auto func : mod.getOps<FuncOp>()) {
+      if(!func->hasAttr("top_host"))
+        continue;
+      auto inTopTypes =SmallVector<Type,8>(func.getArgumentTypes().begin(),
+                                           func.getArgumentTypes().end());
+      auto outTopTypes = func.getResultTypes();
+      SmallVector<Value, 4> arg_list(func.getArguments().begin(),
+                                     func.getArguments().end());
+      SmallVector<Value, 4> igArgs; 
+      for (auto caller : func.getOps<CallOp>()) {
+        if(caller.getCallee() != topFunc.getName())
+          continue;
+        for(auto pair : typePairs){
+          auto newMemRefType = pair.first;
+          auto idx_op = pair.second;
+          auto operand = caller.getOperand(idx_op);
+          // Check if the argument has already been changed
+          auto igIt = std::find(igArgs.begin(), igArgs.end(), operand);
+          if(igIt!=igArgs.end())
+            continue;
+          auto it = std::find(arg_list.begin(), arg_list.end(), operand);
+          auto idx_arg = std::distance(arg_list.begin(), it);
+          auto arg = func.getArgument(idx_arg);
+          inTopTypes[idx_arg] = newMemRefType;
+          arg.setType(newMemRefType);
+        }
+      }
+      func.setType(builder.getFunctionType(inTopTypes, outTopTypes));
+    }
+
     if (flag == WalkResult::interrupt())
       return failure();
     return success();
@@ -350,40 +381,38 @@ private:
     return success();
   }
 
-  bool DMAToIO (ModuleOp mod, StringRef topFuncName) {
+  bool DMAToIO (ModuleOp mod) {
     auto builder = OpBuilder(mod);
-    FuncOp topFunc;
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
-      return false;
+    // Tranverse all the adf.func
+    for (auto func : mod.getOps<FuncOp>()) {
+      if(!func->hasAttr("adf.func"))
+        continue;
+      auto attrGMIO = builder.getBoolAttr(false);
+      auto attrPLIO = builder.getBoolAttr(false);
+      if(PortType=="GMIO" || PortType=="gmio"){
+        attrGMIO = builder.getBoolAttr(true);
+      }else if(PortType=="PLIO" || PortType=="plio"){
+        attrPLIO = builder.getBoolAttr(true);
+      }
+      func->setAttr("gmio",attrGMIO);
+      func->setAttr("plio",attrPLIO);
+
+      if (failed(LowerDMAToIO(builder, mod, func, PortType, PortWidth, PLIOFreq, 
+                              PortBurst, GMIOBW)))
+        return false;
+
+      MLIRContext &context = getContext();
+      RewritePatternSet patterns(&context);
+      PassManager pm(&getContext());
+      pm.addPass(createCSEPass());
+      pm.addPass(createCanonicalizerPass());
+
+      if (failed(pm.run(func)))
+        return false;
+
+      if (failed(BroadcastDetect(func)))
+        return false;
     }
-
-    auto attrGMIO = builder.getBoolAttr(false);
-    auto attrPLIO = builder.getBoolAttr(false);
-    if(PortType=="GMIO" || PortType=="gmio"){
-      attrGMIO = builder.getBoolAttr(true);
-    }else if(PortType=="PLIO" || PortType=="plio"){
-      attrPLIO = builder.getBoolAttr(true);
-    }
-    topFunc->setAttr("gmio",attrGMIO);
-    topFunc->setAttr("plio",attrPLIO);
-
-    if (failed(LowerDMAToIO(builder, topFunc, PortType, PortWidth, PLIOFreq, 
-                            PortBurst, GMIOBW)))
-      return false;
-    
-    MLIRContext &context = getContext();
-    RewritePatternSet patterns(&context);
-    PassManager pm(&getContext());
-    pm.addPass(createCSEPass());
-    pm.addPass(createCanonicalizerPass());
-
-    if (failed(pm.run(topFunc)))
-      return false;
-
-    if (failed(BroadcastDetect(topFunc)))
-      return false;
-
     return true;
   }
 

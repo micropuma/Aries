@@ -116,35 +116,28 @@ struct AriesLocalDataForward
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
-    StringRef topFuncName = "top_func";
-  
-    if (!LocalDataForward(mod,topFuncName))
+    if (!LocalDataForward(mod))
       signalPassFailure();
   }
 
 private:
 
-  bool LocalDataForward (ModuleOp mod, StringRef topFuncName) {
-    MLIRContext &context = getContext();
-    RewritePatternSet patterns(&context);
-
-    FuncOp topFunc;
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
-      return false;
+  bool LocalDataForward (ModuleOp mod) {
+    // Tranverse all the adf.func
+    for (auto func : mod.getOps<FuncOp>()) {
+      if(!func->hasAttr("adf.func"))
+        continue;
+      auto context = func->getContext();
+      PassManager pm(context);
+      pm.addPass(createCSEPass());
+      pm.addPass(createCanonicalizerPass());
+      if (failed(pm.run(func))) {
+        return false;
+      }
+      RewritePatternSet patterns(context);
+      patterns.add<DMAForward>(patterns.getContext());
+      (void)applyPatternsAndFoldGreedily(mod, std::move(patterns));
     }
-
-    PassManager pm(&getContext());
-    pm.addPass(createCSEPass());
-    pm.addPass(createCanonicalizerPass());
-
-    if (failed(pm.run(topFunc))) {
-      return false;
-    }
-
-    patterns.add<DMAForward>(patterns.getContext());
-
-    (void)applyPatternsAndFoldGreedily(mod, std::move(patterns));
 
     return true;
   }

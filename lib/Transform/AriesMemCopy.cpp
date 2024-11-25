@@ -23,25 +23,11 @@ struct AriesMemCopy : public AriesMemCopyBase<AriesMemCopy> {
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
-    StringRef topFuncName = "top_func";
-  
-    if (!MemCopy(mod,topFuncName))
+    if (!MemCopy(mod))
       signalPassFailure();
   }
 
 private:
-  bool MemCopy (ModuleOp mod,StringRef topFuncName) {
-    FuncOp topFunc;
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
-      return false;
-    }
-
-    subviewHoist(mod, topFunc);
-
-    return true;
-  }
-
   //Check if the argument has been write or not
   bool isWrite(FuncOp calleeFuncOp, unsigned index){
     auto arg = calleeFuncOp.getArgument(index);
@@ -62,50 +48,56 @@ private:
     return false;
   }
 
-  void subviewHoist(ModuleOp mod, FuncOp topFunc){
+  bool MemCopy(ModuleOp mod){
     auto builder = OpBuilder(mod);
     auto loc = builder.getUnknownLoc();
-    topFunc.walk([&](CallOp caller){
-      auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
-      auto inTypes =SmallVector<Type,8>(calleeFuncOp.getArgumentTypes().begin(),
-                                        calleeFuncOp.getArgumentTypes().end());
-      auto outTypes = calleeFuncOp.getResultTypes();
+    // Tranverse all the adf.func
+    for (auto func : mod.getOps<FuncOp>()) {
+      if(!func->hasAttr("adf.func"))
+        continue;
+      func.walk([&](CallOp caller){
+        auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
+        auto inTypes =SmallVector<Type,8>(calleeFuncOp.getArgumentTypes().begin(),
+                                          calleeFuncOp.getArgumentTypes().end());
+        auto outTypes = calleeFuncOp.getResultTypes();
 
-      //Traverse the subview arg operands of the caller function
-      //Allocate new memref, copy the subview to it, & deallocate it
-      unsigned index = 0;
-      for (auto argOperand : caller.getArgOperands()) {
-        if(!dyn_cast<SubViewOp>(argOperand.getDefiningOp()))
-          continue;
-        auto type = dyn_cast<MemRefType>(argOperand.getType());
+        //Traverse the subview arg operands of the caller function
+        //Allocate new memref, copy the subview to it, & deallocate it
+        unsigned index = 0;
+        for (auto argOperand : caller.getArgOperands()) {
+          if(!dyn_cast<SubViewOp>(argOperand.getDefiningOp()))
+            continue;
+          auto type = dyn_cast<MemRefType>(argOperand.getType());
 
-        //Allocate, copy & deallocate new memref before & after the caller
-        builder.setInsertionPoint(caller);
-        auto allocOp 
-             = builder.create<AllocOp>(loc, MemRefType::get(type.getShape(),
-                                       type.getElementType(), AffineMap(),
-                                       (int)mlir::aries::adf::MemorySpace::L1));
-        if (isRead(calleeFuncOp,index))
-          builder.create<CopyOp>(loc, argOperand, allocOp);
-        builder.setInsertionPointAfter(caller);
-        //Copy the allocation back if it is touched in the callee
-        if (isWrite(calleeFuncOp,index))
-          builder.create<CopyOp>(loc, allocOp, argOperand);
-        builder.create<DeallocOp>(loc, allocOp);
+          //Allocate, copy & deallocate new memref before & after the caller
+          builder.setInsertionPoint(caller);
+          auto allocOp 
+               = builder.create<AllocOp>(loc, MemRefType::get(type.getShape(),
+                                         type.getElementType(), AffineMap(),
+                                         (int)mlir::aries::adf::MemorySpace::L1));
+          if (isRead(calleeFuncOp,index))
+            builder.create<CopyOp>(loc, argOperand, allocOp);
+          builder.setInsertionPointAfter(caller);
+          //Copy the allocation back if it is touched in the callee
+          if (isWrite(calleeFuncOp,index))
+            builder.create<CopyOp>(loc, allocOp, argOperand);
+          builder.create<DeallocOp>(loc, allocOp);
 
-        //Replace the subview in the caller function to the allocOp
-        caller.setOperand(index, allocOp);
+          //Replace the subview in the caller function to the allocOp
+          caller.setOperand(index, allocOp);
 
-        //Change the argument types of callee
-        inTypes[index] = allocOp.getType();
-        auto arg = calleeFuncOp.getArgument(index++);
-        arg.setType(allocOp.getType());
-      }
+          //Change the argument types of callee
+          inTypes[index] = allocOp.getType();
+          auto arg = calleeFuncOp.getArgument(index++);
+          arg.setType(allocOp.getType());
+        }
 
-      // Update the callee function type.
-      calleeFuncOp.setType(builder.getFunctionType(inTypes, outTypes));
+        // Update the callee function type.
+        calleeFuncOp.setType(builder.getFunctionType(inTypes, outTypes));
 
-    });
+      });
+    }
+    return true;
   }
 
 

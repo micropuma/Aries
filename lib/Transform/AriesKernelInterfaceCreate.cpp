@@ -20,8 +20,7 @@ struct AriesKernelInterfaceCreate
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
-    StringRef topFuncName = "top_func";
-    if (!KernelInterfaceCreate(mod,topFuncName))
+    if (!KernelInterfaceCreate(mod))
       signalPassFailure();
   }
 
@@ -217,13 +216,8 @@ private:
 
   // This is an experimental pass to create the output buffer
   // TODO: Tensor may be a proper representation for the arguments in adf.kernel
-  bool KernelInterfaceCreate (ModuleOp mod, StringRef topFuncName) {
+  bool KernelInterfaceCreate (ModuleOp mod) {
     auto builder = OpBuilder(mod);
-    FuncOp topFunc;
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
-      return false;
-    }
     PassManager pm(&getContext());
     pm.addPass(createLoopFusionPass());
     
@@ -249,7 +243,7 @@ private:
       // Update edge callee
       auto op = calleeFunc->clone();
       auto oldName = calleeFunc.getName();
-      auto newName = oldName.str() + "0";
+      auto newName = oldName.str() + "_0";
       auto newFunc =  dyn_cast<FuncOp>(op);
       newFunc.setName(newName);
       newFunc->setAttr("edge_kernel", builder.getUnitAttr());
@@ -264,27 +258,32 @@ private:
       if(failed(pm.run(calleeFunc)))
         return false;
       
-      // Tranverse all the old callers and replace with the new callers
-      topFunc.walk([&](CallOp caller){
-        auto calleeName = caller.getCallee();
-        if(calleeName != oldName)
-          return WalkResult::advance();
-        bool flag = false;
-        // Change the first 
-        if(auto attr = caller->getAttr("kernel")){
-          if(auto intAttr = dyn_cast<IntegerAttr>(attr))
-            if(intAttr.getInt() == 0)
-              flag = true;
-        }else{
-          flag = true;
-        }
-        if(flag)
-          updateCaller(builder, newFunc, caller, edgeInArgs, outArgs);
-        else
-          updateCaller(builder, calleeFunc, caller, inArgs, outArgs);
+        // Tranverse all the adf.func
+      for (auto func : mod.getOps<FuncOp>()) {
+        if(!func->hasAttr("adf.func"))
+          continue;
+        // Tranverse all the old callers and replace with the new callers
+        func.walk([&](CallOp caller){
+          auto calleeName = caller.getCallee();
+          if(calleeName != oldName)
+            return WalkResult::advance();
+          bool flag = false;
+          // Change the first 
+          if(auto attr = caller->getAttr("kernel")){
+            if(auto intAttr = dyn_cast<IntegerAttr>(attr))
+              if(intAttr.getInt() == 0)
+                flag = true;
+          }else{
+            flag = true;
+          }
+          if(flag)
+            updateCaller(builder, newFunc, caller, edgeInArgs, outArgs);
+          else
+            updateCaller(builder, calleeFunc, caller, inArgs, outArgs);
 
-        return WalkResult::advance();
-      });
+          return WalkResult::advance();
+        });
+      }
     }
     return true;
   }

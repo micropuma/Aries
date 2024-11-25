@@ -230,48 +230,42 @@ namespace {
 struct AriesLowerToADF : public AriesLowerToADFBase<AriesLowerToADF> {
 public:
   void runOnOperation() override {
-    auto mod = dyn_cast<ModuleOp>(getOperation());
-    StringRef topFuncName = "top_func";    
-  
-    if (!LowerToADF(mod,topFuncName))
+    auto mod = dyn_cast<ModuleOp>(getOperation());  
+    if (!LowerToADF(mod))
       signalPassFailure();
   }
 
 private:
-  
-
-  bool LowerToADF(ModuleOp mod,StringRef topFuncName) {
-    MLIRContext &context = getContext();
-    RewritePatternSet patterns(&context);
-
-    FuncOp topFunc;
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
-      return false;
-    }
-    unsigned index = 0;
-    ConversionTarget target(context);
-    target.addIllegalOp<AffineParallelOp>();
-    target.addIllegalOp<DeallocOp>();
-    target.addIllegalOp<CopyOp>();
-    target.addIllegalOp<SubViewOp>();
-    patterns.add<AffineParallelConvert>(patterns.getContext(),index);
-    patterns.add<AllocConvert>(patterns.getContext());
-    patterns.add<DeallocConvert>(patterns.getContext());
-    patterns.add<CopyConvert>(patterns.getContext());
-    patterns.add<SubViewConvert>(patterns.getContext());
-    target.addLegalOp<arith::ConstantOp>();
-    target.addLegalOp<BufferOp>();
-    target.addLegalOp<DmaOp>();
-    target.addLegalOp<AffineApplyOp>();
-    target.addLegalOp<AffineForOp>();
-    target.addLegalOp<CellOp>();
-    target.addLegalOp<EndCellOp>();
-    target.addLegalDialect<ADFDialect>();
-    target.addLegalDialect<AffineDialect>();
-
-    if (failed(applyPartialConversion(mod, target, std::move(patterns)))) {
-      return false;
+  bool LowerToADF(ModuleOp mod) {
+    // Tranverse all the adf.func
+    for (auto func : mod.getOps<FuncOp>()) {
+      MLIRContext *context = func->getContext();
+      RewritePatternSet patterns(context);
+      unsigned index = 0;
+      ConversionTarget target(*context);
+      target.addIllegalOp<AffineParallelOp>();
+      target.addIllegalOp<DeallocOp>();
+      target.addIllegalOp<CopyOp>();
+      target.addIllegalOp<SubViewOp>();
+      patterns.add<AffineParallelConvert>(patterns.getContext(),index);
+      patterns.add<AllocConvert>(patterns.getContext());
+      patterns.add<DeallocConvert>(patterns.getContext());
+      patterns.add<CopyConvert>(patterns.getContext());
+      patterns.add<SubViewConvert>(patterns.getContext());
+      target.addLegalOp<arith::ConstantOp>();
+      target.addLegalOp<BufferOp>();
+      target.addLegalOp<DmaOp>();
+      target.addLegalOp<AffineApplyOp>();
+      target.addLegalOp<AffineForOp>();
+      target.addLegalOp<CellOp>();
+      target.addLegalOp<EndCellOp>();
+      target.addLegalDialect<ADFDialect>();
+      target.addLegalDialect<AffineDialect>();
+      if(!func->hasAttr("adf.func"))
+        continue;
+      if (failed(applyPartialConversion(func, target, std::move(patterns)))) {
+        return false;
+      }
     }
 
     return true;

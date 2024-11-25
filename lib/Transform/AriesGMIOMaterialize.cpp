@@ -23,18 +23,16 @@ struct AriesGMIOMaterialize : public AriesGMIOMaterializeBase<AriesGMIOMateriali
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
-    StringRef topFuncName = "top_func";
-  
-    if (!IOMaterialize(mod,topFuncName))
+    if (!IOMaterialize(mod))
       signalPassFailure();
   }
 
 private:
   // Serialize the IOPushOp for GMIO
   void GMIOPushOpProcess(OpBuilder builder, FuncOp topFunc, 
-                       EndLauchCellOp endlauchCell){
+                       EndLaunchCellOp endlaunchCell){
     // Need to consider the insertion point of dma of PopOp and deallocOp
-    // Now set before EndLauchCellOp
+    // Now set before EndLaunchCellOp
     auto loc = builder.getUnknownLoc();
     auto &entryBlock = topFunc.getBody().front();
     topFunc.walk([&](IOPushOp op){
@@ -59,7 +57,7 @@ private:
       builder.setInsertionPointToStart(&entryBlock);
       auto newMem = builder.create<AllocOp>(loc,memRefType);
       newMem->setAttr("gmio",builder.getUnitAttr());
-      builder.setInsertionPoint(endlauchCell);
+      builder.setInsertionPoint(endlaunchCell);
       auto dealloc = builder.create<DeallocOp>(loc,newMem);
       dealloc->setAttr("gmio",builder.getUnitAttr());
       builder.setInsertionPoint(op);
@@ -77,7 +75,7 @@ private:
 
   // Serialize the IOPopOp for GMIO
   void GMIOPopOpProcess(OpBuilder builder, FuncOp topFunc, 
-                       EndLauchCellOp endlauchCell){
+                       EndLaunchCellOp endlaunchCell){
     auto loc = builder.getUnknownLoc();
     auto &entryBlock = topFunc.getBody().front();
     topFunc.walk([&](IOPopOp op){
@@ -114,7 +112,7 @@ private:
                         loc, newMem, ValueRange(), ValueRange(), ValueRange(),
                         dst, dst_offsets, dst_sizes, dst_strides);
       dmaOp->setAttr("out",builder.getUnitAttr());
-      builder.setInsertionPoint(endlauchCell);
+      builder.setInsertionPoint(endlaunchCell);
       auto dealloc = builder.create<DeallocOp>(loc,newMem);
       dealloc->setAttr("gmio",builder.getUnitAttr()); 
       builder.setInsertionPoint(op);
@@ -125,30 +123,27 @@ private:
     });
   }
 
-  bool IOMaterialize (ModuleOp mod, StringRef topFuncName) {
+  bool IOMaterialize (ModuleOp mod) {
     auto builder = OpBuilder(mod);
-    FuncOp topFunc;
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
-      return false;
-    }
     
-    // Find the LauchCellOp
-    // TODO: Handle Multiple LauchCellOps
-    LauchCellOp lauchcell = getFirstOpOfType<LauchCellOp>(topFunc.getBody());
-    if(!lauchcell)
-      return true;
-    
-    auto &entryBlock = lauchcell.getBody().front();
-    auto endlaunchCell = dyn_cast<EndLauchCellOp>(entryBlock.getTerminator());
+    for (auto func : mod.getOps<FuncOp>()) {
+      if(!func->hasAttr("adf.func"))
+        continue;
+      // Find the LaunchCellOp
+      LaunchCellOp launchcell = getFirstOpOfType<LaunchCellOp>(func.getBody());
+      if(!launchcell)
+        return true;
 
-    // Materialize Push/Pop of GMIO
-    auto boolGMIO = topFunc->getAttr("gmio");
-    if(dyn_cast<BoolAttr>(boolGMIO).getValue()){
-      GMIOPushOpProcess(builder, topFunc, endlaunchCell);
-      GMIOPopOpProcess(builder, topFunc, endlaunchCell);
+      auto &entryBlock = launchcell.getBody().front();
+      auto endlaunchCell = dyn_cast<EndLaunchCellOp>(entryBlock.getTerminator());
+
+      // Materialize Push/Pop of GMIO
+      auto boolGMIO = func->getAttr("gmio");
+      if(dyn_cast<BoolAttr>(boolGMIO).getValue()){
+        GMIOPushOpProcess(builder, func, endlaunchCell);
+        GMIOPopOpProcess(builder, func, endlaunchCell);
+      }
     }
-
     return true;
   }
 

@@ -17,43 +17,35 @@ namespace {
 struct AriesFuncExtract : public AriesFuncExtractBase<AriesFuncExtract> {
 public:
   void runOnOperation() override {
-    auto mod = dyn_cast<ModuleOp>(getOperation());
-    StringRef topFuncName = "top_func";    
-  
-    if (!FuncExtract(mod,topFuncName))
+    auto mod = dyn_cast<ModuleOp>(getOperation());   
+    if (!FuncExtract(mod))
       signalPassFailure();
   }
 
 private:
-  bool FuncExtract(ModuleOp mod,StringRef topFuncName) {
+  bool FuncExtract(ModuleOp mod) {
     auto builder = OpBuilder(mod);
-    FuncOp topFunc;
-
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
-      return false;
-    }
-
-    // Find the affineParallelOp
-    // TODO: Handle Multiple affineParallelOps
-    AffineParallelOp parallelOp 
-                     = getFirstOpOfType<AffineParallelOp>(topFunc.getBody());
-    if(!parallelOp)
-      return true;
-
-    SmallVector<AffineForOp, 6> band;
-    getNestedLoopBand(parallelOp.getRegion(), band);
     
-    // There should be at least one point loop
-    unsigned width = band.size();
+    // Extract the affineParallelOp inside adf.func
+    for (auto func : mod.getOps<FuncOp>()) {
+      if(!func->hasAttr("adf.func"))
+        continue;
+      // Find the affineParallelOp
+      AffineParallelOp parallelOp 
+                       = getFirstOpOfType<AffineParallelOp>(func.getBody());
+      if(!parallelOp)
+        return true;
 
-    if (width < 1){
-      topFunc->emitOpError("The number of point loop is less than 1\n");
-      return false;
-    }
-    
-    CallFuncCreation(builder, topFunc, band, parallelOp);
-      
+      SmallVector<AffineForOp, 6> band;
+      getNestedLoopBand(parallelOp.getRegion(), band);
+      // There should be at least one point loop
+      unsigned width = band.size();
+      if (width < 1){
+        func->emitOpError("The number of point loop is less than 1\n");
+        return false;
+      }
+      CallFuncCreation(builder, func, band, parallelOp);
+    } 
     return true;
   }
 
