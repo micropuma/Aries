@@ -24,11 +24,11 @@ EnableIOCons = "false"
 L1_0=32
 L1_1=32
 L1_2=32
-L2_0=11
-L2_1=8
-L2_2=4
-L3_0=4
-L3_1=6
+L2_0=2
+L2_1=1
+L2_2=2
+L3_0=2
+L3_1=2
 L3_2=1
 BUFF_0=1#1:BRAM 0:URAM
 BUFF_1=1
@@ -57,7 +57,8 @@ test: doublebuffer
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}"
+			-aries-tiling="tile-func-name=gemm0 l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}" \
+      -aries-tiling="tile-func-name=gemm1 l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}"
 
 exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
