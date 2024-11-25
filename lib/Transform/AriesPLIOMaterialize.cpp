@@ -34,9 +34,7 @@ public:
   }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
-    StringRef topFuncName = "top_func";
-  
-    if (!IOMaterialize(mod,topFuncName))
+    if (!IOMaterialize(mod))
       signalPassFailure();
 
     PassManager pm(&getContext());
@@ -47,33 +45,43 @@ public:
   }
 
 private:
-  // 1) Collect and remove the adf.cells and erase adf.io.wait
-  void Preprocess(OpBuilder builder, FuncOp& topFunc, 
-                  LauchCellOp lauchcell, SmallVectorImpl<CallOp>& calls){
-    lauchcell.walk([&](Operation *op){
+  // Collect and remove the adf.cells and erase adf.io.wait
+  void Preprocess(OpBuilder builder, LaunchCellOp launchcell, 
+                  SmallVectorImpl<CallOp>& calls){
+    launchcell.walk([&](Operation *op){
       if(auto call = dyn_cast<CallOp>(op)){
         if(call->hasAttr("adf.cell"))
           calls.push_back(call);
         call->remove();
-      }else if(dyn_cast<IOWaitOp>(op) || dyn_cast<WaitLauchCellOp>(op)){
+      }else if(dyn_cast<IOWaitOp>(op) || dyn_cast<WaitLaunchCellOp>(op)){
         op->erase();
       }
     });
   }
+  // Move the collected adf.cell to adf.cell.launch
+  void Postprocess(OpBuilder builder, LaunchCellOp launchcell, 
+                   SmallVectorImpl<CallOp>& calls){
+    auto &entryBlock = launchcell.getBody().front();
+    builder.setInsertionPointToStart(&entryBlock);
+    for(auto call: calls)
+      builder.insert(call);
+  }
 
   // Create PL func.func and pl.launch. Create Callop inside pl.launch
-  void PLFuncCreation(OpBuilder builder, FuncOp topFunc, FuncOp& plFunc,
-                      CallOp& callop, LauchCellOp lauchcell){
+  void PLFuncCreation(OpBuilder builder, FuncOp adfFunc, FuncOp& plFunc,
+                      CallOp& callop, LaunchCellOp launchcell){
+    SmallVector<CallOp> calls;
+    Preprocess(builder, launchcell, calls);
     auto loc = builder.getUnknownLoc();
     SmallVector<Value> liveins;
-    auto liveness = Liveness(lauchcell);
-    for (auto livein: liveness.getLiveIn(&lauchcell.getBody().front()))
-      if (!lauchcell->isProperAncestor(livein.getParentBlock()->getParentOp()))
+    auto liveness = Liveness(launchcell);
+    for (auto livein: liveness.getLiveIn(&launchcell.getBody().front()))
+      if (!launchcell->isProperAncestor(livein.getParentBlock()->getParentOp()))
         liveins.push_back(livein);
     
-    //reorder inputs to be correspond with the topfunc arguments
+    //reorder inputs to be correspond with the adfFunc arguments
     SmallVector<Value, 6> inputs;
-    for(auto arg : topFunc.getArguments()){
+    for(auto arg : adfFunc.getArguments()){
       auto it = llvm::find(liveins,arg);
       if(it != liveins.end())
         inputs.push_back(arg);
@@ -85,8 +93,8 @@ private:
     }
 
     // Define the dma function with the detected inputs as arguments
-    builder.setInsertionPoint(topFunc);
-    auto funcName = "dma_pl";
+    builder.setInsertionPoint(adfFunc);
+    auto funcName = adfFunc.getName().str() + "_pl";
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
     plFunc = builder.create<FuncOp>(builder.getUnknownLoc(),funcName,funcType);
     plFunc->setAttr("adf.pl",builder.getBoolAttr(true));
@@ -94,20 +102,20 @@ private:
     builder.setInsertionPointToEnd(destBlock);
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
     
-    // Move the operations in the adf.cell.lauch before the returnOp
+    // Move the operations in the adf.cell.launch before the returnOp
     builder.setInsertionPointToEnd(destBlock);
-    auto &entryBlock = lauchcell.getBody().front();
+    auto &entryBlock = launchcell.getBody().front();
     for(auto &op: llvm::make_early_inc_range(entryBlock)){
-      if(!dyn_cast<EndLauchCellOp>(op))
+      if(!dyn_cast<EndLaunchCellOp>(op))
         op.moveBefore(returnOp);
     }
 
-    // Create LauchPLOp and insert the CallOp
-    builder.setInsertionPointAfter(lauchcell);
-    auto launchPLOp = builder.create<LauchPLOp>(loc,funcName);
+    // Create LaunchPLOp and insert the CallOp
+    builder.setInsertionPointAfter(launchcell);
+    auto launchPLOp = builder.create<LaunchPLOp>(loc,funcName);
     auto *cellLaunchPLBlock = builder.createBlock(&launchPLOp.getBody());
     builder.setInsertionPointToEnd(cellLaunchPLBlock);
-    auto endLaunchPL = builder.create<WaitLauchPLOp>(loc);
+    auto endLaunchPL = builder.create<WaitLaunchPLOp>(loc);
     builder.setInsertionPoint(endLaunchPL);
     callop = builder.create<CallOp>(loc, plFunc, inputs);
     callop->setAttr("adf.pl",builder.getUnitAttr());
@@ -121,6 +129,7 @@ private:
           return plFunc->isProperAncestor(use.getOwner());
       });
     }
+    Postprocess(builder, launchcell, calls);
   }
   
   // This is a specific function that perfectize the affine.apply ops between
@@ -980,8 +989,8 @@ private:
 
   // Replace IORead/IOWrite by AffineLoad/AffineStore, update the callee and
   // caller function, create ConnectOp to connect IO with stream
-  void ArgUpdate(OpBuilder builder, FuncOp topFunc, FuncOp plFunc, 
-                 CallOp& caller){
+  void ArgUpdate(OpBuilder builder, FuncOp topFunc, 
+                 FuncOp adfFunc, FuncOp plFunc, CallOp& caller){
     auto loc = builder.getUnknownLoc();
     SmallVector<OpFoldResult> allocSizes;
     allocSizes.push_back(builder.getIndexAttr(1));
@@ -995,16 +1004,18 @@ private:
                                       plFunc.getArgumentTypes().end());
     auto outTypes = plFunc.getResultTypes();
     unsigned index = 0;
+    SmallVector<int64_t, 8> callerIds;
     for (auto argOperand : caller.getArgOperands()) {
       auto defineOp = argOperand.getDefiningOp();
       if(!defineOp || !dyn_cast<CreateGraphIOOp>(defineOp)){
         index++;
         continue;
       }
+      callerIds.push_back(index);
       auto graphio = dyn_cast<CreateGraphIOOp>(defineOp);
       auto calleeArg = plFunc.getArgument(index);
       for(auto user : calleeArg.getUsers()){
-        builder.setInsertionPointToStart(&topFunc.getBody().front());
+        builder.setInsertionPointToStart(&adfFunc.getBody().front());
         if(auto ioWrite = dyn_cast<IOWriteOp>(user)){
           auto src = ioWrite.getSrc();
           auto allocOp 
@@ -1043,6 +1054,55 @@ private:
     }
     // Update the callee function type.
     plFunc.setType(builder.getFunctionType(inTypes, outTypes));
+    // Update the adf.func of the caller with the memref "plio"
+    auto adfInTypes =SmallVector<Type,8>(adfFunc.getArgumentTypes().begin(),
+                                         adfFunc.getArgumentTypes().end());
+    auto topInTypes =SmallVector<Type,8>(topFunc.getArgumentTypes().begin(),
+                                         topFunc.getArgumentTypes().end());
+    auto adfOutTypes = adfFunc.getResultTypes();
+    auto topOutTypes = topFunc.getResultTypes();
+    auto& block = adfFunc.getBody().front();
+    auto& topBlock = topFunc.getBody().front();
+    auto argNum = (unsigned) adfInTypes.size();
+    auto topArgNum = (unsigned) topInTypes.size();
+    for (auto idx : callerIds) {
+      auto operand = caller.getOperand(idx);
+      auto newType = operand.getType();
+      adfInTypes.push_back(newType);
+      block.addArgument(newType, adfFunc.getLoc());
+      topInTypes.push_back(newType);
+      topBlock.addArgument(newType, topFunc.getLoc());
+    }
+    // Update the adf.func type.
+    adfFunc.setType(builder.getFunctionType(adfInTypes, adfOutTypes));
+    topFunc.setType(builder.getFunctionType(topInTypes, topOutTypes));
+
+    // Eliminate the corresponding memref.alloc and replace the use of them
+    for (auto idx : callerIds) {
+      auto operand = caller.getOperand(idx);
+      auto allocOp = operand.getDefiningOp<AllocOp>();
+      auto arg = adfFunc.getArgument(argNum++);
+      allocOp.replaceAllUsesWith(arg);
+      allocOp.erase();
+    }
+
+    // update the caller in the topFunc
+    auto adfName = adfFunc.getName();
+    for (auto call : llvm::make_early_inc_range(topFunc.getOps<CallOp>())) {
+      if(call.getCallee() != adfName)
+        continue;
+      SmallVector<Value, 8> operands;
+      for(auto operand: call.getOperands())
+        operands.push_back(operand);
+      for(auto i=topArgNum; i<topInTypes.size(); i++)
+        operands.push_back(topFunc.getArgument(i));
+      builder.setInsertionPoint(call);
+      builder.create<CallOp>(loc, plFunc, ValueRange{operands});
+      call.erase();
+    }
+    auto topAttr = dyn_cast<StringAttr>(topFunc->getAttr("top_host"));
+    if(!topAttr)
+      topFunc->setAttr("top_host", plioAttr);
   }
 
   // This function does the loop permutation for load/store from DDR->L2 mem
@@ -1247,8 +1307,8 @@ private:
   }
 
   // Allocate L2 memory & add data movement
-  bool PLDataMovement(OpBuilder builder, FuncOp topFunc, FuncOp plFunc, 
-                      CallOp& callop){
+  bool PLDataMovement(OpBuilder builder, FuncOp topFunc, FuncOp adfFunc, 
+                      FuncOp plFunc, CallOp& callop){
     AffineForOp plForOp;
     plFunc.walk([&](AffineForOp forOp){
       if(forOp->hasAttr("Array_Partition"))
@@ -1290,7 +1350,7 @@ private:
       return false;
     }
     // Replace arguments with PLIOType by memref arguments
-    ArgUpdate(builder, topFunc, plFunc, callop);
+    ArgUpdate(builder, topFunc, adfFunc, plFunc, callop);
     // Simplify the loop structure after ConvertToAffine.
     // There won't be any nested affine.apply ops
     pm.addPass(createSimplifyAffineStructuresPass());
@@ -1310,40 +1370,28 @@ private:
     return true;
   }
 
-  // Move the collected adf.cell to adf.cell.launch
-  void Postprocess(OpBuilder builder, LauchCellOp lauchcell, 
-                   SmallVectorImpl<CallOp>& calls){
-    auto &entryBlock = lauchcell.getBody().front();
-    builder.setInsertionPointToStart(&entryBlock);
-    for(auto call: calls)
-      builder.insert(call);
-  }
-
-  bool IOMaterialize (ModuleOp mod, StringRef topFuncName) {
+  bool IOMaterialize (ModuleOp mod) {
     auto builder = OpBuilder(mod);
     FuncOp topFunc;
-    if(!topFind(mod, topFunc, topFuncName)){
-      topFunc->emitOpError("Top function not found\n");
-      return false;
-    }
-    
-    // Find the LauchCellOp
-    // TODO: Handle Multiple LauchCellOps
-    LauchCellOp lauchcell = getFirstOpOfType<LauchCellOp>(topFunc.getBody());
-    if(!lauchcell)
+    if(!topFind(mod, topFunc, "top_host"))
       return true;
+    for (auto func : mod.getOps<FuncOp>()) {
+      if(!func->hasAttr("adf.func"))
+        continue;      
+      // Find the LaunchCellOp
+      LaunchCellOp launchcell = getFirstOpOfType<LaunchCellOp>(func.getBody());
+      if(!launchcell)
+        return true;
 
-    // Materialize Push/Pop of PLIO
-    auto boolPLIO = topFunc->getAttr("plio");
-    SmallVector<CallOp> calls;
-    FuncOp plFunc;
-    CallOp callop;
-    if(dyn_cast<BoolAttr>(boolPLIO).getValue()){
-      Preprocess(builder, topFunc, lauchcell, calls);
-      PLFuncCreation(builder, topFunc, plFunc, callop, lauchcell);
-      if(!PLDataMovement(builder, topFunc, plFunc, callop))
-        return false;
-      Postprocess(builder, lauchcell, calls);
+      // Materialize Push/Pop of PLIO
+      auto boolPLIO = func->getAttr("plio");
+      FuncOp plFunc;
+      CallOp callop;
+      if(dyn_cast<BoolAttr>(boolPLIO).getValue()){
+        PLFuncCreation(builder, func, plFunc, callop, launchcell);
+        if(!PLDataMovement(builder, topFunc, func, plFunc, callop))
+         return false;
+      }
     }
     return true;
   }
