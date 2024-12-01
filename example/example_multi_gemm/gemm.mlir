@@ -15,7 +15,7 @@ module {
     return
   }
 
-  func.func @top(%A: memref<128x64xf32>, %B: memref<64x64xf32>, %C: memref<128x64xf32>, %D: memref<64x64xf32>, %E: memref<128x64xf32>)attributes {outArgs = [2 : i32, 4 : i32], top_func}{
+  func.func @top(%A: memref<128x64xf32>, %B: memref<64x64xf32>, %C: memref<128x64xf32>, %D: memref<64x64xf32>, %E: memref<128x64xf32>)attributes {top_func}{
     func.call @gemm0(%A, %B, %C) : (memref<128x64xf32>, memref<64x64xf32>, memref<128x64xf32>) -> ()
     func.call @gemm0(%C, %D, %E) : (memref<128x64xf32>, memref<64x64xf32>, memref<128x64xf32>) -> ()
     return

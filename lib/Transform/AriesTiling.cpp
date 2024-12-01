@@ -125,11 +125,13 @@ private:
     }
     if(!func)
       return true;
+    SmallVector<Attribute, 4> attrs;
+    argAnotate(builder, topFunc, func, attrs); 
+    auto outAttrs = builder.getArrayAttr(attrs);
+    topFunc->setAttr("outArgs",outAttrs);
     Preprocesses(mod, builder, topFunc);
     // Tile the functions specified in the command line.
-    SmallVector<Attribute, 4> attrs;
     func->setAttr("adf.func", builder.getUnitAttr());
-    argAnotate(builder, topFunc, func, attrs);
     SmallVector<AffineForOp, 6> band;
     getNestedLoopBand(func.getBody(), band);
     auto bandSize = band.size();
@@ -298,8 +300,6 @@ private:
                                                       parallelOp.getIVs()[i]);
       blockParallelloop.erase();
     }
-    auto outAttrs = builder.getArrayAttr(attrs);
-    topFunc->setAttr("outArgs",outAttrs);
     return true;
   }
 
