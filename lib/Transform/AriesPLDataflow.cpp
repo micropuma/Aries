@@ -236,6 +236,7 @@ private:
       if(!dyn_cast<BoolAttr>(attr))
         return WalkResult::advance();
       func->setAttr("dataflow",builder.getUnitAttr());
+      func->setAttr("inline",builder.getBoolAttr(false));
       // For each loop in adf.pl, create a new func marked by adf.pl
       PLFuncSplit(builder, func);
       return WalkResult::advance();

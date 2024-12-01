@@ -5,7 +5,7 @@ PROJECT_PATH=./${PROJECT_NAME}
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
-TEMPLATE_PATH = ../../
+TEMPLATE_PATH = ..
 EN_PL = 1
 PLIOWidth = 128
 AXIWidth = 512
@@ -173,13 +173,14 @@ ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/20_${FUNC}.doublebuffer.
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}" \
+			-aries-tiling="tile-func-name=gemm0 l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}" \
 			-aries-func-extract \
 			-aries-loop-simplify \
 			-aries-mem-subview \
 			-aries-mem-hoist \
 			-aries-mem-copy \
 			-aries-lower-to-adf \
+			-canonicalize -cse \
 			-aries-dependency-extract \
 			-aries-func-unroll \
 			-aries-local-data-forward \

@@ -36,8 +36,44 @@ public:
   }
 
 private:
+  // Clone the original functions for host emission
+  void Preprocesses(ModuleOp mod, OpBuilder builder, FuncOp topFunc){
+    auto topName = topFunc.getName();
+    auto hostFunc = dyn_cast<FuncOp>(topFunc->clone());
+    auto hostName = topName.str() + "_host";
+    hostFunc->setAttr("top_host", builder.getUnitAttr());
+    auto nameAttr = builder.getStringAttr(topName.str());
+    hostFunc->setAttr("origin_func", nameAttr);
+    hostFunc->removeAttr("top_func");
+    hostFunc.setName(hostName);
+    builder.setInsertionPointAfter(topFunc);
+    builder.insert(hostFunc);
+    builder.setInsertionPoint(hostFunc);
+    SmallVector<std::string, 4> strList;
+    for(auto caller: hostFunc.getOps<CallOp>()){
+      auto func = mod.lookupSymbol<FuncOp>(caller.getCallee());
+      auto funcName = func.getName();
+      auto newAttr = builder.getStringAttr(funcName.str());
+      auto newName = funcName.str() + "_host";
+      auto it = llvm::find(strList, newName);
+      // If the caller has been cloned, then change the callee name
+      if(it != strList.end()){
+        caller.setCallee(newName);
+        caller->setAttr("origin_func", newAttr);
+      }else{// Clone the callee func
+        auto newFunc = dyn_cast<FuncOp>(func->clone());
+        newFunc->setAttr("origin_func", newAttr);
+        newFunc.setName(newName);
+        caller.setCallee(newName);
+        caller->setAttr("origin_func", newAttr);
+        builder.insert(newFunc);
+        strList.push_back(newName);
+      }
+    }
+  }
+
   // Anotate the output arguments
-  void preProcesses(OpBuilder builder, FuncOp topFunc, FuncOp func,
+  void argAnotate(OpBuilder builder, FuncOp topFunc, FuncOp func,
                     SmallVector<Attribute, 4>& attrs){
     SmallVector<int64_t, 4> ids;
     func.walk([&](AffineStoreOp op){
@@ -79,7 +115,7 @@ private:
     auto builder = OpBuilder(mod);
     auto loc = builder.getUnknownLoc();
     FuncOp topFunc, func;
-    if(!topFind(mod, topFunc, "top_host"))
+    if(!topFind(mod, topFunc, "top_func"))
       return true;
     for(auto tileFunc: mod.getOps<FuncOp>()){
       if(tileFunc.getName() == TileFuncName){
@@ -89,10 +125,11 @@ private:
     }
     if(!func)
       return true;
+    Preprocesses(mod, builder, topFunc);
     // Tile the functions specified in the command line.
     SmallVector<Attribute, 4> attrs;
     func->setAttr("adf.func", builder.getUnitAttr());
-    preProcesses(builder, topFunc, func, attrs);
+    argAnotate(builder, topFunc, func, attrs);
     SmallVector<AffineForOp, 6> band;
     getNestedLoopBand(func.getBody(), band);
     auto bandSize = band.size();

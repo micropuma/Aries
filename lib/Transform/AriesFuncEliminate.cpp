@@ -306,9 +306,8 @@ private:
   // Eliminate unused funcs
   void funcClean(ModuleOp mod){
     for (auto func : llvm::make_early_inc_range(mod.getOps<FuncOp>())) {
-      if(func->getAttr("top_host"))
-        continue;
-      if(func->getAttr("adf.func"))
+      if(func->getAttr("top_func") || func->getAttr("top_host") ||
+         func->getAttr("host") || func->getAttr("adf.func"))
         continue;
       if (!hasCaller(mod, func)) {
         func.erase();

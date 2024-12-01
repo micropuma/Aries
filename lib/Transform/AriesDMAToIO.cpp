@@ -309,7 +309,7 @@ private:
     // TODO:: Now assumes that the operands of the caller functions are defined
     // by the argument list in the parent func of the callers
     for (auto func : mod.getOps<FuncOp>()) {
-      if(!func->hasAttr("top_host"))
+      if(!func->hasAttr("top_func"))
         continue;
       auto inTopTypes =SmallVector<Type,8>(func.getArgumentTypes().begin(),
                                            func.getArgumentTypes().end());

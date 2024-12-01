@@ -1100,9 +1100,9 @@ private:
       builder.create<CallOp>(loc, plFunc, ValueRange{operands});
       call.erase();
     }
-    auto topAttr = dyn_cast<StringAttr>(topFunc->getAttr("top_host"));
+    auto topAttr = dyn_cast<StringAttr>(topFunc->getAttr("top_func"));
     if(!topAttr)
-      topFunc->setAttr("top_host", plioAttr);
+      topFunc->setAttr("top_func", plioAttr);
   }
 
   // This function does the loop permutation for load/store from DDR->L2 mem
@@ -1373,7 +1373,7 @@ private:
   bool IOMaterialize (ModuleOp mod) {
     auto builder = OpBuilder(mod);
     FuncOp topFunc;
-    if(!topFind(mod, topFunc, "top_host"))
+    if(!topFind(mod, topFunc, "top_func"))
       return true;
     for (auto func : mod.getOps<FuncOp>()) {
       if(!func->hasAttr("adf.func"))
