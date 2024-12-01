@@ -40,6 +40,7 @@ public:
   DenseMap<Value, SmallString<8>> nameTable;
   DenseMap<func::CallOp, SmallString<8>> callTable;
   std::map<std::string, int> nameConflictCnt;
+  SmallVector<unsigned, 3> idxCnts={0,0,0};
 
 private:
   ADFEmitterState(const ADFEmitterState &) = delete;

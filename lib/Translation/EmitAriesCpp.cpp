@@ -59,12 +59,14 @@ SmallString<8> ADFEmitterBase::addCall(CallOp call, std::string name) {
     }
   } else {
     if(call->hasAttr("adf.kernel"))
-      callName += StringRef("k" + std::to_string(state.callTable.size()));
+      callName += StringRef(call.getCallee().str()  
+                            + "_k"  + std::to_string(state.idxCnts[0]++));
     else if(call->hasAttr("adf.cell"))
-      callName += StringRef("gr" + std::to_string(state.callTable.size()));
+      callName += StringRef(call.getCallee().str()
+                            + "_gr" + std::to_string(state.idxCnts[1]++));
     else if(call->hasAttr("adf.pl"))
       callName = StringRef(call.getCallee().str() 
-               + "_" + std::to_string(state.callTable.size()));
+                           + "_pl" + std::to_string(state.idxCnts[2]++));
     else
       callName += StringRef("var" + std::to_string(state.callTable.size()));
   }
@@ -361,9 +363,9 @@ public:
   template <typename CastOpType> void emitCast(CastOpType op);
   
   /// ADFGrpah emitters
-  void emitADFLaunchCell(adf::LauchCellOp op);
-  void emitADFEndLaunchCell(adf::EndLauchCellOp op);
-  void emitADFWaitLaunchCell(adf::WaitLauchCellOp op);
+  void emitADFLaunchCell(adf::LaunchCellOp op);
+  void emitADFEndLaunchCell(adf::EndLaunchCellOp op);
+  void emitADFWaitLaunchCell(adf::WaitLaunchCellOp op);
   void emitADFPLIOConf(adf::ConfigPLIOOp op);
   void emitADFGMIOConf(adf::ConfigGMIOOp op);
   void emitADFBuffer(adf::BufferOp op);
@@ -407,9 +409,8 @@ private:
   void emitADFMain(FuncOp func);           // AIE host if use GMIO
   void emitHLSFunction(func::FuncOp func); // Vitis HLS for PL
   void emitHostFunction(ModuleOp module, func::FuncOp func); // System host
-  void emitConfig(ModuleOp module, func::FuncOp func,
-                      SmallVector<CallOp, 4>& cellCalls,
-                      SmallVector<CallOp, 4>& plCalls);      // System config
+  void emitConfig(ModuleOp module, func::FuncOp topFunc, func::FuncOp func);      
+       // System config
 };
 }
 
@@ -507,13 +508,13 @@ public:
   bool visitOp(adf::GraphReturnOp op) { return true; };
   bool visitOp(adf::CellOp op) { return true; };
   bool visitOp(adf::EndCellOp op) { return true; };
-  bool visitOp(adf::LauchCellOp op) { 
+  bool visitOp(adf::LaunchCellOp op) { 
     return emitter.emitADFLaunchCell(op), true;
   };
-  bool visitOp(adf::EndLauchCellOp op) { 
+  bool visitOp(adf::EndLaunchCellOp op) { 
     return emitter.emitADFEndLaunchCell(op), true;
   };
-  bool visitOp(adf::WaitLauchCellOp op) { 
+  bool visitOp(adf::WaitLaunchCellOp op) { 
     return emitter.emitADFWaitLaunchCell(op),true;
   };
   bool visitOp(adf::KernelOp op) { return true; };
@@ -726,7 +727,7 @@ bool ExprVisitor::visitOp(arith::CmpIOp op) {
 // ModuleEmitter Class Definition
 //===----------------------------------------------------------------------===//
 
-void ModuleEmitter::emitADFLaunchCell(adf::LauchCellOp op){
+void ModuleEmitter::emitADFLaunchCell(adf::LaunchCellOp op){
   indent();
   op.walk([&](CallOp call){
     if(call->hasAttr("adf.cell")){
@@ -736,9 +737,9 @@ void ModuleEmitter::emitADFLaunchCell(adf::LauchCellOp op){
   emitBlock(op.getBody().front());
 }
 
-void ModuleEmitter::emitADFEndLaunchCell(adf::EndLauchCellOp op){
+void ModuleEmitter::emitADFEndLaunchCell(adf::EndLaunchCellOp op){
   indent();
-  auto launchop = op.getParentOp<LauchCellOp>();
+  auto launchop = op.getParentOp<LaunchCellOp>();
   launchop.walk([&](CallOp call){
     if(call->hasAttr("adf.cell")){
       os << getCall(call) << ".end();\n";
@@ -746,9 +747,9 @@ void ModuleEmitter::emitADFEndLaunchCell(adf::EndLauchCellOp op){
   });
 }
 
-void ModuleEmitter::emitADFWaitLaunchCell(adf::WaitLauchCellOp op){
+void ModuleEmitter::emitADFWaitLaunchCell(adf::WaitLaunchCellOp op){
   indent();
-  auto launchop = op->getParentOfType<LauchCellOp>();
+  auto launchop = op->getParentOfType<LaunchCellOp>();
   auto calleeName = launchop.getCallee();
   auto *parentBlock = op->getBlock();
   for(auto callop : parentBlock->getOps<CallOp>()){
@@ -2106,12 +2107,11 @@ int main(int argc, char ** argv) {
   os << adf_cpp_header;
 
   // Define graph
-  state.callTable.clear();
   SmallVector<CallOp, 4> calls;
   func.walk([&](CallOp call){
     if(call->hasAttr("adf.cell")){
       os << getTypeName(call) << " ";
-      os << addCall(call) << ";\n";
+      os << getCall(call) << ";\n";
       calls.push_back(call);
     }
   });
@@ -2225,9 +2225,9 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
   
   // Only top function should emit interface pragmas.
   bool TOP_FLAG = false;
-  if(auto Attr = func->getAttr("adf.pl")){
-    if(auto boolAttr = dyn_cast<BoolAttr>(Attr)){
-      if(boolAttr.getValue())
+  if(auto Attr = func->getAttr("top_func")){
+    if(auto strAttr = dyn_cast<StringAttr>(Attr)){
+      if(strAttr.getValue().str() == "plio")
         TOP_FLAG = true;
     }
   }
@@ -2373,15 +2373,11 @@ void ModuleEmitter::emitADFGraphFunction(FuncOp func) {
   os << "private:\n";
   
   // Define kernel in adf graph
-  state.callTable.clear();
   addIndent();
-  unsigned index = 0;
   func.walk([&](CallOp call){
     indent();
-    auto calleeName = call.getCallee();
-    auto KName = calleeName.str() + std::to_string(index++);
     os << getTypeName(call) << " ";
-    os << addCall(call,KName) << ";\n";
+    os << getCall(call) << ";\n";
   });
   os << "\n";
 
@@ -2493,54 +2489,66 @@ void ModuleEmitter::emitHLSFunction(func::FuncOp func){
   os << "}\n\n";
 }
 
-static Value calleeArg(ModuleOp mod, Value val, CallOp& callout){
-  Value finalVal;
-  for(auto user : val.getUsers()){
-    if(auto call = dyn_cast<CallOp>(user)){
-      callout = call;
-      auto calleeFunc = mod.lookupSymbol<func::FuncOp>(call.getCallee());
-      auto callArgs = call.getOperands();
-      auto it = llvm::find(callArgs,val);
-      if (it != callArgs.end()) {
-        auto index = std::distance(callArgs.begin(), it);
-        finalVal = calleeFunc.getArgument(index);
-        break;
-      }
-    }
-  }
-  return finalVal;
-}
-
-void ModuleEmitter::emitConfig(ModuleOp mod, func::FuncOp func,
-                                   SmallVector<CallOp, 4>& cellCalls,
-                                   SmallVector<CallOp, 4>& plCalls){
-  for(auto call : plCalls){
-    auto callName = call.getCallee();
-    os << "nk = " << callName << ":1:" << getCall(call) << "\n";
-  }
-  func.walk([&](adf::ConnectOp op){
-    auto src = op.getSrc();
-    auto srcType = src.getType();
-    auto dst = op.getDst();
-    CallOp plCall;
-    CallOp cellCall;
-    if(dyn_cast<MemRefType>(srcType)){
-      auto srcVal = calleeArg(mod, src, plCall);
-      auto dstVal = calleeArg(mod, dst, cellCall);
-      os << "stream_connect = " << getCall(plCall) << "." << getName(srcVal)
-         << ":ai_engine_0." << getName(dstVal) << "\n";
-    }else{
-      auto srcVal = calleeArg(mod, src, cellCall);
-      auto dstVal = calleeArg(mod, dst, plCall);
-      os << "stream_connect = " << "ai_engine_0." << getName(srcVal) << ":"
-         << getCall(plCall) << "." << getName(dstVal) << "\n"; 
-    }
-  });
-}
-
 void ModuleEmitter::emitHostFunction(ModuleOp module, func::FuncOp func){
   if (func.getBlocks().size() != 1)
     func->emitError("has zero or more than one basic blocks.");
+  std::string host_string0 = R"XXX(
+int main(int argc, char **argv) {
+  char* xclbinFilename = argv[1];
+  
+  // Open xclbin
+  auto device = xrt::device(0); //device index=0
+	auto uuid = device.load_xclbin(xclbinFilename);
+	auto dhdl = xrtDeviceOpenFromXcl(device);
+
+)XXX";
+  
+  // Define function for verification
+  SmallVector<FuncOp, 4> funcList;
+  for (auto caller: func.getOps<CallOp>()){
+    auto hostFunc = module.lookupSymbol<FuncOp>(caller.getCallee());
+    auto it = llvm::find(funcList, hostFunc);
+    if(it != funcList.end())
+      continue;
+    funcList.push_back(hostFunc);
+    os << "void " << hostFunc.getName() << "(\n";
+    addIndent();
+    auto argNum = hostFunc.getNumArguments();
+    for(unsigned i = 0; i < argNum; i++){
+      indent();
+      auto arg = hostFunc.getArgument(i);
+      if (arg.getType().isa<ShapedType>())
+        emitArrayDecl(arg, true);
+      else
+        emitValue(arg);
+      if (i != (argNum-1))
+        os << ",\n";
+    }
+    reduceIndent();
+    os << "\n){\n";
+    addIndent();
+    emitBlock(hostFunc.getBody().front());
+    reduceIndent();
+    os << "}\n\n";
+  }
+
+  os << "\n";
+  os << host_string0;
+
+  SmallVector<CallOp, 4> cellCalls;
+  module.walk([&](CallOp call){
+    if(call->hasAttr("adf.cell"))
+      cellCalls.push_back(call);
+  });
+  addIndent();
+  indent();
+  os << "// PL control\n";
+  indent();
+  auto strAttr = dyn_cast<StringAttr>(func->getAttr("origin_func"));
+  auto callName = strAttr.getValue().str();
+  auto krlName = callName + "_0";
+  os << "auto " << krlName << "= xrt::kernel(device, uuid, \"" 
+       << callName << ":{" << krlName << "}\");\n\n";
 
   // Get the attibutes that mark for the output arguments
   SmallVector<unsigned, 4> outIndices;
@@ -2553,58 +2561,14 @@ void ModuleEmitter::emitHostFunction(ModuleOp module, func::FuncOp func){
     }
   }
 
-  SmallVector<CallOp, 4> cellCalls;
-  SmallVector<CallOp, 4> plCalls;
-  func.walk([&](CallOp call){
-    if(call->hasAttr("adf.cell")){
-      cellCalls.push_back(call);
-    }else if(call->hasAttr("adf.pl")){
-      addCall(call);
-      plCalls.push_back(call);
-    }
-  });
-  os << "\n";
-
-  std::string host_string0 = R"XXX(
-int main(int argc, char **argv) {
-  char* xclbinFilename = argv[1];
-  
-  // Open xclbin
-  auto device = xrt::device(0); //device index=0
-	auto uuid = device.load_xclbin(xclbinFilename);
-	auto dhdl = xrtDeviceOpenFromXcl(device);
-
-)XXX";
-  os << host_string0;
-  
-  indent();
-  os << "// PL control\n";
-  for (auto call : plCalls){
-    // Define pl kernel handler and arguments
-    indent();
-    auto dmaName = getCall(call);
-    auto callName = call.getCallee();
-    os << "auto " << dmaName << "= xrt::kernel(device, uuid, \"" 
-       << callName << ":{" << dmaName << "}\");\n";
-  }
-
   // Define func arguments
+  indent();
+  os << "// Define arguments\n";
   unsigned indexIn = 0;
   unsigned indexOut = 0;
   unsigned index = 0;
   SmallVector<Value, 4> outMems;
   for (auto arg : func.getArguments()){
-    CallOp callTemp;
-    // Here assume one arguments will only be used by one pl func call
-    for (auto user : arg.getUsers()) {
-      if (auto callOp = dyn_cast<CallOp>(user)){
-        if(llvm::is_contained(plCalls, callOp)){
-          callTemp = callOp;
-          break;
-        }
-      }
-    }
-    auto dmaName = getCall(callTemp);
     if(llvm::is_contained(outIndices, index)){
       auto memrefType = dyn_cast<MemRefType>(arg.getType());
       if (!memrefType)
@@ -2613,60 +2577,46 @@ int main(int argc, char **argv) {
       addName(arg, false, outHandleName);
       outMems.push_back(arg);
       std::string outMapName = "out_bomapped" + std::to_string(indexOut++);
-      auto bytes = memrefType.getElementTypeBitWidth() / 8;
       auto size = memrefType.getNumElements();
       indent();
-      os << "auto " << getName(arg) << " = xrt::bo(device, " << bytes * size
-         << ", "    << dmaName       << ".group_id(0));\n";
+      os << "auto " << getName(arg) << " = xrt::bo(device, " << size 
+         << " * sizeof(" << getTypeName(arg) << "), "    
+         << krlName      << ".group_id(0));\n";
       indent();
       os << "auto " << outMapName    << " = "  << getName(arg)
-         << ".map<" << getTypeName(arg)    << "*>();\n";
+         << ".map<" << getTypeName(arg)    << "*>();\n\n";
     }else if(auto memrefType = dyn_cast<MemRefType>(arg.getType())){
-      auto bytes = memrefType.getElementTypeBitWidth() / 8;
       auto size = memrefType.getNumElements();
       std::string inHandleName = "in_bohdl" + std::to_string(indexIn);
       addName(arg, false, inHandleName);
       std::string inMapName = "in_bomapped" + std::to_string(indexIn++);
       indent();
-      os << "auto " << getName(arg) << " = xrt::bo(device, " << bytes * size
-         << ", "    << dmaName      << ".group_id(0));\n";
+      os << "auto " << getName(arg) << " = xrt::bo(device, " << size
+         << " * sizeof(" << getTypeName(arg) << "), "   
+         << krlName      << ".group_id(0));\n";
       indent();
       os << "auto " << inMapName    << " = "  << getName(arg)
          << ".map<" << getTypeName(arg)   << "*>();\n";
       indent();
-      os << "////////Initialize " <<  inMapName << " here/////////\n";
+      // Initialize input arguments
+      os << "for (unsigned i=0; i < " << size << "; i++){\n";
+      addIndent();
       indent();
-      os << getName(arg) << ".sync(XCL_BO_SYNC_BO_TO_DEVICE, " << bytes * size
-         << ", "    << "0);\n\n";
+      os << inMapName << "[i] = (" << getTypeName(arg) << ")(rand()%5);\n";
+      reduceIndent();
+      indent();
+      os << "}\n";
+      // Sync input from host to device
+      indent();
+      os << getName(arg) << ".sync(XCL_BO_SYNC_BO_TO_DEVICE, " << size
+         << " * sizeof(" << getTypeName(arg) << "), " << "0);\n\n";
     }else{
       emitValue(arg);
     }
     index++;
   }
 
-  indent();
-  os << "std::cout << \"Kernel run\\n\";\n"; 
-  for (auto call : plCalls){
-    // Run pl kernels
-    auto dmaName = getCall(call);
-    auto dmaRunName = dmaName + "_run";
-    indent();
-    os << "auto " << dmaRunName << " = " << dmaName << "(";
-    auto opNum = call.getNumOperands();
-    for (unsigned i = 0; i < opNum; i++){
-      auto operand = call.getOperand(i);
-      auto valName = getName(operand);
-      if(valName!="")
-        os << valName;
-      else//Maybe need to be more careful to deal with undefined arguments
-        os << "nullptr";
-      if(i != (opNum-1))
-        os << ", ";
-    }
-    os << "); \n";
-  }
-  
-  os << "\n";
+  // Define aie run handler
   indent();
   os << "// AI Engine Graph Control\n";
   indent();
@@ -2681,58 +2631,106 @@ int main(int argc, char **argv) {
     os << cellName << ".run(-1);\n\n";
   }
 
+  // Define pl run handler
+  auto krlRunName = krlName + "_run";
   indent();
-  os << "// Wait for PL kernel to finish\n";
-  for (auto call : plCalls){
-    auto dmaName = getCall(call);
-    auto dmaRunName = dmaName + "_run";
+  os << "// Set arguments of the PL function\n";
+  indent();
+  os << "xrt::run " << krlRunName << "= xrt::run(" << krlName << ");\n";
+  auto opNum = func.getNumArguments();
+  for (unsigned i = 0; i < opNum; i++){
+    auto arg = func.getArgument(i);
     indent();
-    os << dmaRunName << ".wait();\n\n";
+    os << krlRunName << ".set_arg(" << i << ", " << getName(arg) << ");\n";
   }
+  indent();
+  os << "std::cout << \"Kernel run\\n\";\n";
+  indent();
+  os << krlRunName << ".start();\n";
+  indent();
+  os << krlRunName << ".wait();\n";
+  indent();
+  os << "std::cout << \"Kernel run finished!\\n\";\n\n";
 
   indent();
   os << "// Sync output buffer back to host\n";
   for (auto outMem : outMems){
     auto memrefType = dyn_cast<MemRefType>(outMem.getType());
-    auto bytes = memrefType.getElementTypeBitWidth() / 8;
     auto size = memrefType.getNumElements();
     indent();
-    os << getName(outMem) << ".sync(XCL_BO_SYNC_BO_FROM_DEVICE , " 
-       << bytes * size    << ", "    << "0);\n\n";
+    os << getName(outMem) << ".sync(XCL_BO_SYNC_BO_FROM_DEVICE , " << size
+       << " * sizeof(" << getTypeName(outMem) << "), " << "0);\n";
   }
   indent();
-  os << "std::cout << \"Kernel run finished\\n\";\n"; 
-
-  indent();
-  os << "//////// Add post processes here/////////\n\n";
+  os << "std::cout << \"Output buffer sync back finished\\n\";\n\n";
 
   indent();
   os << "std::cout << \"Host Run Finished!\\n\";\n"; 
-
   os << "  return 0;\n";
   os << "}\n";
-
   // An empty line.
   os << "\n";
+}
 
-  //Emit Connection between PL and AIE
-  std::string config_header = R"XXX(
-//_aries_split_//system.cfg//_aries_split_//
-#===----------------------------------------------------------------------===
-#
-# Automatically generated file for system.cfg
-#
-#===----------------------------------------------------------------------===
-[connectivity]
-)XXX";
+static Value calleeArg(CallOp topCaller, CallOp caller, FuncOp callee, 
+                    Value val, bool topSel){
+  Value finalVal;
+  auto callArgs = caller.getOperands();
+  auto it = llvm::find(callArgs,val);
+  if(it == callArgs.end())
+   return finalVal;
+  auto index = std::distance(callArgs.begin(), it);
+  if(topSel)
+    finalVal = topCaller.getOperand(index);
+  else
+    finalVal = callee.getArgument(index);
+  return finalVal;
+}
 
-  std::string config_tail = R"XXX(
-[vivado]
-prop=run.impl_1.STEPS.PLACE_DESIGN.ARGS.DIRECTIVE=EarlyBlockPlacement)XXX";
-
-  os << config_header;
-  emitConfig(module, func, cellCalls, plCalls);
-  os << config_tail;
+void ModuleEmitter::emitConfig(ModuleOp mod, func::FuncOp topFunc,
+                               func::FuncOp func){  
+  auto funcName = topFunc.getName();
+  auto plName = funcName + "_0";
+  os << "nk = " << funcName << ":1:" << plName << "\n";
+  CallOp plCall;
+  CallOp cellCall;
+  func.walk([&](CallOp call){
+    if(call->hasAttr("adf.pl")){
+      plCall = call;
+    }else if(call->hasAttr("adf.cell")){
+      cellCall = call;
+    }
+  });
+  CallOp topCaller;
+  for (auto call: topFunc.getOps<CallOp>()){
+    if(call.getCallee()!=plCall.getCallee())
+      continue;
+    topCaller = call;
+    break;
+  }
+  FuncOp cellCallee;
+  for (auto funcOp: mod.getOps<FuncOp>()){
+    if(cellCall.getCallee()!=funcOp.getName())
+      continue;
+    cellCallee = funcOp;
+    break;
+  }
+  func.walk([&](adf::ConnectOp op){
+    auto src = op.getSrc();
+    auto srcType = src.getType();
+    auto dst = op.getDst();
+    if(dyn_cast<MemRefType>(srcType)){
+      auto srcVal = calleeArg(topCaller, plCall, cellCallee, src, true);
+      auto dstVal = calleeArg(topCaller, cellCall, cellCallee, dst, false);
+      os << "stream_connect = " << plName << "." << getName(srcVal)
+         << ":ai_engine_0." << getName(dstVal) << "\n";
+    }else{
+      auto srcVal = calleeArg(topCaller, cellCall, cellCallee, src, false);
+      auto dstVal = calleeArg(topCaller, plCall, cellCallee, dst, true);
+      os << "stream_connect = " << "ai_engine_0." << getName(srcVal) << ":"
+         << plName << "." << getName(dstVal) << "\n"; 
+    }
+  });
 }
 
 void ModuleEmitter::emitModule(ModuleOp module) {
@@ -2817,7 +2815,25 @@ using namespace adf;
 using namespace std;
 )XXX";
 
-  
+//Emit Connection between PL and AIE
+  std::string config_header = R"XXX(
+//_aries_split_//system.cfg//_aries_split_//
+#===----------------------------------------------------------------------===
+#
+# Automatically generated file for system.cfg
+#
+#===----------------------------------------------------------------------===
+[vivado]
+prop=run.impl_1.STEPS.PLACE_DESIGN.ARGS.DIRECTIVE=EarlyBlockPlacement
+[connectivity]
+)XXX";
+  // Tranverse and record the specified callOp
+  module.walk([&](CallOp call){
+    if(call->hasAttr("adf.kernel") || call->hasAttr("adf.cell")
+    || call->hasAttr("adf.pl")){
+      addCall(call);
+    }
+  });
   // Generate the kernel header separately
   os << kernel_header;
   for (auto op : module.getOps<FuncOp>()) {
@@ -2827,6 +2843,7 @@ using namespace std;
   }
   os << kernel_tail;
 
+  FuncOp topFunc;
   bool PL_FLAG = true;
   for (auto op : module.getOps<FuncOp>()) {
     if(op->hasAttr("adf.kernel")){
@@ -2836,19 +2853,33 @@ using namespace std;
       os << adfh_header;
       emitADFGraphFunction(op);
       os << "#endif //__GRAPH_H__\n";
-    }else if(auto attr = op->getAttr("adf.pl")){
+    }else if(op->getAttr("adf.pl")){
       if(PL_FLAG){
         os << hls_header;
         PL_FLAG = false;
       }
       emitHLSFunction(op);
     }else if(op->hasAttr("top_func")){
-      emitADFMain(op);
-      auto boolAttrPLIO = op->getAttrOfType<BoolAttr>("plio");
-      if(boolAttrPLIO && boolAttrPLIO.getValue()){
-        os << host_header;
-        emitHostFunction(module, op);
+      topFunc = op;
+      emitHLSFunction(op);
+    }else if(op->hasAttr("top_host")){
+      os << host_header;
+      emitHostFunction(module,op);
+    }
+  }
+
+  bool CONF_FLAG = true;
+  for (auto op : module.getOps<FuncOp>()) {
+    if(!op->hasAttr("adf.func"))
+      continue;
+    emitADFMain(op);
+    auto boolAttrPLIO = op->getAttrOfType<BoolAttr>("plio");
+    if(boolAttrPLIO && boolAttrPLIO.getValue()){
+      if(CONF_FLAG){
+        os << config_header;
+        CONF_FLAG = false;
       }
+      emitConfig(module, topFunc, op);
     }
   }
 }
