@@ -6,6 +6,8 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
 #include "llvm/Support/Debug.h"
 
 using namespace mlir;
@@ -24,6 +26,12 @@ public:
     StringRef topFuncName = "top_func";
   
     if (!LoopSimplify(mod,topFuncName))
+      signalPassFailure();
+    
+    PassManager pm(&getContext());
+    pm.addPass(createCSEPass());
+    pm.addPass(createCanonicalizerPass());
+    if (failed(pm.run(mod)))
       signalPassFailure();
   }
 
