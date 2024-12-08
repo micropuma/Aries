@@ -22,6 +22,10 @@ namespace aries {
 
 struct AriesOptions : public PassPipelineOptions<AriesOptions> {
   /// Configure the tiling pass.
+  Option<std::string> OptTileFuncName{
+      *this, "tile-func-name", llvm::cl::init("main"),
+      llvm::cl::desc("Specify the function to be tiled")};
+
   ListOption<unsigned> OptL1TileSize{
       *this, "l1-tile-sizes", llvm::cl::ZeroOrMore,
       llvm::cl::desc("Specify a list of L1 loop tile sizes")};

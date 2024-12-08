@@ -26,8 +26,8 @@ public:
     return TypeSwitch<Operation *, ResultType>(op)
         .template Case<
             // ADF dialect operations.
-            GraphOp, GraphReturnOp, CellOp, EndCellOp, LauchCellOp, 
-            EndLauchCellOp, WaitLauchCellOp, KernelOp, CreateGraphIOOp, 
+            GraphOp, GraphReturnOp, CellOp, EndCellOp, LaunchCellOp, 
+            EndLaunchCellOp, WaitLaunchCellOp, KernelOp, CreateGraphIOOp, 
             ConfigPLIOOp, ConfigGMIOOp, BufferOp, StreamOp, CascadeOp, 
             CreateKernelIOOp, DmaOp, ConnectOp, IOPushOp, IOPopOp, IOWaitOp,
             IOWriteOp, IOReadOp, BuffLocOp, IntToAPInt, APIntToInt, GetIntBitOp, 
@@ -106,9 +106,9 @@ public:
   HANDLE(GraphReturnOp);
   HANDLE(CellOp);
   HANDLE(EndCellOp);
-  HANDLE(LauchCellOp);
-  HANDLE(EndLauchCellOp);
-  HANDLE(WaitLauchCellOp);
+  HANDLE(LaunchCellOp);
+  HANDLE(EndLaunchCellOp);
+  HANDLE(WaitLaunchCellOp);
   HANDLE(KernelOp);
   HANDLE(CreateGraphIOOp);
   HANDLE(ConfigPLIOOp);

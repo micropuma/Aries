@@ -59,7 +59,7 @@ def EndCellOp : ADF_Op<"cell.end", [HasParent<"CellOp">, Pure, Terminator]>{
   let assemblyFormat = "attr-dict";
 }
 
-def LauchCellOp : ADF_Op<"cell.launch", [SingleBlock]> {
+def LaunchCellOp : ADF_Op<"cell.launch", [SingleBlock]> {
   let summary = "An operation to identify the accelerator part";
   let description = [{
     This op is currently used to identify the part run on the adf.cell. It
@@ -74,20 +74,20 @@ def LauchCellOp : ADF_Op<"cell.launch", [SingleBlock]> {
     }];
 }
 
-def WaitLauchCellOp : ADF_Op<"cell.launch.wait", []>{
+def WaitLaunchCellOp : ADF_Op<"cell.launch.wait", []>{
   let summary = "An operation that wait for the adf.cell";
   let assemblyFormat = [{
     attr-dict
   }];
 }
 
-def EndLauchCellOp : ADF_Op<"cell.launch.end", [HasParent<"LauchCellOp">, 
+def EndLaunchCellOp : ADF_Op<"cell.launch.end", [HasParent<"LaunchCellOp">, 
                             Pure, Terminator]>{
   let summary = "Terminator for adf.cell.launch region.";
   let assemblyFormat = "attr-dict";
 }
 
-def LauchPLOp : ADF_Op<"pl.launch", [SingleBlock]> {
+def LaunchPLOp : ADF_Op<"pl.launch", [SingleBlock]> {
   let summary = "An operation to identify the PL part";
   let description = [{
     This op is currently used to identify the part run on the adf.pl. It
@@ -102,7 +102,7 @@ def LauchPLOp : ADF_Op<"pl.launch", [SingleBlock]> {
     }];
 }
 
-def WaitLauchPLOp : ADF_Op<"pl.launch.wait", [HasParent<"LauchPLOp">, 
+def WaitLaunchPLOp : ADF_Op<"pl.launch.wait", [HasParent<"LaunchPLOp">, 
                             Pure, Terminator]>{
   let summary = "An operation that wait for the adf.pl";
   let assemblyFormat = [{

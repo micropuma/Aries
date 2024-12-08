@@ -10,6 +10,8 @@ def AriesTiling : Pass<"aries-tiling"> {
   }];
   let constructor = "mlir::aries::createAriesTilingPass()";
   let options = [
+    Option<"TileFuncName", "tile-func-name", "std::string",
+           /*default=*/"\"main\"", "Specify the function to be tiled">,
     ListOption<"L1TileSizes", "l1-tile-sizes", "unsigned",
                "Specify a list of L1 loop tile sizes",
                "llvm::cl::ZeroOrMore">,

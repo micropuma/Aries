@@ -5,7 +5,7 @@ PROJECT_PATH=./${PROJECT_NAME}
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
-TEMPLATE_PATH = ../../
+TEMPLATE_PATH = ..
 EN_PL = 1
 PLIOWidth = 128
 AXIWidth = 512
@@ -24,11 +24,11 @@ EnableIOCons = "false"
 L1_0=32
 L1_1=32
 L1_2=32
-L2_0=11
-L2_1=8
-L2_2=4
-L3_0=4
-L3_1=6
+L2_0=2
+L2_1=1
+L2_2=2
+L3_0=2
+L3_1=2
 L3_2=1
 BUFF_0=1#1:BRAM 0:URAM
 BUFF_1=1
@@ -42,7 +42,7 @@ endif
 all: fileCreate copyFile pass translate copyplhost printcommand
 
 printcommand:
-	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, ColGap=${ColGap}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, EnableIOCons=${EnableIOCons}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, IOType=${IOType}" >${PROJECT_PATH}/command
+	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, ColGap=${ColGap}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, EnableIOCons=${EnableIOCons}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, IOType=${IOType}" >${PROJECT_PATH}/command.txt
 
 fileCreate:
 	mkdir -p ${PROJECT_AIE_PATH}
@@ -57,7 +57,8 @@ test: doublebuffer
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="tile-func-name=gemm l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}"
+			-aries-tiling="tile-func-name=gemm0 l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}" \
+      -aries-tiling="tile-func-name=gemm1 l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}"
 
 exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
@@ -172,7 +173,7 @@ ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/20_${FUNC}.doublebuffer.
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="tile-func-name=gemm l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}" \
+			-aries-tiling="tile-func-name=gemm0 l1-tile-sizes=${L1_0},${L1_1},${L1_2} l2-tile-sizes=${L2_0},${L2_1},${L2_2} l3-tile-sizes=${L3_0},${L3_1},${L3_2}" \
 			-aries-func-extract \
 			-aries-loop-simplify \
 			-aries-mem-subview \
@@ -233,7 +234,7 @@ ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir: ${PROJECT_PATH}/${KERNEL_NAME}_unrol
 		--canonicalize
 ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir: ${PROJECT_PATH}/${KERNEL_NAME}.mlir
 	aries-opt -o $@ $< \
-		--affine-loop-unroll="unroll-factor=8" \
+		--affine-loop-unroll="unroll-full unroll-full-threshold=3" \
 		--canonicalize
 
 kernel_file_split: kernel_cc

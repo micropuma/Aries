@@ -127,7 +127,10 @@ struct CppEmitter {
   /// - emits nothing if no value produced by op;
   /// Emits final '=' operator where a type is produced. Returns failure if
   /// any result type could not be converted.
-  LogicalResult emitAssignPrefix(Operation &op, bool isAcc = false, bool vitis=false);
+  /// vitis: Generate vitis AIE instruction
+  /// vector: now only used to initialize the aie::vector
+  LogicalResult emitAssignPrefix(Operation &op, bool isAcc = false, 
+                                 bool vitis=false, bool vector=false);
 
   /// Emits a label for the block.
   LogicalResult emitLabel(Block &block);
@@ -2221,7 +2224,12 @@ static LogicalResult printConstantOp(CppEmitter &emitter, Operation *operation,
                                              false, emitter.vitis());
 
   // Emit a variable declaration.
-  if (failed(emitter.emitAssignPrefix(*operation, false, emitter.vitis())))
+  bool vector = false;
+  if(emitter.vitis() && (value.isa<mlir::DenseIntElementsAttr>() || 
+                         value.isa<mlir::DenseFPElementsAttr>() ))
+    vector =true;
+  if (failed(emitter.emitAssignPrefix(*operation, false, 
+                                       emitter.vitis(), vector)))
     return failure();
   return emitter.emitAttribute(operation->getLoc(), value);
 }
@@ -3234,7 +3242,7 @@ LogicalResult CppEmitter::emitVariableDeclaration(OpResult result,
 }
 
 LogicalResult CppEmitter::emitAssignPrefix(Operation &op, 
-                                           bool isAcc, bool vitis) {
+                                           bool isAcc, bool vitis, bool vector){
   switch (op.getNumResults()) {
   case 0:
     break;
@@ -3247,7 +3255,8 @@ LogicalResult CppEmitter::emitAssignPrefix(Operation &op,
       if (failed(emitVariableDeclaration(result, /*trailingSemicolon=*/false,
                                          isAcc, vitis)))
         return failure();
-      os << " = ";
+      if(!vector)
+        os << " = ";
     }
     break;
   }

@@ -14,4 +14,8 @@ module {
     }
     return
   }
+  func.func @top(%A: memref<2816x8192xf32>, %B: memref<8192x3072xf32>, %C: memref<2816x3072xf32>)attributes {top_func}{
+    func.call @gemm(%A, %B, %C) : (memref<2816x8192xf32>, memref<8192x3072xf32>, memref<2816x3072xf32>) -> ()
+    return
+  }
 }
