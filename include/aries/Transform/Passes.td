@@ -91,25 +91,6 @@ def AriesFuncUnroll : Pass<"aries-func-unroll"> {
   let constructor = "mlir::aries::createAriesFuncUnrollPass()";
 }
 
-def AriesCorePlacement : Pass<"aries-core-placement"> {
-  let summary = "Place the AIE cores";
-  let constructor = "mlir::aries::createAriesCorePlacementPass()";
-  let options = [
-    Option<"ColNum", "col-num", "int64_t", /*default=*/"50",
-           "Specify the number of columns of the AIE array">,
-    Option<"RowNum", "row-num", "int64_t", /*default=*/"8",
-           "Specify the number of rows of the AIE array">,
-    Option<"ColOffset", "col-offset", "int64_t", /*default=*/"0",
-           "Specify the offset for core placement in the col direction">,
-    Option<"RowOffset", "row-offset", "int64_t", /*default=*/"0",
-           "Specify the offset for core placement in the row direction">,
-    Option<"ColGap", "core-gap", "int64_t", /*default=*/"0",
-           "Specify the gap between columns to improve corner cases">,
-    Option<"CoreAlgo", "core-algo", "int64_t", /*default=*/"0",
-           "Specify the algorithm for core placement 0:vertical,1:horizontally">
-  ];
-}
-
 def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
   let summary = "Forward the data from local buffer to another local buffer";
   let description = [{
@@ -168,6 +149,25 @@ def AriesADFCellCreate : Pass<"aries-adf-cell-create"> {
   let constructor = "mlir::aries::createAriesADFCellCreatePass()";
 }
 
+def AriesCorePlacement : Pass<"aries-core-placement"> {
+  let summary = "Place the AIE cores";
+  let constructor = "mlir::aries::createAriesCorePlacementPass()";
+  let options = [
+    Option<"ColNum", "col-num", "int64_t", /*default=*/"50",
+           "Specify the number of columns of the AIE array">,
+    Option<"RowNum", "row-num", "int64_t", /*default=*/"8",
+           "Specify the number of rows of the AIE array">,
+    Option<"ColOffset", "col-offset", "int64_t", /*default=*/"0",
+           "Specify the offset for core placement in the col direction">,
+    Option<"RowOffset", "row-offset", "int64_t", /*default=*/"0",
+           "Specify the offset for core placement in the row direction">,
+    Option<"ColGap", "core-gap", "int64_t", /*default=*/"0",
+           "Specify the gap between columns to improve corner cases">,
+    Option<"CoreAlgo", "core-algo", "int64_t", /*default=*/"0",
+           "Specify the algorithm for core placement 0:vertical,1:horizontally">
+  ];
+}
+
 def AriesIOPlacement : Pass<"aries-io-placement"> {
   let summary = "Place PLIO/GMIO to the shim tile";
   let description = [{
@@ -188,11 +188,6 @@ def AriesIOPlacement : Pass<"aries-io-placement"> {
     Option<"EnableIOCons", "iocons", "bool", /*default=*/"false",
            "Enable limiting the IO used in a shim for certain PLIOs">
   ];
-}
-
-def AriesKernelSplit : Pass<"aries-kernel-split"> {
-  let summary = "Split adf.kernel to another file";
-  let constructor = "mlir::aries::createAriesKernelSplitPass()";
 }
 
 def AriesGMIOMaterialize : Pass<"aries-gmio-materialize"> {
@@ -233,16 +228,6 @@ def AriesPLDataflow : Pass<"aries-pl-dataflow"> {
   let constructor = "mlir::aries::createAriesPLDataflowPass()";
 }
 
-def AriesPLDoubleBuffer : Pass<"aries-pl-double-buffer"> {
-  let summary = "Apply double buffer for the data mover between PL and AIE";
-  let description = [{
-    This pass tranverses all the "module" in the adf.pl, extract them to
-    separate functions and use double buffer. 
-  }];
-  let constructor = "mlir::aries::createAriesPLDoubleBufferPass()";
-  let dependentDialects = ["mlir::scf::SCFDialect"];
-}
-
 def AriesBurstDetection : Pass<"aries-burst-detection"> {
   let summary = "Attempt to merge loops together to increase burst length";
   let description = [{
@@ -258,8 +243,31 @@ def AriesFuncEliminate : Pass<"aries-func-eliminate"> {
   let constructor = "mlir::aries::createAriesFuncEliminatePass()";
 }
 
-// This is just a helper function for translation
-// may need to be moved to other places
+def AriesPLDoubleBuffer : Pass<"aries-pl-double-buffer"> {
+  let summary = "Apply double buffer for the data mover between PL and AIE";
+  let description = [{
+    This pass tranverses all the "module" in the adf.pl, extract them to
+    separate functions and use double buffer. 
+  }];
+  let constructor = "mlir::aries::createAriesPLDoubleBufferPass()";
+  let dependentDialects = ["mlir::scf::SCFDialect"];
+}
+
+def AriesPLSerialize : Pass<"aries-pl-serialize"> {
+  let summary = "Serialize the DDR access in the PL";
+  let description = [{
+    This pass seralizes the DDR access in the PL side. 
+  }];
+  let constructor = "mlir::aries::createAriesPLSerializePass()";
+}
+
+// Below are helper functions before translation
+// and may need to be moved to other places
+def AriesKernelSplit : Pass<"aries-kernel-split"> {
+  let summary = "Split adf.kernel to another file";
+  let constructor = "mlir::aries::createAriesKernelSplitPass()";
+}
+
 def AriesFileSplit : Pass<"aries-file-split"> {
   let summary = "Split the adf_graph source and header files";
   let constructor = "mlir::aries::createAriesFileSplitPass()";
