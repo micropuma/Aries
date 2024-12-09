@@ -78,12 +78,18 @@ private:
         auto coeff = flattenedExpr[i];
         unsigned depth = it - band.begin();
         if(depth != (unsigned)(band.size()-1)){ // If not, update the expr
-          if(coeff%packNum!=0)
+          if(coeff%packNum!=0){
+            llvm::outs() << "Invalid AXI packing, size not dividable\n";
             return false;
+          }
           auto newCoeff = (int64_t)(coeff / packNum);
           newFlattenedExpr.push_back(newCoeff);
         }else{ // If used by the innermost loop, update the upperbound && record
           auto upbound = loop.getConstantUpperBound();
+          if(upbound%packNum!=0){
+            llvm::outs() << "Invalid AXI packing, loop bound not dividable\n";
+            return false;
+          }
           auto newBound = (int64_t)(upbound/packNum);
           loopList.push_back(std::pair(loop, newBound));
           if(coeff!=1)
@@ -301,7 +307,9 @@ private:
 
     // Update arguments in func
     SmallVector<int64_t> sizesInt(shape.begin(),shape.end());
-    sizesInt[rank-1] = sizesInt[rank-1] / packNum;
+    // Deal with dynmic shape
+    if (sizesInt[rank-1]>0)
+      sizesInt[rank-1] = sizesInt[rank-1] / packNum;
     auto newMemRefType = MemRefType::get(sizesInt, newType);
     inTypes[index] = newMemRefType;
     arg.setType(newMemRefType);

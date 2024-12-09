@@ -31,39 +31,106 @@ public:
   }
 
 private:
-  // Calculate the current iteration and 
-  // create the conditions to control double buffer
-  void createControl(OpBuilder builder, scf::IfOp& ifOp, arith::CmpIOp& cond1,
-                     SmallVector<AffineForOp, 6> reverseBand){
+  // This function simplifies the upperbound affine map in the form of 
+  // affine_map<()[s0] -> (s0 ceildiv 64)> to affine_map<()[s0] -> (s0)>
+  void simplifyUb(OpBuilder builder, SmallVector<AffineForOp, 6> tileBand){
     auto loc = builder.getUnknownLoc();
     auto context = builder.getContext();
+    auto outerLoop = tileBand[0];
+    builder.setInsertionPoint(outerLoop);
+    for(auto loop : tileBand){
+      if(loop.hasConstantUpperBound())
+        continue;
+      auto ubMap = loop.getUpperBoundMap();
+      if (ubMap.getNumResults() != 1){
+        llvm::outs() << "Doesn't support affineMap with multi results\n";
+        return;
+      }
+      auto expr = dyn_cast<AffineBinaryOpExpr>(ubMap.getResult(0));
+      if (!expr || expr.getKind() != AffineExprKind::CeilDiv){
+        llvm::outs() << "Besides constant upper bound, only support ceildiv\n";
+        return;
+      }
+      // Extract the divisor and symbol
+      auto divisorExpr = dyn_cast<AffineConstantExpr>(expr.getRHS());
+      if (!divisorExpr)
+        return;
+      auto symbolExpr = dyn_cast<AffineSymbolExpr>(expr.getLHS());
+      if (!symbolExpr)
+        return;
+      unsigned symbolPos = symbolExpr.getPosition();
+      auto s0 = loop.getUpperBoundOperands()[ubMap.getNumDims()+symbolPos];
+      // Replace the AffineExprKind::CeilDiv using arith dialect
+      auto divInt = divisorExpr.getValue();
+      auto divAttr = builder.getIndexAttr(divInt);
+      auto divVal = builder.create<arith::ConstantOp>(loc, divAttr);
+      auto ceilAttr = builder.getIndexAttr(divInt-1);
+      auto ceilVal = builder.create<arith::ConstantOp>(loc, ceilAttr);
+      auto temp = builder.create<arith::AddIOp>(loc, s0, ceilVal);
+      auto ubVal = builder.create<arith::DivUIOp>(loc, temp, divVal);
+      // Replace the loop upper bound with the computed value
+      SmallVector<Value, 4> newOperands{(loop.getUpperBoundOperands())};
+      newOperands.push_back(ubVal);
+      AffineExpr ubExpr = {builder.getAffineDimExpr(newOperands.size()-1)};
+      auto newMap = AffineMap::get(newOperands.size(), 0, ubExpr, context);
+      loop.setUpperBound(newOperands, newMap);
+    }
+  }
+  // Calculate the current iteration and total iteration to
+  // create the conditions for controlling double buffer
+  void createControl(OpBuilder builder, scf::IfOp& ifOp, arith::CmpIOp& cond1,
+                     scf::IfOp& ifOpLast, arith::CmpIOp& cond2,
+                     SmallVector<AffineForOp, 6> reverseBand){
+    auto loc = builder.getUnknownLoc();
     auto innerloop = reverseBand[0];
+    auto outerloop = reverseBand[reverseBand.size()-1];
     // Calculate the current iteration to control the double buffer
-    SmallVector<AffineMap, 4> affineMaps;
-    SmallVector<Value, 4> ivs;
-    for(auto loop : reverseBand){
-      affineMaps.push_back(loop.getUpperBoundMap());
-      ivs.push_back(loop.getInductionVar());
-    }
-    AffineExpr finalExpr = builder.getAffineDimExpr(0);
-    AffineExpr upExpr = builder.getAffineConstantExpr(1);
-    for (unsigned i = 1; i < ivs.size(); ++i) {
-      upExpr = upExpr * affineMaps[i-1].getResult(0);
-      finalExpr = finalExpr + builder.getAffineDimExpr(i) * upExpr;
-    }
-    auto affineMap = AffineMap::get(ivs.size(), 0, finalExpr, context);
-    builder.setInsertionPointToStart(innerloop.getBody());
+    builder.setInsertionPoint(outerloop);
     auto twoAttr = builder.getIndexAttr(2);
     auto twoValue = builder.create<arith::ConstantOp>(loc, twoAttr);
     auto zeroAttr = builder.getIndexAttr(0);
     auto zeroValue = builder.create<arith::ConstantOp>(loc, zeroAttr);
-    builder.setInsertionPointAfter(zeroValue);
-    auto applyOp = builder.create<AffineApplyOp>(loc, affineMap, ivs);
-    builder.setInsertionPointAfter(applyOp);
+    SmallVector<Value, 4> ub;
+    for(auto loop : reverseBand){
+      if(loop.hasConstantUpperBound()){
+        auto ubInt = loop.getConstantUpperBound();
+        auto ubAttr = builder.getIndexAttr(ubInt);
+        auto ubVal = builder.create<arith::ConstantOp>(loc, ubAttr);
+        ub.push_back(ubVal);
+      }else{
+        auto ubMap = loop.getUpperBoundMap(); 
+        if (ubMap.getNumResults() != 1){
+          llvm::outs() << "Doesn't support affineMap with multi results\n";
+          return;
+        }
+        auto dimExpr = dyn_cast<AffineDimExpr>(ubMap.getResult(0));
+        if(!dyn_cast<AffineDimExpr>(dimExpr))
+          return;
+        unsigned dimPos = dimExpr.getPosition();
+        auto d0 = loop.getUpperBoundOperands()[dimPos];
+        ub.push_back(d0);
+      }
+    }
+    // Represent current iteration using the arith dialect
+    builder.setInsertionPointToStart(innerloop.getBody());
+    Value addL = reverseBand[0].getInductionVar();
+    for (unsigned i = 1; i < reverseBand.size(); i++) {
+      Value mulL = reverseBand[i].getInductionVar();
+      for (unsigned j = 0; j < i; j++) {
+        auto mulR = ub[j];
+        auto mul = builder.create<arith::MulIOp>(loc, mulL, mulR);
+        mulL = mul.getResult();
+        builder.setInsertionPointAfter(mul);
+      }
+      auto add = builder.create<arith::AddIOp>(loc, addL, mulL);
+      addL = add.getResult();
+      builder.setInsertionPointAfter(add);
+    }
+    // Create the double buffer condition within innermost loop 
     auto cond = builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, 
-                                              applyOp, zeroValue);
+                                              addL, zeroValue);
     builder.setInsertionPointAfter(cond);
-    auto iter = builder.create<arith::RemSIOp>(loc, applyOp, twoValue);
+    auto iter = builder.create<arith::RemSIOp>(loc, addL, twoValue);
     builder.setInsertionPointAfter(iter);
     cond1 = builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, iter, 
                                           zeroValue);
@@ -85,6 +152,22 @@ private:
     auto enable1_1 = builder.create<arith::ConstantOp>(loc, trueAttr);
     SmallVector<Value> results1({enable0_1, enable1_1});
     builder.create<scf::YieldOp>(loc, results1);
+    // Calculate the number of iterations of all the loops
+    builder.setInsertionPointAfter(outerloop);
+    Value mulLNew = ub[0];
+    for (unsigned i = 1; i < ub.size(); i++) {
+      auto mulRNew = ub[i];
+      auto mul = builder.create<arith::MulIOp>(loc, mulLNew, mulRNew);
+      mulLNew = mul.getResult();
+      builder.setInsertionPointAfter(mul);
+    }
+    // Create the last call condition outside the outermost loop
+    auto rems = builder.create<arith::RemSIOp>(loc, mulLNew, twoValue);
+    builder.setInsertionPointAfter(rems);
+    cond2 = builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, rems, 
+                                          zeroValue);
+    builder.setInsertionPointAfter(cond2);
+    ifOpLast  = builder.create<scf::IfOp>(loc, cond2, true);
   }
   // Add the enable singal to each module and split them into functions
   void funcSplit(OpBuilder builder, FuncOp func, scf::IfOp ifOp,
@@ -141,7 +224,8 @@ private:
   }
   // According to the condition, create ping pong buffers to ensure no arguments
   // of the two functions in common
-  void createDoubleBuffer(OpBuilder builder, arith::CmpIOp cond,
+  void createDoubleBuffer(OpBuilder builder, scf::IfOp ifOpLast,
+                          arith::CmpIOp cond, arith::CmpIOp cond2, 
                           SmallVector<CallOp, 2> calls,
                           SmallVector<AffineForOp, 6> reverseBand){
     auto loc = builder.getUnknownLoc();
@@ -215,41 +299,22 @@ private:
     callPing.erase();
     callPong.erase();
     // Need to call pong func once more outside of the outerloop
-    /* TODO Handle non-constant outerloops
-    SmallVector<Value, 4> operands;
-    auto context = builder.getContext();
-    auto newExpr = builder.getAffineConstantExpr(1);
-    for (auto loop : reverseBand) {
-      auto upperBound = loop.getUpperBound();
-      auto upperBOundMap = upperBound.getMap();
-      auto mapOps = upperBound.getOperands();
-      newExpr = newExpr * upperBOundMap.getResult(0);
-      operands.insert(operands.end(), mapOps.begin(), mapOps.end());
-    }
-    auto map = AffineMap::get(operands.size(), 0, newExpr, context);
-    builder.setInsertionPointAfter(outerloop);
-    auto appliedResult = builder.create<AffineApplyOp>(loc, map, operands);
-    */
     auto outerloop = reverseBand[reverseBand.size()-1];
-    unsigned upBound = 1;
     auto trueAttr = builder.getBoolAttr(true);
-    builder.setInsertionPointAfter(outerloop);
+    builder.setInsertionPoint(outerloop);
     auto trueVal = builder.create<arith::ConstantOp>(loc, trueAttr);
-    for(auto loop : reverseBand){
-      if(!loop.hasConstantUpperBound())
-        assert("When doing double buffer, there are non-constant loops\n");
-      upBound = upBound * loop.getConstantUpperBound();
-    }
-    builder.setInsertionPointAfter(trueVal);
-    CallOp newCallPong;
-    if(upBound%2==0){
-      newCallPong = dyn_cast<CallOp>(thenCallPong->clone());
-      newCallPong.setOperand(thenCallPong.getNumOperands()-1, trueVal);
-    }else{
-      newCallPong = dyn_cast<CallOp>(elseCallPong->clone());
-      newCallPong.setOperand(elseCallPong.getNumOperands()-1, trueVal);
-    }
+    auto newThenblock = &ifOpLast.getThenRegion().front();
+    auto newElseblock = &ifOpLast.getElseRegion().front();
+    auto newThenYiledOp = newThenblock->getTerminator();
+    auto newElseYiledOp = newElseblock->getTerminator();
+    auto newCallPong = dyn_cast<CallOp>(thenCallPong->clone());
+    newCallPong.setOperand(thenCallPong.getNumOperands()-1, trueVal);
+    builder.setInsertionPoint(newThenYiledOp);
     builder.insert(newCallPong);
+    auto newCallPong1 = dyn_cast<CallOp>(elseCallPong->clone());
+    newCallPong1.setOperand(elseCallPong.getNumOperands()-1, trueVal);
+    builder.setInsertionPoint(newElseYiledOp);
+    builder.insert(newCallPong1);
   }
   bool PLDoubleBuffer (ModuleOp mod) {
     auto builder = OpBuilder(mod);
@@ -259,12 +324,13 @@ private:
         return WalkResult::advance();
       SmallVector<AffineForOp, 6> tileBand;
       getPerfectlyNestedLoops(tileBand,rootLoop);
+      simplifyUb(builder, tileBand);
       auto innerloop = tileBand[tileBand.size()-1];
       if(!innerloop->hasAttr("Array_Partition"))
         return WalkResult::advance();
       auto reverseBand = tileBand;
       std::reverse(reverseBand.begin(), reverseBand.end());
-      // Check if there exists and any exists two forOps marked by module
+      // Check if there exists and only exists two forOps marked by module
       SmallVector<AffineForOp, 2> forOps;
       for(auto forOp : innerloop.getOps<AffineForOp>())
         if(forOp->hasAttr("module"))
@@ -276,12 +342,12 @@ private:
         return WalkResult::advance();
       }
 
-      scf::IfOp ifOp;
-      arith::CmpIOp cond;
+      scf::IfOp ifOp, ifOpLast;
+      arith::CmpIOp cond, cond1;
       SmallVector<CallOp, 2> calls;
-      createControl(builder, ifOp, cond, reverseBand);
+      createControl(builder, ifOp, cond, ifOpLast, cond1, reverseBand);
       funcSplit(builder, func, ifOp, forOps, calls);
-      createDoubleBuffer(builder, cond, calls, reverseBand);
+      createDoubleBuffer(builder, ifOpLast, cond, cond1, calls, reverseBand);
       
       return WalkResult::advance();
     });

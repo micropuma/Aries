@@ -37,7 +37,7 @@ public:
 
 private:
   // Clone the original functions for host emission
-  void Preprocesses(ModuleOp mod, OpBuilder builder, FuncOp topFunc){
+  void preprocess(ModuleOp mod, OpBuilder builder, FuncOp topFunc){
     auto topName = topFunc.getName();
     auto hostFunc = dyn_cast<FuncOp>(topFunc->clone());
     auto hostName = topName.str() + "_host";
@@ -111,6 +111,95 @@ private:
     }
   }
 
+  // For memory with dynamic size, only reserve the celldiv at the outermost
+  // band. Eliminate all the min function if one of the operand is an argument.
+  // TODO: Handle cases that need padding
+  bool postprocess(FuncOp func, SmallVector<AffineForOp,6> pointBand){
+    for (auto loop : pointBand){
+      auto ubMap = loop.getUpperBoundMap();
+      // Check if the upperbound of the loop is determined by min
+      auto numRes = ubMap.getNumResults();
+      if(numRes != 2)
+        continue;
+      auto uboperands = loop.getUpperBoundOperands();
+      auto numDims = ubMap.getNumDims();
+      auto numSyms = ubMap.getNumSymbols();
+      // Check if one of the result of the upperbound map is only determined
+      // by the index argument of the function
+      auto res0 = ubMap.getResult(0);
+      auto res1 = ubMap.getResult(1);
+      Value operand;
+      AffineExpr res;
+      if(isa<AffineSymbolExpr>(res0)&&!isa<AffineSymbolExpr>(res1)){
+        res = res1;
+        auto pos = dyn_cast<AffineSymbolExpr>(res0).getPosition();
+        operand = uboperands[numDims+pos];
+      }else if(!isa<AffineSymbolExpr>(res0)&&isa<AffineSymbolExpr>(res1)){
+        res = res0;
+        auto pos = dyn_cast<AffineSymbolExpr>(res1).getPosition();
+        operand = uboperands[numDims+pos];
+      }else{
+        return false;
+      }
+      // llvm::SmallVector<int64_t> flatExpr0;
+      // if (failed(getFlattenedAffineExpr(res0, numDims, numSyms, &flatExpr0)))
+      //   return false;
+      // llvm::SmallVector<int64_t> flatExpr1;
+      // if (failed(getFlattenedAffineExpr(res1, numDims, numSyms, &flatExpr1)))
+      //   return false;
+      // bool flag0=false, flag1=false;
+      // unsigned index0=0, index1=0;
+      // unsigned symidx0,  symidx1;
+      // for(auto coeff : flatExpr0){
+      //   if(coeff != 0){
+      //     if(flag0==true || coeff != 1){
+      //       flag0=false;
+      //       break;
+      //     }
+      //     symidx0=index0;
+      //     flag0=true;
+      //   }
+      //   index0++;
+      // }
+      // for(auto coeff : flatExpr1){
+      //   if(coeff != 0){
+      //     if(flag1==true || coeff != 1){
+      //       flag1=false;
+      //       break;
+      //     }
+      //     symidx1=index1;
+      //     flag1=true;
+      //   }
+      //   index1++;
+      // }
+      // Value operand;
+      // AffineExpr res;
+      // if(flag0&&!flag1&&symidx0>=numDims&&symidx0<numDims+numSyms){
+      //   operand = uboperands[symidx0];
+      //   res = res1;
+      // }else if(!flag0&&flag1&&symidx1>=numDims&&symidx1<numDims+numSyms){
+      //   operand = uboperands[symidx1];
+      //   res = res0;
+      // }else{
+      //   return false;
+      // }
+      // Check if the operand is one of the argument of the function
+      bool flag=false;
+      for (auto arg:func.getArguments()){
+        if(operand==arg){
+          flag = true;
+          break;
+        }
+      }
+      // Modify the upperbound 
+      if(!flag)
+        return false;
+      auto newMap = mlir::AffineMap::get(numDims, numSyms, res);
+      loop.setUpperBoundMap(newMap);
+    }
+    return true;
+  }
+
   bool applyLoopTiling(ModuleOp mod, unsigned defaultTileSizes){
     auto builder = OpBuilder(mod);
     auto loc = builder.getUnknownLoc();
@@ -129,7 +218,7 @@ private:
     argAnotate(builder, topFunc, func, attrs); 
     auto outAttrs = builder.getArrayAttr(attrs);
     topFunc->setAttr("outArgs",outAttrs);
-    Preprocesses(mod, builder, topFunc);
+    preprocess(mod, builder, topFunc);
     // Tile the functions specified in the command line.
     func->setAttr("adf.func", builder.getUnitAttr());
     SmallVector<AffineForOp, 6> band;
@@ -155,7 +244,9 @@ private:
     SmallVector<AffineForOp,6> L2tileBand;
     SmallVector<AffineForOp,6> L3tileBand;
     if (failed(tilePerfectlyNested(band, L1tileSizes, &L1tileBand)))
-        return false;
+      return false;
+    if(!postprocess(func, L1tileBand))
+      return false;
     // L2 tiling if specified
     if(L2TileSizes.size()){
       for (unsigned i = 0; i <std::min(bandSize,L2TileSizes.size());++i)
@@ -166,13 +257,12 @@ private:
       
       if (failed(tilePerfectlyNested(
                             blockL1tileBand, L2tileSizes, &L2tileBand)))
-          return false;
-      
+        return false;
+      if(!postprocess(func, L2tileBand))
+        return false;
       // Mark L2 reduction loops
       for(auto idx : redIndeices)
         L2tileBand[idx]->setAttr("reduction", builder.getUnitAttr());
-      
-     
       
       // L3 tiling if specified
       if(L3TileSizes.size()){
@@ -183,6 +273,8 @@ private:
         if (failed(tilePerfectlyNested(
                               blocktileBandL2, L3tileSizes, &L3tileBand)))
             return false;
+        if(!postprocess(func, L3tileBand))
+          return false;
         L3tileBand[bandSize-1]->setAttr(
                               "Array_Partition", builder.getUnitAttr());
         // Mark L3 reduction loops
@@ -260,9 +352,8 @@ private:
     PassManager pm(&getContext());
     pm.addPass(createCanonicalizerPass());
     pm.addPass(createCSEPass());
-    if (failed(pm.run(func))) {
+    if (failed(pm.run(func)))
       return false;
-    }
 
     // Merge the nested parallelOps to a single parallelOp
     SmallVector<AffineMap, 6> lbMaps;

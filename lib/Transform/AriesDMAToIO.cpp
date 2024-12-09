@@ -77,6 +77,10 @@ private:
       int64_t lastSize;
       if (auto intAttr = dyn_cast<IntegerAttr>(attr)){
         auto intSize = intAttr.getInt();
+        if(intSize%packNum!=0){
+          llvm::outs() << "Invalid PLIO packing due to memory size\n";
+          return false;
+        }
         lastSize = intSize/packNum;
       }else{
         return false;
@@ -109,7 +113,9 @@ private:
       if(defineOp){ // If the memref is defined by AllocOp
         if(auto allocOp = dyn_cast<AllocOp>(defineOp)){
           SmallVector<int64_t> sizesInt(shape.begin(),shape.end());
-          sizesInt[rank-1] = sizesInt[rank-1] / packNum;
+          // Deal with dynmic shape
+          if (sizesInt[rank-1]>0)
+            sizesInt[rank-1] = sizesInt[rank-1] / packNum;
           builder.setInsertionPoint(allocOp);
           auto newMemRefType = MemRefType::get(sizesInt, newType);
           auto newAllocOp = builder.create<AllocOp>(loc, newMemRefType);
@@ -129,7 +135,9 @@ private:
         for(auto arg : topFunc.getArguments()){
           if(arg == val){
             SmallVector<int64_t> sizesInt(shape.begin(),shape.end());
-            sizesInt[rank-1] = sizesInt[rank-1] / packNum;
+            // Deal with dynmic shape
+            if (sizesInt[rank-1]>0)
+              sizesInt[rank-1] = sizesInt[rank-1] / packNum;
             auto newMemRefType = MemRefType::get(sizesInt, newType);
             auto it = std::find_if(typePairs.begin(), typePairs.end(),
                 [&](const std::pair<MemRefType, unsigned> &pair) {
@@ -400,7 +408,7 @@ private:
       if (failed(LowerDMAToIO(builder, mod, func, PortType, PortWidth, PLIOFreq, 
                               PortBurst, GMIOBW)))
         return false;
-
+      return true;
       MLIRContext &context = getContext();
       RewritePatternSet patterns(&context);
       PassManager pm(&getContext());
