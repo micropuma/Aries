@@ -77,10 +77,15 @@ private:
     for(unsigned i = 0; i < srcSize; i++){
       auto srcForOp = srcBand[i];
       auto dstForOp = dstBand[i];
-      if(srcForOp.getConstantLowerBound()!=dstForOp.getConstantLowerBound() ||
-         srcForOp.getConstantUpperBound()!=dstForOp.getConstantUpperBound() ||
-         srcForOp.getStepAsInt()!=dstForOp.getStepAsInt())
+      if(!srcForOp.hasConstantUpperBound()){
+        if(srcForOp.getUpperBoundMap()!=dstForOp.getUpperBoundMap())
+          return false;
+      }
+      else if(srcForOp.getConstantLowerBound()!=dstForOp.getConstantLowerBound()
+          || srcForOp.getConstantUpperBound()!=dstForOp.getConstantUpperBound() 
+          || srcForOp.getStepAsInt()!=dstForOp.getStepAsInt()){
          return false;
+      }
     }
     // Check if the access the memory with the same type and access pattern
     Value srcMemref, dstMemref;
@@ -307,7 +312,7 @@ private:
   void funcClean(ModuleOp mod){
     for (auto func : llvm::make_early_inc_range(mod.getOps<FuncOp>())) {
       if(func->getAttr("top_func") || func->getAttr("top_host") ||
-         func->getAttr("host") || func->getAttr("adf.func"))
+         func->getAttr("origin_func") || func->getAttr("adf.func"))
         continue;
       if (!hasCaller(mod, func)) {
         func.erase();
