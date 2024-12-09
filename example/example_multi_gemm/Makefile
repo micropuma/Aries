@@ -234,7 +234,7 @@ ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir: ${PROJECT_PATH}/${KERNEL_NAME}_unrol
 		--canonicalize
 ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir: ${PROJECT_PATH}/${KERNEL_NAME}.mlir
 	aries-opt -o $@ $< \
-		--affine-loop-unroll="unroll-full unroll-full-threshold=3" \
+		--affine-loop-unroll="unroll-factor=8" \
 		--canonicalize
 
 kernel_file_split: kernel_cc
