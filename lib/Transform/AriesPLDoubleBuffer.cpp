@@ -32,7 +32,7 @@ public:
 
 private:
   // This function simplifies the upperbound affine map in the form of 
-  // affine_map<()[s0] -> (s0 ceildiv 64)> to affine_map<()[s0] -> (s0)>
+  // affine_map<()[s0] -> (s0 ceildiv 64)> to affine_map<(d0) -> (d0)>
   void simplifyUb(OpBuilder builder, SmallVector<AffineForOp, 6> tileBand){
     auto loc = builder.getUnknownLoc();
     auto context = builder.getContext();
@@ -61,6 +61,7 @@ private:
       unsigned symbolPos = symbolExpr.getPosition();
       auto s0 = loop.getUpperBoundOperands()[ubMap.getNumDims()+symbolPos];
       // Replace the AffineExprKind::CeilDiv using arith dialect
+      /* Code snippet for ceilDiv
       auto divInt = divisorExpr.getValue();
       auto divAttr = builder.getIndexAttr(divInt);
       auto divVal = builder.create<arith::ConstantOp>(loc, divAttr);
@@ -68,6 +69,12 @@ private:
       auto ceilVal = builder.create<arith::ConstantOp>(loc, ceilAttr);
       auto temp = builder.create<arith::AddIOp>(loc, s0, ceilVal);
       auto ubVal = builder.create<arith::DivUIOp>(loc, temp, divVal);
+      */
+      // Currently use floor div directly
+      auto divInt = divisorExpr.getValue();
+      auto divAttr = builder.getIndexAttr(divInt);
+      auto divVal = builder.create<arith::ConstantOp>(loc, divAttr);
+      auto ubVal = builder.create<arith::DivUIOp>(loc, s0, divVal);
       // Replace the loop upper bound with the computed value
       SmallVector<Value, 4> newOperands{(loop.getUpperBoundOperands())};
       newOperands.push_back(ubVal);
@@ -104,7 +111,7 @@ private:
           return;
         }
         auto dimExpr = dyn_cast<AffineDimExpr>(ubMap.getResult(0));
-        if(!dyn_cast<AffineDimExpr>(dimExpr))
+        if(!dimExpr)
           return;
         unsigned dimPos = dimExpr.getPosition();
         auto d0 = loop.getUpperBoundOperands()[dimPos];
@@ -112,6 +119,7 @@ private:
       }
     }
     // Represent current iteration using the arith dialect
+    // TODO: The loops here should have already been normalized
     builder.setInsertionPointToStart(innerloop.getBody());
     Value addL = reverseBand[0].getInductionVar();
     for (unsigned i = 1; i < reverseBand.size(); i++) {

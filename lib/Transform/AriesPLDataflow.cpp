@@ -142,6 +142,55 @@ private:
     }
   }
 
+  // This function annotate the original types of the memref arguments to each
+  // extracted function
+  void annotateType(ModuleOp mod, OpBuilder builder, FuncOp func){
+    auto funcArgs = func.getArguments();
+    auto idxAttrs = func->getAttrOfType<ArrayAttr>("mem_idx");
+    auto typeAttrs = func->getAttrOfType<ArrayAttr>("mem_type");
+    if(!idxAttrs)
+      return;
+    SmallVector<int64_t, 4> idxs;
+    for (auto attr : idxAttrs) {
+      if (auto intAttr = attr.dyn_cast<IntegerAttr>()){
+        idxs.push_back(intAttr.getInt());
+      }
+    }
+    for(auto call : func.getOps<CallOp>()){
+      auto callee = mod.lookupSymbol<FuncOp>(call.getCallee());
+      // Continue when already assigned the types
+      if(callee->hasAttr("mem_idx"))
+        continue;
+      SmallVector<unsigned, 4> argIdxs;
+      SmallVector<Attribute, 4> argAttrs;
+      for(unsigned i=0; i < call.getNumOperands(); i++){
+        auto operand = call.getOperand(i);
+        // Find if operand is the arguments of the func
+        auto it = llvm::find(funcArgs, operand);
+        if(it == funcArgs.end())
+          continue;
+        int64_t dis = std::distance(funcArgs.begin(),it);
+        // Find if the argument is marked with an arttibute
+        auto it1 = llvm::find(idxs, dis);
+        if(it1 == idxs.end())
+          continue;
+        int64_t dis1 = std::distance(funcArgs.begin(),it);
+        auto attr = typeAttrs[dis1];
+        argIdxs.push_back(i);
+        argAttrs.push_back(attr);
+      }
+      if(argIdxs.empty())
+        continue;
+      SmallVector<Attribute, 4> newIdxAttrs;
+      for (int idx : argIdxs) 
+        newIdxAttrs.push_back(builder.getI32IntegerAttr(idx));
+      auto arrayAttr = builder.getArrayAttr(newIdxAttrs);
+      callee->setAttr("mem_idx", arrayAttr);
+      auto arrayTypeAttr = builder.getArrayAttr(argAttrs);
+      callee->setAttr("mem_type", arrayTypeAttr);
+    }
+  }
+
   // Hoist the loops beyond loops marked by reduction, 
   // this is to implement the output stationary dataflow
   // If has reduction, then need to initialize L2 buffer marked by init
@@ -239,6 +288,7 @@ private:
       func->setAttr("inline",builder.getBoolAttr(false));
       // For each loop in adf.pl, create a new func marked by adf.pl
       PLFuncSplit(builder, func);
+      annotateType(mod, builder, func);
       return WalkResult::advance();
     });
 

@@ -298,6 +298,8 @@ private:
     auto typeWidth = type.getElementTypeBitWidth();
     auto newTypeWidth = typeWidth * packNum;
     auto newType = builder.getIntegerType(newTypeWidth);
+    auto indexType = builder.getIndexType();
+    auto packAttr = builder.getIntegerAttr(indexType, packNum);
     // Update innerLoop Upperbound
     for(auto loopPair : loopList){
       auto loop = loopPair.first;
