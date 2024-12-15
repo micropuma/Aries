@@ -32,7 +32,7 @@ ROOTFS=${EDGE_COMMON_SW}/rootfs.ext4
 IMAGE=${EDGE_COMMON_SW}/Image
 TEMP_DIR := ./_x.$(TARGET).xilinx_vck190_base_202310_1
 BUILD_DIR := ./build_dir.$(TARGET).xilinx_vck190_base_202310_1
-KERNEL_XO :=$(TEMP_DIR)/dma_pl.xo
+KERNEL_XO :=$(TEMP_DIR)/top.xo
 GRAPH   := aie/adf_graph.cpp
 LIBADF  = libadf.a
 AIE_CMPL_CMD = aiecompiler -platform=${PLATFORM} --target=hw --stacksize=1024 --pl-register-threshold=250 --pl-freq=230  -include="./aie" -include="./aie/layer0" --disable-transform-broadcast-split=false -workdir=./Work ${GRAPH}
@@ -138,8 +138,8 @@ ifeq ($(EN_PL),1)
 kernels:$(KERNEL_XO)
 $(KERNEL_XO): kernel/hls.cpp
 	mkdir -p $(TEMP_DIR)
-	$(VCC) $(VPP_XO_FLAGS) -k dma_pl --hls.clock 300000000:dma_pl $< -o $@ | tee $(TEMP_DIR)/dma_pl.log
-	@echo "### ***** dma_pl compilation done! *****"
+	$(VCC) $(VPP_XO_FLAGS) -k top --hls.clock 300000000:top $< -o $@ | tee $(TEMP_DIR)/top.log
+	@echo "### ***** top compilation done! *****"
 $(XSA): ${KERNEL_XO} ${LIBADF}
 	mkdir -p $(BUILD_DIR)
 	$(VCC) -l $(CLFLAGS) --temp_dir $(BUILD_DIR) $(LDCLFLAGS) -o'$@' $(+) | tee $(BUILD_DIR)/hpc_xclbin.log
