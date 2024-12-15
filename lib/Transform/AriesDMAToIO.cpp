@@ -408,7 +408,7 @@ private:
       if (failed(LowerDMAToIO(builder, mod, func, PortType, PortWidth, PLIOFreq, 
                               PortBurst, GMIOBW)))
         return false;
-      return true;
+
       MLIRContext &context = getContext();
       RewritePatternSet patterns(&context);
       PassManager pm(&getContext());
