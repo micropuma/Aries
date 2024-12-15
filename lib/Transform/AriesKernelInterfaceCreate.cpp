@@ -243,7 +243,7 @@ private:
       // Update edge callee
       auto op = calleeFunc->clone();
       auto oldName = calleeFunc.getName();
-      auto newName = oldName.str() + "_0";
+      auto newName = oldName.str() + "0";
       auto newFunc =  dyn_cast<FuncOp>(op);
       newFunc.setName(newName);
       newFunc->setAttr("edge_kernel", builder.getUnitAttr());
