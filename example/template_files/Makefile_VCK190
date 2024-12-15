@@ -186,13 +186,6 @@ clean:
 	-$(RMDIR) $(HOST_EXE) $(XCLBIN)/{*sw_emu*,*hw_emu*} 
 	-$(RMDIR) profile_* TempConfig system_estimate.xtxt *.rpt *.csv *.o *.xo *.xpe *.xsa cfg qemu_dts_files emu_qemu_scripts *.db sim  #*.a  Work aie/*.ll _x*
 	-$(RMDIR)  *v++* .Xil emconfig.json dltmp* xmltmp* *.log *.jou *.wcfg *.wdb *bin* *summary* *.BIN *.bif *.exe  *.log *.txt _x
-
-cleanall: clean
-	-$(RMDIR) build_dir* sd_card*
-	-$(RMDIR) package.hw run_app.sh 
-	-$(RMDIR) *xclbin.run_summary qemu-memory-_* emulation _vimage pl* start_simulation.sh *.xclbin
-	$(MAKE) -C sw clean
-
 cleanaie: cleansim
 	-$(RMDIR) *.a  Work
 cleansim:
@@ -203,3 +196,8 @@ cleanhost:
 	-$(RMDIR) ${HOST_EXE} ${AIE_O} $(GRAPH_O) main.o
 cleanpac:
 	-$(RMDIR) mm_${TARGET}.xclbin.package_summary package.${TARGET}
+cleanall: clean cleantemp cleansim cleanaie cleanhost cleanpac
+	-$(RMDIR) build_dir* sd_card*
+	-$(RMDIR) package.hw run_app.sh 
+	-$(RMDIR) *xclbin.run_summary qemu-memory-_* emulation _vimage pl* start_simulation.sh *.xclbin
+	$(MAKE) -C sw clean
