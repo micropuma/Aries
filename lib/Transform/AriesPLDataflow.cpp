@@ -31,15 +31,74 @@ public:
   }
 
 private:
+  // This function simplifies the upperbound affine map in the form of 
+  // affine_map<()[s0] -> (s0 ceildiv 64)> to affine_map<(d0) -> (d0)>
+  void simplifyUb(OpBuilder builder, FuncOp func){
+    auto loc = builder.getUnknownLoc();
+    std::vector<SmallVector<AffineForOp, 6>> bands;
+    getTileableBands(func, &bands);
+    for (auto tileBand : bands){
+      auto context = builder.getContext();
+      auto outerLoop = tileBand[0];
+      builder.setInsertionPoint(outerLoop);
+      for(auto loop : tileBand){
+        if(loop.hasConstantUpperBound())
+          continue;
+        auto ubMap = loop.getUpperBoundMap();
+        unsigned numDim = ubMap.getNumDims();
+        unsigned numSym = ubMap.getNumSymbols();
+        if (ubMap.getNumResults() != 1){
+          llvm::outs() << "Doesn't support affineMap with multi results\n";
+          return;
+        }
+        auto expr = dyn_cast<AffineBinaryOpExpr>(ubMap.getResult(0));
+        if (!expr || expr.getKind() != AffineExprKind::CeilDiv){
+          llvm::outs() << "Besides constant upperbound, only support ceildiv\n";
+          return;
+        }
+        // Extract the divisor and symbol
+        auto divisorExpr = dyn_cast<AffineConstantExpr>(expr.getRHS());
+        if (!divisorExpr)
+          return;
+        auto symbolExpr = dyn_cast<AffineSymbolExpr>(expr.getLHS());
+        if (!symbolExpr)
+          return;
+        unsigned symbolPos = symbolExpr.getPosition();
+        auto s0 = loop.getUpperBoundOperands()[numDim+symbolPos];
+        // Replace the AffineExprKind::CeilDiv using arith dialect
+        /* Code snippet for ceilDiv
+        auto divInt = divisorExpr.getValue();
+        auto divAttr = builder.getIndexAttr(divInt);
+        auto divVal = builder.create<arith::ConstantOp>(loc, divAttr);
+        auto ceilAttr = builder.getIndexAttr(divInt-1);
+        auto ceilVal = builder.create<arith::ConstantOp>(loc, ceilAttr);
+        auto temp = builder.create<arith::AddIOp>(loc, s0, ceilVal);
+        auto ubVal = builder.create<arith::DivUIOp>(loc, temp, divVal);
+        */
+        // Currently use floor div directly
+        auto divInt = divisorExpr.getValue();
+        auto divAttr = builder.getIndexAttr(divInt);
+        auto divVal = builder.create<arith::ConstantOp>(loc, divAttr);
+        auto ubVal = builder.create<arith::DivUIOp>(loc, s0, divVal);
+        // Replace the loop upper bound with the computed value
+        SmallVector<Value, 4> newOperands{(loop.getUpperBoundOperands())};
+        newOperands.push_back(ubVal);
+        AffineExpr ubExpr = {builder.getAffineSymbolExpr(numSym)};
+        auto newMap = AffineMap::get(numDim, numSym+1, ubExpr, context);
+        loop.setUpperBound(newOperands, newMap);
+      }
+    }
+  }
+
   // Tranverse all the forOps marked by "load,store,send,receive" and split
   // them into new functions marked by adf.pl
   void PLFuncSplit(OpBuilder builder, FuncOp plFunc){
     auto loc = builder.getUnknownLoc();
     for (auto forOp: llvm::make_early_inc_range(plFunc.getOps<AffineForOp>())){
       SmallVector<Operation*, 4> Ops;
-      SmallVector<Value> inputs(forOp.getOperands());
+      SmallVector<Value> liveins(forOp.getOperands());
       auto liveness = Liveness(forOp);
-      for (auto livein: liveness.getLiveIn(forOp.getBody()))
+      for (auto livein: liveness.getLiveIn(forOp.getBody())){
         if (!forOp->isProperAncestor(livein.getParentBlock()->getParentOp())){
           auto definedOp = livein.getDefiningOp();
           if(definedOp){
@@ -57,8 +116,23 @@ private:
               continue;
             }
           }
-          inputs.push_back(livein);
+          liveins.push_back(livein);
         }
+      }
+      // Reorder the input arguments to be aligned with the previous function
+      SmallVector<Value, 6> inputs;
+      for(auto arg : plFunc.getArguments()){
+        auto it = llvm::find(liveins,arg);
+        if(it != liveins.end())
+          inputs.push_back(arg);
+      }
+      SmallVector<Attribute, 4> newMetaArray;
+      addMetaData(builder, plFunc, inputs, newMetaArray);
+      for(auto livein : liveins){
+        auto it = llvm::find(inputs, livein);
+        if(it == inputs.end())
+          inputs.push_back(livein);
+      }
       
       builder.setInsertionPoint(plFunc);
       std::string funcName;
@@ -100,6 +174,10 @@ private:
       newfunc->setAttr("adf.pl",builder.getUnitAttr());
       newfunc->setAttr("inline",builder.getBoolAttr(false));
       newfunc->setAttr(funcAttr, builder.getUnitAttr());
+      if(!newMetaArray.empty()){
+        auto arrayAttr = builder.getArrayAttr(newMetaArray);
+        newfunc->setAttr("meta_data", arrayAttr);
+      }
       auto destBlock = newfunc.addEntryBlock();
       builder.setInsertionPointToEnd(destBlock);
       auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
@@ -139,6 +217,8 @@ private:
             return newfunc->isProperAncestor(use.getOwner());
         });
       }
+      // Replace upperbound of the for loops in each pl function
+      simplifyUb(builder, newfunc);
     }
   }
 

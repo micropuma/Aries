@@ -192,5 +192,56 @@ bool calleeFind(ModuleOp mod, FuncOp topFunc, FuncOp &calleeFuncOp){
   return calleeFunc_flag;
 }
 
+// This function is to include the unused arguments into vector inputs.
+// These arguments is to represent the size of the dynamic memory which will
+// be used during nd dynamic memory serialization.
+// New meta information will be collected
+void addMetaData(OpBuilder builder, FuncOp func, SmallVector<Value, 6>& inputs,
+                 SmallVector<Attribute, 4>& newMetaArray){
+  SmallVector<SmallVector<int64_t, 4>, 4> metaArray;
+  // Tranverse the meta_data and put it into the pl_func
+  auto metaAttr= func->getAttrOfType<ArrayAttr>("meta_data");
+  if (metaAttr) {
+    for (auto rowAttr : metaAttr) {
+      if (auto rowArrayAttr = rowAttr.dyn_cast<ArrayAttr>()) {
+        SmallVector<int64_t, 4> row;
+        for (auto element : rowArrayAttr) {
+          if (auto intAttr = element.dyn_cast<IntegerAttr>()) {
+            row.push_back(intAttr.getInt());
+          }
+        }
+        metaArray.push_back(row);
+      }
+    }
+  }
+  // Add the size of the memory into argument list of plFunc
+  for(auto argInfo : metaArray){
+    auto idx = argInfo[0];
+    auto arg = func.getArgument(idx);
+    auto it = llvm::find(inputs, arg);
+    if(it == inputs.end())
+      continue;
+    SmallVector<Attribute, 4> tempAttr;
+    auto argDis = std::distance(inputs.begin(), it);
+    auto argAttr = builder.getI64IntegerAttr(argDis);
+    tempAttr.push_back(argAttr);
+    for (unsigned i=1; i < argInfo.size(); i++){
+      auto sizeArg = func.getArgument(argInfo[i]);
+      auto itSize = llvm::find(inputs, sizeArg);
+      int64_t dis;
+      if(itSize != inputs.end()){
+        dis = std::distance(inputs.begin(), itSize);
+      }else{
+        dis = inputs.size();
+        inputs.push_back(sizeArg);
+      }
+      auto attr = builder.getI64IntegerAttr(dis);
+      tempAttr.push_back(attr);
+    }
+    auto arrayAttr = builder.getArrayAttr(tempAttr);
+    newMetaArray.push_back(arrayAttr);
+  }
+}
+
 }   // namespace aries
 }   // namespace mlir

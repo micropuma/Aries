@@ -31,58 +31,6 @@ public:
   }
 
 private:
-  // This function simplifies the upperbound affine map in the form of 
-  // affine_map<()[s0] -> (s0 ceildiv 64)> to affine_map<(d0) -> (d0)>
-  void simplifyUb(OpBuilder builder, SmallVector<AffineForOp, 6> tileBand){
-    auto loc = builder.getUnknownLoc();
-    auto context = builder.getContext();
-    auto outerLoop = tileBand[0];
-    builder.setInsertionPoint(outerLoop);
-    for(auto loop : tileBand){
-      if(loop.hasConstantUpperBound())
-        continue;
-      auto ubMap = loop.getUpperBoundMap();
-      if (ubMap.getNumResults() != 1){
-        llvm::outs() << "Doesn't support affineMap with multi results\n";
-        return;
-      }
-      auto expr = dyn_cast<AffineBinaryOpExpr>(ubMap.getResult(0));
-      if (!expr || expr.getKind() != AffineExprKind::CeilDiv){
-        llvm::outs() << "Besides constant upper bound, only support ceildiv\n";
-        return;
-      }
-      // Extract the divisor and symbol
-      auto divisorExpr = dyn_cast<AffineConstantExpr>(expr.getRHS());
-      if (!divisorExpr)
-        return;
-      auto symbolExpr = dyn_cast<AffineSymbolExpr>(expr.getLHS());
-      if (!symbolExpr)
-        return;
-      unsigned symbolPos = symbolExpr.getPosition();
-      auto s0 = loop.getUpperBoundOperands()[ubMap.getNumDims()+symbolPos];
-      // Replace the AffineExprKind::CeilDiv using arith dialect
-      /* Code snippet for ceilDiv
-      auto divInt = divisorExpr.getValue();
-      auto divAttr = builder.getIndexAttr(divInt);
-      auto divVal = builder.create<arith::ConstantOp>(loc, divAttr);
-      auto ceilAttr = builder.getIndexAttr(divInt-1);
-      auto ceilVal = builder.create<arith::ConstantOp>(loc, ceilAttr);
-      auto temp = builder.create<arith::AddIOp>(loc, s0, ceilVal);
-      auto ubVal = builder.create<arith::DivUIOp>(loc, temp, divVal);
-      */
-      // Currently use floor div directly
-      auto divInt = divisorExpr.getValue();
-      auto divAttr = builder.getIndexAttr(divInt);
-      auto divVal = builder.create<arith::ConstantOp>(loc, divAttr);
-      auto ubVal = builder.create<arith::DivUIOp>(loc, s0, divVal);
-      // Replace the loop upper bound with the computed value
-      SmallVector<Value, 4> newOperands{(loop.getUpperBoundOperands())};
-      newOperands.push_back(ubVal);
-      AffineExpr ubExpr = {builder.getAffineDimExpr(newOperands.size()-1)};
-      auto newMap = AffineMap::get(newOperands.size(), 0, ubExpr, context);
-      loop.setUpperBound(newOperands, newMap);
-    }
-  }
   // Calculate the current iteration and total iteration to
   // create the conditions for controlling double buffer
   void createControl(OpBuilder builder, scf::IfOp& ifOp, arith::CmpIOp& cond1,
@@ -106,16 +54,17 @@ private:
         ub.push_back(ubVal);
       }else{
         auto ubMap = loop.getUpperBoundMap(); 
+        unsigned numDim = ubMap.getNumDims();
         if (ubMap.getNumResults() != 1){
           llvm::outs() << "Doesn't support affineMap with multi results\n";
           return;
         }
-        auto dimExpr = dyn_cast<AffineDimExpr>(ubMap.getResult(0));
-        if(!dimExpr)
+        auto SymExpr = dyn_cast<AffineSymbolExpr>(ubMap.getResult(0));
+        if(!SymExpr)
           return;
-        unsigned dimPos = dimExpr.getPosition();
-        auto d0 = loop.getUpperBoundOperands()[dimPos];
-        ub.push_back(d0);
+        unsigned symPos = SymExpr.getPosition();
+        auto s0 = loop.getUpperBoundOperands()[numDim+symPos];
+        ub.push_back(s0);
       }
     }
     // Represent current iteration using the arith dialect
@@ -332,7 +281,6 @@ private:
         return WalkResult::advance();
       SmallVector<AffineForOp, 6> tileBand;
       getPerfectlyNestedLoops(tileBand,rootLoop);
-      simplifyUb(builder, tileBand);
       auto innerloop = tileBand[tileBand.size()-1];
       if(!innerloop->hasAttr("Array_Partition"))
         return WalkResult::advance();
@@ -356,7 +304,6 @@ private:
       createControl(builder, ifOp, cond, ifOpLast, cond1, reverseBand);
       funcSplit(builder, func, ifOp, forOps, calls);
       createDoubleBuffer(builder, ifOpLast, cond, cond1, calls, reverseBand);
-      
       return WalkResult::advance();
     });
     return true;

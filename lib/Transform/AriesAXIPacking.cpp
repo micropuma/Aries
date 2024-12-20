@@ -298,8 +298,6 @@ private:
     auto typeWidth = type.getElementTypeBitWidth();
     auto newTypeWidth = typeWidth * packNum;
     auto newType = builder.getIntegerType(newTypeWidth);
-    auto indexType = builder.getIndexType();
-    auto packAttr = builder.getIntegerAttr(indexType, packNum);
     // Update innerLoop Upperbound
     for(auto loopPair : loopList){
       auto loop = loopPair.first;
@@ -347,7 +345,7 @@ private:
   // Arguments of plFunc with MemRefType will be packed and the index will be
   // returned in argList
   void mergeAXIPort (OpBuilder builder,FuncOp& plFunc, unsigned axiWidth,
-                     SmallVector<unsigned, 4>& argList){
+                     SmallVector<int64_t, 4>& argList){
     auto inTypes = SmallVector<Type,8>(plFunc.getArgumentTypes().begin(),
                                        plFunc.getArgumentTypes().end());
     auto outTypes = plFunc.getResultTypes();
@@ -386,8 +384,8 @@ private:
   }
 
   // Update the function and the corresponding argument list and newType
-  bool updatePair(CallOp call, SmallVector<unsigned, 4> argIdxs, FuncOp topFunc,
-              FuncOp func, SmallVector<std::pair<unsigned, Type>, 4>& pairVec){
+  bool updatePair(CallOp call, SmallVector<int64_t, 4> argIdxs, FuncOp topFunc,
+  FuncOp func, SmallVector<std::tuple<int64_t, Operation*, Type>, 4>& pairVec){
     auto inTypes = SmallVector<Type,8>(func.getArgumentTypes().begin(),
                                        func.getArgumentTypes().end());
     // Tranverse the args need to be updated in the callee function
@@ -397,41 +395,72 @@ private:
       // Get the argument index in the topFunc
       auto args = topFunc.getArguments();
       auto itArg = std::find(args.begin(), args.end(), operand);
-      unsigned dis;
-      if (itArg != args.end())
+      int64_t dis;
+      if (itArg != args.end()){
         dis = std::distance(args.begin(), itArg);
-      else //TODO:: Handle MemRef not included in the argument list 
-        return false;
-      auto itPair = std::find_if(pairVec.begin(), pairVec.end(),
-                                 [&](std::pair<unsigned, Type> &pair) {
-                                 return pair.first == dis;});
-      // Check if the arguments has already been recorded
-      if(itPair != pairVec.end()){
-        // If already recorded, make sure the saved type is the same
-        if(itPair->second!=typeNew)
+        auto itTuple = std::find_if(pairVec.begin(), pairVec.end(),
+                            [&](std::tuple<int64_t, Operation*, Type> &tuple){
+                            return std::get<0>(tuple) == dis;});
+        // Check if the arguments has already been recorded
+        if(itTuple != pairVec.end()){
+          // If already recorded, make sure the saved type is the same
+          if(std::get<2>(*itTuple)!=typeNew)
+            return false;
+        }else{ // Add the tuple into the Smallvector
+           std::tuple<int64_t, Operation*, Type> newTuple 
+                                                  = {dis, nullptr, typeNew};
+           pairVec.push_back(newTuple);
+        }
+      }else{
+        auto defineOp = operand.getDefiningOp();
+        if(!defineOp)
           return false;
-      }else{ // Add the pair into the Smallvector
-         std::pair<unsigned, Type> newPair = {dis, typeNew};
-         pairVec.push_back(newPair);
+        else{
+          auto itTuple = std::find_if(pairVec.begin(), pairVec.end(),
+                            [&](std::tuple<int64_t, Operation*, Type> &tuple){
+                            return std::get<1>(tuple) == defineOp;});
+          if(itTuple != pairVec.end()){
+            if(std::get<2>(*itTuple)!=typeNew)
+              return false;
+          }else{//TODO: Handle more defining operations
+             if(auto castOp = dyn_cast<CastOp>(defineOp)){
+                auto src = castOp.getSource();
+                auto it = std::find(args.begin(), args.end(), src);
+                std::tuple<int64_t, Operation*, Type> newTuple;
+                if(it == args.end()){
+                  newTuple = {-1, defineOp, typeNew};
+                }else{
+                  int64_t idx = std::distance(args.begin(), it);
+                  newTuple = {idx, defineOp, typeNew};
+                }
+                pairVec.push_back(newTuple);
+             }else{
+                llvm::outs() << "Operand of callOp is not defined by CastOp\n";
+                return false;
+             }
+          }
+        }
       }
+      
     }
     return true;             
   }
 
-  // This function collects the top functions and the modified argument lists
-  // that contains the caller function of the updated callee functions
-  bool getTopFuncList(ModuleOp mod, FuncOp func, SmallVector<unsigned,4>argIdxs,
+  // After the arguments of func.func has been updated. This function will
+  // record the arguments or defining operation of the parent function of the 
+  // caller function.
+  bool getTopFuncList(ModuleOp mod, FuncOp func, SmallVector<int64_t,4>argIdxs,
        SmallVector<std::pair<FuncOp, 
-       SmallVector<std::pair<unsigned, Type>, 4>>, 4>& topArgList){
+       SmallVector<std::tuple<int64_t, Operation*, Type>, 4>>, 4>& topArgList){
     auto calleeName = func.getName();
     auto result = mod.walk([&](CallOp call){
       auto symbolName = call.getCallee();
       if(calleeName!=symbolName)
         return WalkResult::advance();
       auto topFunc = call->getParentOfType<FuncOp>();
-      auto it = std::find_if(topArgList.begin(), topArgList.end(),
-          [&](std::pair<FuncOp, SmallVector<std::pair<unsigned, Type>, 4>> 
-              &pair) {return pair.first == topFunc;});
+      auto it = std::find_if(topArgList.begin(), topArgList.end(), [&](
+      std::pair<FuncOp, SmallVector<std::tuple<int64_t, Operation*, Type>, 4>> 
+      &pair) {return pair.first == topFunc;});
       // If the FuncOp has already been added in the List
       // then check and update the arguments that need to be updated
       if(it != topArgList.end()){
@@ -439,7 +468,7 @@ private:
         if(!updatePair(call, argIdxs, topFunc, func, pairVec))
           return WalkResult::interrupt();
       }else{ // FuncOp hasn't been put into the recording list
-        SmallVector<std::pair<unsigned, Type>, 4> pairVec;
+        SmallVector<std::tuple<int64_t, Operation*, Type>, 4> pairVec;
         if(!updatePair(call, argIdxs, topFunc, func, pairVec))
           return WalkResult::interrupt();
         topArgList.push_back(std::pair(topFunc, pairVec));
@@ -451,42 +480,62 @@ private:
     return true;
   }
   
-  void funcUpdate( OpBuilder builder, SmallVector<unsigned, 4>& argList,
-       std::pair<FuncOp, SmallVector<std::pair<unsigned, Type>, 4>> & pair){
+  void funcUpdate(OpBuilder builder,std::pair<FuncOp, SmallVector<std::tuple
+                                    <int64_t, Operation*, Type>, 4>> & pair){
+    auto loc = builder.getUnknownLoc();
     auto& func = pair.first;
     auto inTypes = SmallVector<Type,8>(func.getArgumentTypes().begin(),
                                        func.getArgumentTypes().end());
     auto outTypes = func.getResultTypes();
-    auto& argPairs = pair.second;
-    for(auto& argPair : argPairs){
-      auto idx = argPair.first;
-      auto newType = argPair.second;
-      auto arg = func.getArgument(idx);
-      inTypes[idx] = newType;
-      arg.setType(newType);
-      argList.push_back(idx);
+    auto& argTuples = pair.second;
+    for(auto& argTuple : argTuples){
+      auto idx = std::get<0>(argTuple);
+      Operation* op = std::get<1>(argTuple);
+      auto newType = std::get<2>(argTuple);
+      if(!op && idx>=0){
+        auto arg = func.getArgument(idx);
+        inTypes[idx] = newType;
+        arg.setType(newType);
+      }else{//TODO::Deal with other defining operation here
+        if(auto castOp = dyn_cast<CastOp>(op)){
+          if(idx<0){
+            llvm::outs() << "Source of castOp is not in the arg list\n";
+            return;
+          }
+          auto arg = func.getArgument(idx); 
+          auto oldType = dyn_cast<MemRefType>(arg.getType());
+          auto newMemRefType = dyn_cast<MemRefType>(newType);
+          auto shape = oldType.getShape();
+          auto rank = oldType.getRank();
+          auto width = oldType.getElementTypeBitWidth();
+          auto widthNew = newMemRefType.getElementTypeBitWidth();
+          auto eleType = newMemRefType.getElementType();
+          SmallVector<int64_t> sizesInt(shape.begin(),shape.end());
+          // Deal with dynmic shape
+          if (sizesInt[rank-1]>0)
+            sizesInt[rank-1] = sizesInt[rank-1] / (widthNew/width);
+          auto newMemType = MemRefType::get(sizesInt, eleType);
+          inTypes[idx] = newMemType;
+          arg.setType(newMemType);
+          builder.setInsertionPoint(castOp);
+          auto src = castOp.getSource();
+          auto newCast = builder.create<CastOp>(loc, newMemRefType, src);
+          castOp.getResult().replaceAllUsesWith(newCast);
+          castOp.erase();
+        }
+      }
     }
     func.setType(builder.getFunctionType(inTypes, outTypes));
   }
 
   // According to the topArgList, update the function and argument type 
   bool topFuncUpdate(ModuleOp mod, OpBuilder builder, 
-                    SmallVector<std::pair<FuncOp, 
-                    SmallVector<std::pair<unsigned, Type>, 4>>, 4>& topArgList){
+                    SmallVector<std::pair<FuncOp, SmallVector<std::tuple<
+                    int64_t, Operation*, Type>, 4>>, 4>& topArgList){
     SmallVector<std::pair<FuncOp, 
-    SmallVector<std::pair<unsigned, Type>, 4>>, 4> ArgList;
+    SmallVector<std::tuple<int64_t, Operation*, Type>, 4>>, 4> ArgList;
     for (auto& pair: topArgList){
-      SmallVector<unsigned, 4> argList;
-      funcUpdate(builder, argList, pair);
-      // Update the caller function and it's parent function of func
-      // TODO:: This can be generalized by using an recursive function
-      auto func = pair.first;
-      if(!getTopFuncList(mod, func, argList, ArgList))
-        return false;
-    }
-    for (auto& pair: ArgList){
-      SmallVector<unsigned, 4> argList;
-      funcUpdate(builder, argList, pair);
+      funcUpdate(builder, pair);
     }
     return true;
   }
@@ -497,11 +546,11 @@ private:
     // Stores function, the corresponding arguments need to be updated
     // and the newMemRefType
     SmallVector<std::pair<FuncOp, 
-    SmallVector<std::pair<unsigned, Type>, 4>>, 4> topArgList;
+    SmallVector<std::tuple<int64_t, Operation*, Type>, 4>>, 4> topArgList;
     auto result = mod.walk([&](FuncOp func){
       if(!func->hasAttr("adf.pl"))
         return WalkResult::advance();
-      SmallVector<unsigned, 4> argList;
+      SmallVector<int64_t, 4> argList;
       mergeAXIPort(builder, func, axiWidth, argList);
       if(!getTopFuncList(mod, func, argList, topArgList))
         return WalkResult::interrupt();

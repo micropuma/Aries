@@ -86,6 +86,8 @@ private:
       if(it != liveins.end())
         inputs.push_back(arg);
     }
+    SmallVector<Attribute, 4> newMetaArray;
+    addMetaData(builder, adfFunc, inputs, newMetaArray);
     for(auto livein : liveins){
       auto it = llvm::find(inputs, livein);
       if(it == inputs.end())
@@ -98,6 +100,10 @@ private:
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
     plFunc = builder.create<FuncOp>(builder.getUnknownLoc(),funcName,funcType);
     plFunc->setAttr("adf.pl",builder.getBoolAttr(true));
+    if(!newMetaArray.empty()){
+      auto arrayAttr = builder.getArrayAttr(newMetaArray);
+      plFunc->setAttr("meta_data", arrayAttr);
+    }
     auto destBlock = plFunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
