@@ -48,52 +48,13 @@ private:
     return true;
   }
 
-  // This function create the memref size of one dim
-  // TODO: For dynamic size, now assumes that it's determined by one argument
-  bool getMemSize(Value operand, Value &memSize, Region::BlockArgListType args){
-    auto loop = getForInductionVarOwner(operand);
-    if(!loop || loop.hasConstantUpperBound())
-      return true;
-    // Get original type and packing number
-    auto ubMap = loop.getUpperBoundMap(); 
-    if (ubMap.getNumResults() != 1){
-      llvm::outs() << "Upperbound map has more than one result\n";
-      return false;
-    }
-    auto symExpr = dyn_cast<AffineSymbolExpr>(ubMap.getResult(0));
-    if(!symExpr){
-      llvm::outs() << "Result 0 is not a symbol expr\n";
-      return false;
-    }
-    // TODO:: Now assumes that the upperbound is either in the args or
-    // calculated by divui
-    unsigned symPos = symExpr.getPosition();
-    auto s0 = loop.getUpperBoundOperands()[symPos];
-    auto defineOp = s0.getDefiningOp();
-    Value arg;
-    if(!defineOp){
-      arg = s0;
-    }else{
-      auto divOp = dyn_cast<arith::DivUIOp>(defineOp);
-      if(!divOp){
-        llvm::outs() << "The upperbound is not defined by DivUIOp";
-        return false;
-      }
-      arg = divOp.getLhs();
-    }
-    auto it = llvm::find(args, arg);
-    if(it ==args.end()){
-      llvm::outs() << "Can't find the dynmic memory size";
-      return false;
-    }
-    memSize = arg;
-    return true;
-  }
-
-  bool memUpdate(OpBuilder builder, AffineLoadOp load, AffineStoreOp store,
-                 unsigned packNum, SmallVector<int64_t, 4> memSizes,
-                 SmallVector<BlockArgument, 8> args){
+  bool memUpdate(OpBuilder builder, Block& entryBlock, AffineLoadOp load, 
+                 AffineStoreOp store, unsigned packNum, 
+                 SmallVector<int64_t, 4> memSizes,
+                 SmallVector<BlockArgument, 8> args,
+                 SmallVector<SmallVector<int64_t, 4>, 4> metaData){
     auto loc = builder.getUnknownLoc();
+    Operation* newOp;
     Value mem;
     SmallVector<Value, 4> operands;
     AffineMap map;
@@ -101,12 +62,12 @@ private:
       mem = load.getMemRef();
       operands = load.getMapOperands();
       map = load.getAffineMap();
-      builder.setInsertionPoint(load);
+      newOp = load;
     }else if(store){
       mem = store.getMemRef();
       operands = store.getMapOperands();
       map = store.getAffineMap();
-      builder.setInsertionPoint(store);
+      newOp = store;
     }else{
       return false;
     }
@@ -120,50 +81,67 @@ private:
     }else{
       // Serialize the memory access by calculating the new mem access
       // using arith dialect
-      Value pVal;
+      arith::ConstantOp consOp;
       if(packNum!=1){
         auto pAttr = builder.getIndexAttr(packNum);
-        pVal = builder.create<arith::ConstantOp>(loc, pAttr);
+        builder.setInsertionPointToStart(&entryBlock);
+        consOp = builder.create<arith::ConstantOp>(loc, pAttr);
       }
       Value addL1; //Left op to add different memory dims
       SmallVector<Value, 4> memVals;
-      for(int i = numRes-1; i >= 0; i--){
-        auto res = map.getResult(i);
+      for(int dimIdx = numRes-1; dimIdx >= 0; dimIdx--){
+        auto res = map.getResult(dimIdx);
         // flattened form [dims, symbols, locals, constant]
         llvm::SmallVector<int64_t> flatExpr;
         if (failed(getFlattenedAffineExpr(res, numDim, numSym,&flatExpr)))
           return false;
-        auto memInt = memSizes[i];
+        auto memInt = memSizes[dimIdx];
         // Save the constant mem size
         if(memInt>0){
           auto sizeAttr = builder.getIndexAttr(memInt);
+          builder.setInsertionPointToStart(&entryBlock);
           auto sizeVal = builder.create<arith::ConstantOp>(loc, sizeAttr);
           memVals.push_back(sizeVal);
+        }else if(dimIdx!=0){
+          if(metaData.empty())
+            return false;
+          auto it = llvm::find(args, mem);
+          if(it == args.end())
+            return false;
+          int64_t dis = std::distance(args.begin(), it);
+          bool flag =false;
+          for (auto innerVec : metaData) {
+            if (!innerVec.empty() && innerVec[0] == dis) {
+              int64_t sizeIdx = innerVec[dimIdx];
+              auto sizeVal = args[sizeIdx];
+              Value sizeNew;
+              if(dimIdx == numRes-1 && consOp){
+                auto pVal = consOp.getResult();
+                builder.setInsertionPointAfter(consOp);
+                auto divOp 
+                     = builder.create<arith::DivUIOp>(loc, sizeVal, pVal);
+                sizeNew = divOp.getResult();
+              }else{
+                sizeNew = sizeVal;
+              }
+              memVals.push_back(sizeNew);  
+              flag = true;
+              break;
+            }
+          }
+          // If the memref argument with dynamic size is not annotated
+          if(!flag){
+            llvm::outs() << "Find dynamic memref arguments not annotated\n";
+            return false;
+          }
         }
-        Value memSize;
+        builder.setInsertionPoint(newOp);
         Value addL0; //Left op to add one memory dim
         for(unsigned dim = 0; dim < numDim; dim++){
           auto stride = flatExpr[dim];
           auto operand = operands[dim];
           if(stride==0)
             continue;
-          if(memInt<0 && !memSize){
-            if(!getMemSize(operand, memSize, args)){
-              llvm::outs() << "Can't get memref size\n";
-              return false;
-            }
-            if(memSize){
-              Value sizeNew;
-              if(i == numRes-1 && pVal){
-                auto divOp 
-                     = builder.create<arith::DivUIOp>(loc, memSize, pVal);
-                sizeNew = divOp.getResult();
-              }else{
-                sizeNew = memSize;
-              }
-              memVals.push_back(sizeNew);
-            }
-          }
           Value mulRes;
           if(stride==1){
             mulRes = operand;
@@ -189,7 +167,7 @@ private:
           addRes1 = addL0;
         }else{
           auto mulL1 = addL0;
-          for(unsigned idx=0; idx < memVals.size()-1; idx++){
+          for(int idx=0; idx < (numRes-1-dimIdx); idx++){
             auto mulR1 = memVals[idx];
             auto mul1 = builder.create<arith::MulIOp>(loc, mulL1, mulR1);
             mulL1 = mul1.getResult();
@@ -212,6 +190,22 @@ private:
     return true;
   }
 
+  void castUpdate(OpBuilder builder, MemRefType newType, Value arg){
+    auto loc = builder.getUnknownLoc();
+    for(auto use : arg.getUsers()){
+      if (auto castOp = dyn_cast<CastOp>(use)) {
+        auto res = castOp.getResult();
+        auto resType = dyn_cast<MemRefType>(res.getType());
+        if(resType && !resType.hasStaticShape()){
+          builder.setInsertionPoint(castOp);
+          auto newCast = builder.create<CastOp>(loc, newType, arg);
+          castOp.getResult().replaceAllUsesWith(newCast);
+          castOp.erase();
+        }
+      }
+    }
+  }
+
   // This function will update the arguments with dynamic shape in adf.pl funcs
   bool typeUpdate(OpBuilder builder, FuncOp func){
     // Traverse the arguments and replace the ones with dynamic shape
@@ -222,6 +216,7 @@ private:
                                              func.getArguments().end());
     auto idxAttrs = func->getAttrOfType<ArrayAttr>("mem_idx");
     auto typeAttrs = func->getAttrOfType<ArrayAttr>("mem_type");
+    auto& entryBlock = func.getBody().front();
     SmallVector<int64_t, 4> idxs;
     if(idxAttrs){
       for (auto attr : idxAttrs) {
@@ -230,15 +225,45 @@ private:
         }
       }
     }
+    SmallVector<SmallVector<int64_t, 4>, 4> metaData;
+    // Tranverse the meta_data and put it into the pl_func
+    auto metaAttr= func->getAttrOfType<ArrayAttr>("meta_data");
+    if (metaAttr) {
+      for (auto rowAttr : metaAttr) {
+        if (auto rowArrayAttr = rowAttr.dyn_cast<ArrayAttr>()) {
+          SmallVector<int64_t, 4> row;
+          for (auto element : rowArrayAttr) {
+            if (auto intAttr = element.dyn_cast<IntegerAttr>()) {
+              row.push_back(intAttr.getInt());
+            }
+          }
+          metaData.push_back(row);
+        }
+      }
+    }
     for (unsigned i=0; i < func.getNumArguments(); i++){
       auto arg = args[i];
       auto memType = dyn_cast<MemRefType>(arg.getType());
-      if(!memType || memType.hasStaticShape())
+      if(!memType)
         continue;
+      auto memAttr = memType.getMemorySpace();
+      if(memAttr){
+        auto IntAttr = dyn_cast<IntegerAttr>(memAttr);
+        if(!IntAttr || IntAttr.getInt()!=(int)MemorySpace::L3)
+          continue;
+      }
       SmallVector<int64_t, 4> memSizes(memType.getShape());
       auto eleType = memType.getElementType();
       auto width = eleType.getIntOrFloatBitWidth();
       auto newType = MemRefType::get({ShapedType::kDynamic},eleType);
+      // Handle CastOp
+      if(memType.hasStaticShape()){
+        auto newArgType = MemRefType::get({memType.getNumElements()},eleType); 
+        inTypes[i] = newArgType;
+        arg.setType(newArgType); 
+        castUpdate(builder, newType, arg);
+        continue;
+      }
       inTypes[i] = newType;
       arg.setType(newType);
       unsigned packNum;
@@ -254,13 +279,16 @@ private:
         }
         else if(auto load = dyn_cast<AffineLoadOp>(use)){
           AffineStoreOp store;
-          if(!memUpdate(builder, load, store, packNum, memSizes, args))
+          if(!memUpdate(builder, entryBlock, load, store, packNum, memSizes, 
+             args, metaData)){
             return false;
-          
+          }
         }else if(auto store = dyn_cast<AffineStoreOp>(use)){
           AffineLoadOp load;
-          if(!memUpdate(builder, load, store, packNum, memSizes, args))
+          if(!memUpdate(builder, entryBlock, load, store, packNum, memSizes, 
+             args, metaData)){
             return false;
+          }
         }else{
           llvm::outs() << "Argument with dynamic size is used by other ops\n";
           return false;
