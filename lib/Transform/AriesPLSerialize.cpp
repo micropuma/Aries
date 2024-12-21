@@ -190,17 +190,26 @@ private:
     return true;
   }
 
-  void castUpdate(OpBuilder builder, MemRefType newType, Value arg){
+  void castUpdate(OpBuilder builder, MemRefType newType, Value arg, bool flag){
     auto loc = builder.getUnknownLoc();
     for(auto use : arg.getUsers()){
       if (auto castOp = dyn_cast<CastOp>(use)) {
         auto res = castOp.getResult();
         auto resType = dyn_cast<MemRefType>(res.getType());
-        if(resType && !resType.hasStaticShape()){
-          builder.setInsertionPoint(castOp);
-          auto newCast = builder.create<CastOp>(loc, newType, arg);
-          castOp.getResult().replaceAllUsesWith(newCast);
-          castOp.erase();
+        if(flag){
+          if(resType && !resType.hasStaticShape()){
+            res.replaceAllUsesWith(arg);
+            castOp.erase();
+            break;
+          }
+        }else{
+          if(resType && !resType.hasStaticShape()){
+            builder.setInsertionPoint(castOp);
+            auto newCast = builder.create<CastOp>(loc, newType, arg);
+            res.replaceAllUsesWith(newCast);
+            castOp.erase();
+            break;
+          }
         }
       }
     }
@@ -258,10 +267,19 @@ private:
       auto newType = MemRefType::get({ShapedType::kDynamic},eleType);
       // Handle CastOp
       if(memType.hasStaticShape()){
-        auto newArgType = MemRefType::get({memType.getNumElements()},eleType); 
+        MemRefType newArgType;
+        bool top_flag;
+        auto numElem = memType.getNumElements();
+        if(!func->hasAttr("top_func")){
+          newArgType = MemRefType::get({numElem},eleType);
+          top_flag =false;
+        }else{
+          newArgType = newType;
+          top_flag =true;
+        }
         inTypes[i] = newArgType;
         arg.setType(newArgType); 
-        castUpdate(builder, newType, arg);
+        castUpdate(builder, newType, arg, top_flag);
         continue;
       }
       inTypes[i] = newType;

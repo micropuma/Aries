@@ -24,8 +24,8 @@ SmallString<8> ADFEmitterBase::addName(Value val, bool isPtr,
   assert(!isDeclared(val) && "has been declared before.");
 
   SmallString<8> valName;
-  if (isPtr)
-    valName += "*";
+  // if (isPtr)
+  //   valName += "*";
 
   if (name != "") {
     if (state.nameConflictCnt.count(name) > 0) {
@@ -131,8 +131,8 @@ static Value getCalleeArg(Value val, CallOp& call){
   auto gmio = calleeFuncOp.getArgument(index_final);
   return gmio;
 }
-static bool BIT_FLAG = false; 
-static SmallString<16> getTypeName(Type valType) {
+SmallString<16> ADFEmitterBase::getTypeName(Type valType, bool isPtr,
+                                            bool BIT_FLAG) {
   bool PLIO_FLAG = false;
   if (auto memType = dyn_cast<MemRefType>(valType)){
     auto attr = memType.getMemorySpace();
@@ -144,83 +144,86 @@ static SmallString<16> getTypeName(Type valType) {
   if (auto arrayType = dyn_cast<ShapedType>(valType))
     valType = arrayType.getElementType();
 
+  SmallString<16> typeName;
+
   // Handle float types.
   if (valType.isa<Float32Type>()){
     if (PLIO_FLAG)
-      return SmallString<16>("ap_axiu<32, 0, 0, 0>");
+      typeName = SmallString<16>("ap_axiu<32, 0, 0, 0>");
     else
-      return SmallString<16>("float");
+      typeName = SmallString<16>("float");
   }else if (valType.isa<Float64Type>()){
     if (PLIO_FLAG)
-      return SmallString<16>("ap_axiu<64, 0, 0, 0>");
+      typeName = SmallString<16>("ap_axiu<64, 0, 0, 0>");
     else
-      return SmallString<16>("double");
+      typeName = SmallString<16>("double");
   }
-
   // Handle integer types.
   else if (valType.isa<IndexType>())
-    return SmallString<16>("int");
+    typeName = SmallString<16>("int");
   else if (auto intType = dyn_cast<IntegerType>(valType)) {
     if (intType.getWidth() == 1) {
-      return SmallString<16>("bool");
+      typeName = SmallString<16>("bool");
     } else {
       std::string signedness = "";
       if (intType.getSignedness() == IntegerType::SignednessSemantics::Unsigned)
         signedness = "u";
       if(PLIO_FLAG){
-        return SmallString<16>("ap_axiu<" + std::to_string(intType.getWidth()) 
-                                + ", 0 ,0 ,0>");
-      }
-      if(!BIT_FLAG){
+        auto width = intType.getWidth();
+        typeName = SmallString<16>("ap_axiu<" + std::to_string(width) 
+                                    + ", 0 ,0 ,0>");
+      }else if(!BIT_FLAG){
         switch (intType.getWidth()) {
-        case 8:
-        case 16:
-        case 32:
-        case 64:
-          return SmallString<16>(signedness + "int" +
-                                 std::to_string(intType.getWidth()) + "_t");
-        default:
-          return SmallString<16>("ap_" + signedness + "int<" +
-                                 std::to_string(intType.getWidth()) + ">");
+          case 8:
+          case 16:
+          case 32:
+          case 64:
+            typeName = SmallString<16>(signedness + "int" +
+                                   std::to_string(intType.getWidth()) + "_t");
+            break;
+          default:
+            typeName = SmallString<16>("ap_" + signedness + "int<" +
+                                   std::to_string(intType.getWidth()) + ">");
         }
       }else{
-        return SmallString<16>("ap_" + signedness + "int<" +
+        typeName = SmallString<16>("ap_" + signedness + "int<" +
                                std::to_string(intType.getWidth()) + ">");
       }
     }
   }
-
   else if (auto plioType = dyn_cast<PLIOType>(valType)){
     auto Dir = plioType.getDir();
     if(Dir==PortDir::In)
-      return SmallString<16>("adf::input_plio");
+      typeName = SmallString<16>("adf::input_plio");
     else if(Dir==PortDir::Out)
-      return SmallString<16>("adf::output_plio");
+      typeName = SmallString<16>("adf::output_plio");
     else
       assert("PLIO can't be an inout port.");
   }else if (auto gmioType = dyn_cast<GMIOType>(valType)){
     auto Dir = gmioType.getDir();
     if(Dir==PortDir::In)
-      return SmallString<16>("adf::input_gmio");
+      typeName = SmallString<16>("adf::input_gmio");
     else if(Dir==PortDir::Out)
-      return SmallString<16>("adf::output_gmio");
+      typeName = SmallString<16>("adf::output_gmio");
     else
       assert("GMIO can't be an inout port.");
   }else if (auto portType = dyn_cast<PortType>(valType)){
     auto Dir = portType.getDir();
     if(Dir==PortDir::In)
-      return SmallString<16>("adf::input_port");
+      typeName = SmallString<16>("adf::input_port");
     else if(Dir==PortDir::Out)
-      return SmallString<16>("adf::output_port");
+      typeName = SmallString<16>("adf::output_port");
     else
-      return SmallString<16>("adf::inout_port");
+      typeName = SmallString<16>("adf::inout_port");
   }else{
     assert("Dectect data type not supported.");
   }
-  return SmallString<16>();
+  if(isPtr)
+    typeName += "*";
+  return typeName;
 }
 
-static SmallString<16> getTypeName(CallOp call) {
+SmallString<16> ADFEmitterBase::getTypeName(CallOp call) {
   if(call->hasAttr("adf.kernel")){
     return SmallString<16>("adf::kernel");
   }else if(call->hasAttr("adf.cell")){
@@ -231,10 +234,10 @@ static SmallString<16> getTypeName(CallOp call) {
   return SmallString<16>();
 }
 
-
-static SmallString<16> getTypeName(Value val) {
+SmallString<16> ADFEmitterBase::getTypeName(Value val, bool isPtr, 
+                                            bool BIT_FLAG) {
   auto valType = val.getType();
-  return getTypeName(valType);
+  return getTypeName(valType, isPtr, BIT_FLAG);
 }
 
 void fixUnsignedType(Value &result, bool isUnsigned) {
@@ -349,6 +352,7 @@ public:
   void emitStore(memref::StoreOp op);
   void emitDealloc(memref::DeallocOp op);
   void emitSubView(memref::SubViewOp op);
+  void emitCastOp(memref::CastOp op);
 
   /// Standard expression emitters.
   void emitBinary(Operation *op, const char *syntax);
@@ -392,7 +396,7 @@ public:
 private:
   /// C++ component emitters.
   void emitValue(Value val, unsigned rank = 0, bool isPtr = false,
-                 std::string name = "");
+                 bool BIT_FLAG = false, std::string name = "");
   void emitArrayDecl(Value array, bool isFunc = false, std::string name = "");
   unsigned emitNestedLoopHead(Value val);
   void emitNestedLoopTail(unsigned rank);
@@ -435,7 +439,7 @@ public:
   }
   void visitCeilDivExpr(AffineBinaryOpExpr expr) {
     // This is super inefficient.
-    os << "(";
+    os << "((";
     visit(expr.getLHS());
     os << " + ";
     visit(expr.getRHS());
@@ -577,6 +581,7 @@ public:
   bool visitOp(memref::StoreOp op) { return emitter.emitStore(op), true; }
   bool visitOp(memref::DeallocOp op) { return emitter.emitDealloc(op), true; }
   bool visitOp(memref::SubViewOp op) { return emitter.emitSubView(op), true; }
+  bool visitOp(memref::CastOp op) { return true; }
 
 private:
   ModuleEmitter &emitter;
@@ -974,9 +979,7 @@ void ModuleEmitter::emitIntToAP(adf::IntToAPInt op){
   indent();
   auto val = op.getInput();
   auto result = op.getResult();
-  BIT_FLAG = true;
-  emitValue(result);
-  BIT_FLAG = false;
+  emitValue(result, /*rank=*/0, /*isPtr=*/false, /*BIT_FLAG=*/true);
   os << " = ";
   emitValue(val);
   os << ";\n";
@@ -1187,7 +1190,7 @@ void ModuleEmitter::emitAffineFor(AffineForOp op) {
   if (op->hasAttr("loop_name")) {
     os << getTypeName(iterVar) << " ";
   }
-  emitValue(iterVar, 0, false, loop_name);
+  emitValue(iterVar, 0, false, false, loop_name);
   os << " = ";
   auto lowerMap = op.getLowerBoundMap();
   AffineExprEmitter lowerEmitter(state, lowerMap.getNumDims(),
@@ -1207,7 +1210,7 @@ void ModuleEmitter::emitAffineFor(AffineForOp op) {
   os << "; ";
 
   // Emit upper bound.
-  emitValue(iterVar, 0, false, loop_name);
+  emitValue(iterVar, 0, false, false, loop_name);
   os << " < ";
   auto upperMap = op.getUpperBoundMap();
   AffineExprEmitter upperEmitter(state, upperMap.getNumDims(),
@@ -1227,7 +1230,7 @@ void ModuleEmitter::emitAffineFor(AffineForOp op) {
   os << "; ";
 
   // Emit increase step.
-  emitValue(iterVar, 0, false, loop_name);
+  emitValue(iterVar, 0, false, false, loop_name);
   if (op.getStep() == 1)
     os << "++) {";
   else
@@ -1917,8 +1920,8 @@ template <typename CastOpType> void ModuleEmitter::emitCast(CastOpType op) {
 }
 
 /// C++ component emitters.
-void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
-                              std::string name) {
+void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr, 
+                              bool BIT_FLAG, std::string name) {
   assert(!(rank && isPtr) && "should be either an array or a pointer.");
 
   // Value has been declared before or is a constant number.
@@ -1929,7 +1932,7 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
     return;
   }
 
-  os << getTypeName(val) << " ";
+  os << getTypeName(val, isPtr, BIT_FLAG) << " ";
 
   if (name == "") {
     // Add the new value to nameTable and emit its name.
@@ -1945,7 +1948,7 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
   auto arrayType = array.getType().cast<ShapedType>();
-  if (arrayType.hasStaticShape()) {
+  if (arrayType && arrayType.hasStaticShape()) {
     auto memref = dyn_cast<MemRefType>(array.getType());
     if (memref) {
       auto attr = memref.getMemorySpace();
@@ -1968,12 +1971,12 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
         
         // Add original array declaration as comment
         os << " /* ";
-        emitValue(array, 0, false, name);
+        emitValue(array, 0, false, false, name);
         for (auto &shape : arrayType.getShape())
           os << "[" << shape << "]";
         os << " */";
       } else {
-        emitValue(array, 0, false, name);
+        emitValue(array, 0, false, false, name);
         if (arrayType.getShape().size() == 1 && arrayType.getShape()[0] == 1) {
           // do nothing;
         } else {
@@ -1982,10 +1985,10 @@ void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
         }
       }
     } else { // tensor
-      emitValue(array, 0, false, name);
+      emitValue(array, 0, false, false, name);
     }
   } else
-    emitValue(array, /*rank=*/0, /*isPtr=*/true, name);
+    emitValue(array, /*rank=*/0, /*isPtr=*/true, false, name);
 }
 
 unsigned ModuleEmitter::emitNestedLoopHead(Value val) {

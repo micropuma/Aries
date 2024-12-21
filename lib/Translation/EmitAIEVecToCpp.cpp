@@ -90,6 +90,9 @@ struct CppEmitter {
   /// fail, returning a value-less optional string. stdintType is true when the
   /// type is from stdint.h, and isAcc is true if we want to generate a name
   /// for a vector type that should be stored in an accumulator.
+  /// vitis is true when generating the buffer and vector APIs
+  /// enres is true to set the __restrict key words
+  /// direction is to set the direction of the buffer interface
   std::optional<std::string> genCppTypeName(Type type, bool stdintType = true,
                                             bool isAcc = false, 
                                             bool vitis = false,

@@ -52,7 +52,8 @@ public:
 
             // Memref statements.
             memref::AllocOp, memref::AllocaOp, memref::LoadOp, memref::StoreOp,
-            memref::DeallocOp, memref::CopyOp, memref::SubViewOp,
+            memref::DeallocOp, memref::CopyOp, memref::SubViewOp, 
+            memref::CastOp,
 
             // Unary expressions.
             math::AbsIOp, math::AbsFOp, math::CeilOp, math::CosOp, math::SinOp,
@@ -174,6 +175,7 @@ public:
   HANDLE(memref::DeallocOp);
   HANDLE(memref::CopyOp);
   HANDLE(memref::SubViewOp);
+  HANDLE(memref::CastOp);
 
   // Unary expressions.
   HANDLE(math::AbsIOp);
