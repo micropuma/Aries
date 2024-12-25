@@ -74,6 +74,16 @@ public:
 
   SmallString<16> getDMAAccess(adf::DmaOp op, unsigned rank, 
                                bool isSrc, bool dir);
+  
+  SmallString<16> getTypeName(Type valType, bool isPtr = false,
+                              bool BIT_FLAG = false);
+  
+  SmallString<16> getTypeName(func::CallOp call);
+
+  SmallString<16> getTypeName(Value val, bool isPtr = false, 
+                              bool BIT_FLAG = false);
+
+
 
   bool isDeclared(Value val) {
     if (getName(val).empty()) {

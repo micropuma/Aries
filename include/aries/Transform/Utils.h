@@ -60,6 +60,9 @@ bool topFind(ModuleOp mod, FuncOp& topFunc, StringRef topFuncName);
 // Find the callee function called in the topFunc
 bool calleeFind(ModuleOp mod, FuncOp topFunc, FuncOp &calleeFuncOp);
 
+void addMetaData(OpBuilder builder, FuncOp func, SmallVector<Value, 6>& inputs,
+                 SmallVector<Attribute, 4>& newMetaArray);
+
 }   // namespace aries
 }   // namespace mlir
 

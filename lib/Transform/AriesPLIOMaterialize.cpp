@@ -86,6 +86,8 @@ private:
       if(it != liveins.end())
         inputs.push_back(arg);
     }
+    SmallVector<Attribute, 4> newMetaArray;
+    addMetaData(builder, adfFunc, inputs, newMetaArray);
     for(auto livein : liveins){
       auto it = llvm::find(inputs, livein);
       if(it == inputs.end())
@@ -98,6 +100,10 @@ private:
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
     plFunc = builder.create<FuncOp>(builder.getUnknownLoc(),funcName,funcType);
     plFunc->setAttr("adf.pl",builder.getBoolAttr(true));
+    if(!newMetaArray.empty()){
+      auto arrayAttr = builder.getArrayAttr(newMetaArray);
+      plFunc->setAttr("meta_data", arrayAttr);
+    }
     auto destBlock = plFunc.addEntryBlock();
     builder.setInsertionPointToEnd(destBlock);
     auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
@@ -487,23 +493,25 @@ private:
       // Create dma op to load data from external mem to L2 buffer
       // Replace IOPush: Send data from L2 buffer to L1 buffer
       builder.setInsertionPoint(newInnerDMAYiled);
-      builder.create<DmaOp>(loc, src,      offsets,      sizes,      strides,
-                             allocOp, localOffsets, localSizes, localStrides);
+      auto dmaOp = builder.create<DmaOp>(loc, src,      offsets,      sizes,      strides,
+                            allocOp, localOffsets, localSizes, localStrides);
+      auto attr = iopushOp->getAttr("type");
+      dmaOp->setAttr("type", attr);
       builder.setInsertionPoint(newInnerIOYiled);
       auto pushOp = builder.create<IOPushOp>(loc, allocOp, IOOffsets, 
                                              localSizes, localStrides, dst);
-      auto attr = iopushOp->getAttr("type");
       pushOp->setAttr("type", attr);
     }else{
       // Create dma op to store data from L2 buffer to external mem
       // Replace IOPop: Receive data from L1 buffer to L2 buffer
       builder.setInsertionPoint(newInnerDMAYiled);
-      builder.create<DmaOp>(loc,allocOp, localOffsets, localSizes, localStrides,
-                                dst,     offsets,      sizes,      strides);
+      auto dmaOp = builder.create<DmaOp>(loc,allocOp, localOffsets, localSizes, 
+                                  localStrides, dst, offsets, sizes, strides);
+      auto attr = iopopOp->getAttr("type");
+      dmaOp->setAttr("type", attr);
       builder.setInsertionPoint(newInnerIOYiled);
       auto popOp = builder.create<IOPopOp>(loc, src, allocOp, 
                                            IOOffsets, localSizes, localStrides);
-      auto attr = iopopOp->getAttr("type");
       popOp->setAttr("type", attr);
       // check if there is output buffer reuse and set an Attr
       if (loopIndices.size()!=band.size())
@@ -658,7 +666,6 @@ private:
     if(iopush){
       auto loadOp = builder.create<AffineLoadOp>(loc, src, newApplyopIOs);
       builder.create<IOWriteOp>(loc, loadOp, dst);
-      iopushOp.erase();
     }else{
       auto result = builder.create<IOReadOp>(loc, elementType, src);
       if(iopopOp->hasAttr("reduction")){
@@ -712,16 +719,17 @@ private:
       else{
         builder.create<AffineStoreOp>(loc, result, dst, newApplyopIOs);
       }
-      iopopOp.erase();
     }
     return WalkResult::advance();
   }
 
   // Convert adf.dma that moves data between two memrefs to affine load&store
-  WalkResult ConvertDMAToAffine(OpBuilder builder, Operation* op){
+  WalkResult ConvertDMAToAffine(OpBuilder builder, FuncOp plFunc, DmaOp dmaOp,
+                                SmallVector<unsigned, 4>& argIdxs,
+                                SmallVector<Attribute, 4>& argAttrs){
     auto loc = builder.getUnknownLoc();
     auto context = builder.getContext();
-    auto dmaOp = dyn_cast<DmaOp>(op);
+    auto typeAttr = dmaOp->getAttr("type");
     auto src = dmaOp.getSrc();
     auto srcType = dyn_cast<MemRefType>(src.getType());
     auto dst = dmaOp.getDst();
@@ -795,43 +803,87 @@ private:
         return WalkResult::interrupt();
       auto strideAttr = dyn_cast<IntegerAttr>(constantStride.getValue());
       auto StrideInt = strideAttr.getInt();
-      auto map = AffineMap::get(2, 0, d0 * StrideInt + d1, context);
+      auto mapNew = AffineMap::get(2, 0, d0 * StrideInt + d1, context);
       auto var = newIOLoop.getInductionVar();
       auto offset = L3Offsets[i];
       applyOperands.push_back(var);
       applyOperands.push_back(offset);
       builder.setInsertionPoint(newInnerDMAYiled);
       auto newApplyopL3DMA 
-           = builder.create<AffineApplyOp>(loc, map, applyOperands);
+           = builder.create<AffineApplyOp>(loc, mapNew, applyOperands);
       newApplyopL3DMAs.push_back(newApplyopL3DMA);
     }
     if(dmaLoad){
       auto loadOp = builder.create<AffineLoadOp>(loc, src, newApplyopL3DMAs);
       builder.create<AffineStoreOp>(loc, loadOp, dst, newApplyopL2DMAs);
+      // Record the original data type as the attributes in the plFunc
+      for(unsigned idx=0; idx < plFunc.getNumArguments(); idx++){
+        auto arg = plFunc.getArgument(idx);
+        if(arg != src)
+          continue;
+        auto it = llvm::find(argIdxs, idx);
+        if(it != argIdxs.end()){
+          unsigned dis = std::distance(argIdxs.begin(),it);
+          auto preType = argAttrs[dis];
+          if(preType != typeAttr)
+            return WalkResult::interrupt();
+        }else{
+          argIdxs.push_back(idx);
+          argAttrs.push_back(typeAttr);
+        }
+        break;
+      }
     }else{
       auto loadOp = builder.create<AffineLoadOp>(loc, src, newApplyopL2DMAs);
       builder.create<AffineStoreOp>(loc, loadOp, dst, newApplyopL3DMAs); 
+      // Record the original data type as the attributes in the plFunc
+      for(unsigned idx=0; idx < plFunc.getNumArguments(); idx++){
+        auto arg = plFunc.getArgument(idx);
+        if(arg != dst)
+          continue;
+        auto it = llvm::find(argIdxs, idx);
+        if(it != argIdxs.end()){
+          unsigned dis = std::distance(argIdxs.begin(),it);
+          auto preType = argAttrs[dis];
+          if(preType != typeAttr)
+            return WalkResult::interrupt();
+        }else{
+          argIdxs.push_back(idx);
+          argAttrs.push_back(typeAttr);
+        }
+        break;
+      }
     }
-    dmaOp.erase();
     return WalkResult::advance();
   }
 
   // Tranverse the IOPushOps/IOPopOps and convert them to affine load/store
-  bool ConvertIODMAToAffine(OpBuilder builder, AffineForOp plForOp){
+  bool ConvertIODMAToAffine(OpBuilder builder, FuncOp plFunc, 
+                            AffineForOp plForOp){
+    SmallVector<unsigned, 4> argIdxs;
+    SmallVector<Attribute, 4> argAttrs;
     auto flag = plForOp.walk([&](Operation* op){
       WalkResult result;
       if(dyn_cast<IOPushOp>(op))
         result = ConvertIOToAffine(builder, op, true);
       else if(dyn_cast<IOPopOp>(op))
         result = ConvertIOToAffine(builder, op, false);
-      else if(dyn_cast<DmaOp>(op))
-        result = ConvertDMAToAffine(builder, op);
+      else if(auto dmaOp = dyn_cast<DmaOp>(op))
+        result = ConvertDMAToAffine(builder, plFunc, dmaOp, argIdxs, argAttrs);
       else
         return WalkResult::advance();
+      op->erase();
       return result;
     });
     if (flag == WalkResult::interrupt()) 
       return false;
+    SmallVector<Attribute, 4> idxAttrs;
+    for (int idx : argIdxs) 
+      idxAttrs.push_back(builder.getI32IntegerAttr(idx));
+    auto arrayAttr = builder.getArrayAttr(idxAttrs);
+    plFunc->setAttr("mem_idx", arrayAttr);
+    auto arrayTypeAttr = builder.getArrayAttr(argAttrs);
+    plFunc->setAttr("mem_type", arrayTypeAttr);
     return true;
   }
 
@@ -1308,7 +1360,7 @@ private:
 
   // Allocate L2 memory & add data movement
   bool PLDataMovement(OpBuilder builder, FuncOp topFunc, FuncOp adfFunc, 
-                      FuncOp plFunc, CallOp& callop){
+                      FuncOp& plFunc, CallOp& callop){
     AffineForOp plForOp;
     plFunc.walk([&](AffineForOp forOp){
       if(forOp->hasAttr("Array_Partition"))
@@ -1333,22 +1385,8 @@ private:
       return false;
     }
     // Tranverse the IOPushOps/IOPopOps and convert them to affine load/store
-    auto flag = plForOp.walk([&](Operation* op){
-      WalkResult result;
-      if(dyn_cast<IOPushOp>(op))
-        result = ConvertIOToAffine(builder, op, true);
-      else if(dyn_cast<IOPopOp>(op))
-        result = ConvertIOToAffine(builder, op, false);
-      else if(dyn_cast<DmaOp>(op))
-        result = ConvertDMAToAffine(builder, op);
-      else
-        return WalkResult::advance();
-      return result;
-    });
-    if (flag == WalkResult::interrupt()){
-      llvm::outs() << "ConverIOTOAffine failed\n";
+    if(!ConvertIODMAToAffine(builder, plFunc, plForOp))
       return false;
-    }
     // Replace arguments with PLIOType by memref arguments
     ArgUpdate(builder, topFunc, adfFunc, plFunc, callop);
     // Simplify the loop structure after ConvertToAffine.
@@ -1390,7 +1428,7 @@ private:
       if(dyn_cast<BoolAttr>(boolPLIO).getValue()){
         PLFuncCreation(builder, func, plFunc, callop, launchcell);
         if(!PLDataMovement(builder, topFunc, func, plFunc, callop))
-         return false;
+          return false;
       }
     }
     return true;

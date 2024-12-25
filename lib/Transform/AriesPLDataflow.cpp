@@ -31,15 +31,74 @@ public:
   }
 
 private:
+  // This function simplifies the upperbound affine map in the form of 
+  // affine_map<()[s0] -> (s0 ceildiv 64)> to affine_map<(d0) -> (d0)>
+  void simplifyUb(OpBuilder builder, FuncOp func){
+    auto loc = builder.getUnknownLoc();
+    std::vector<SmallVector<AffineForOp, 6>> bands;
+    getTileableBands(func, &bands);
+    for (auto tileBand : bands){
+      auto context = builder.getContext();
+      auto outerLoop = tileBand[0];
+      builder.setInsertionPoint(outerLoop);
+      for(auto loop : tileBand){
+        if(loop.hasConstantUpperBound())
+          continue;
+        auto ubMap = loop.getUpperBoundMap();
+        unsigned numDim = ubMap.getNumDims();
+        unsigned numSym = ubMap.getNumSymbols();
+        if (ubMap.getNumResults() != 1){
+          llvm::outs() << "Doesn't support affineMap with multi results\n";
+          return;
+        }
+        auto expr = dyn_cast<AffineBinaryOpExpr>(ubMap.getResult(0));
+        if (!expr || expr.getKind() != AffineExprKind::CeilDiv){
+          llvm::outs() << "Besides constant upperbound, only support ceildiv\n";
+          return;
+        }
+        // Extract the divisor and symbol
+        auto divisorExpr = dyn_cast<AffineConstantExpr>(expr.getRHS());
+        if (!divisorExpr)
+          return;
+        auto symbolExpr = dyn_cast<AffineSymbolExpr>(expr.getLHS());
+        if (!symbolExpr)
+          return;
+        unsigned symbolPos = symbolExpr.getPosition();
+        auto s0 = loop.getUpperBoundOperands()[numDim+symbolPos];
+        // Replace the AffineExprKind::CeilDiv using arith dialect
+        /* Code snippet for ceilDiv
+        auto divInt = divisorExpr.getValue();
+        auto divAttr = builder.getIndexAttr(divInt);
+        auto divVal = builder.create<arith::ConstantOp>(loc, divAttr);
+        auto ceilAttr = builder.getIndexAttr(divInt-1);
+        auto ceilVal = builder.create<arith::ConstantOp>(loc, ceilAttr);
+        auto temp = builder.create<arith::AddIOp>(loc, s0, ceilVal);
+        auto ubVal = builder.create<arith::DivUIOp>(loc, temp, divVal);
+        */
+        // Currently use floor div directly
+        auto divInt = divisorExpr.getValue();
+        auto divAttr = builder.getIndexAttr(divInt);
+        auto divVal = builder.create<arith::ConstantOp>(loc, divAttr);
+        auto ubVal = builder.create<arith::DivUIOp>(loc, s0, divVal);
+        // Replace the loop upper bound with the computed value
+        SmallVector<Value, 4> newOperands{(loop.getUpperBoundOperands())};
+        newOperands.push_back(ubVal);
+        AffineExpr ubExpr = {builder.getAffineSymbolExpr(numSym)};
+        auto newMap = AffineMap::get(numDim, numSym+1, ubExpr, context);
+        loop.setUpperBound(newOperands, newMap);
+      }
+    }
+  }
+
   // Tranverse all the forOps marked by "load,store,send,receive" and split
   // them into new functions marked by adf.pl
   void PLFuncSplit(OpBuilder builder, FuncOp plFunc){
     auto loc = builder.getUnknownLoc();
     for (auto forOp: llvm::make_early_inc_range(plFunc.getOps<AffineForOp>())){
       SmallVector<Operation*, 4> Ops;
-      SmallVector<Value> inputs(forOp.getOperands());
+      SmallVector<Value> liveins(forOp.getOperands());
       auto liveness = Liveness(forOp);
-      for (auto livein: liveness.getLiveIn(forOp.getBody()))
+      for (auto livein: liveness.getLiveIn(forOp.getBody())){
         if (!forOp->isProperAncestor(livein.getParentBlock()->getParentOp())){
           auto definedOp = livein.getDefiningOp();
           if(definedOp){
@@ -57,8 +116,23 @@ private:
               continue;
             }
           }
-          inputs.push_back(livein);
+          liveins.push_back(livein);
         }
+      }
+      // Reorder the input arguments to be aligned with the previous function
+      SmallVector<Value, 6> inputs;
+      for(auto arg : plFunc.getArguments()){
+        auto it = llvm::find(liveins,arg);
+        if(it != liveins.end())
+          inputs.push_back(arg);
+      }
+      SmallVector<Attribute, 4> newMetaArray;
+      addMetaData(builder, plFunc, inputs, newMetaArray);
+      for(auto livein : liveins){
+        auto it = llvm::find(inputs, livein);
+        if(it == inputs.end())
+          inputs.push_back(livein);
+      }
       
       builder.setInsertionPoint(plFunc);
       std::string funcName;
@@ -100,6 +174,10 @@ private:
       newfunc->setAttr("adf.pl",builder.getUnitAttr());
       newfunc->setAttr("inline",builder.getBoolAttr(false));
       newfunc->setAttr(funcAttr, builder.getUnitAttr());
+      if(!newMetaArray.empty()){
+        auto arrayAttr = builder.getArrayAttr(newMetaArray);
+        newfunc->setAttr("meta_data", arrayAttr);
+      }
       auto destBlock = newfunc.addEntryBlock();
       builder.setInsertionPointToEnd(destBlock);
       auto returnOp = builder.create<ReturnOp>(builder.getUnknownLoc());
@@ -139,6 +217,57 @@ private:
             return newfunc->isProperAncestor(use.getOwner());
         });
       }
+      // Replace upperbound of the for loops in each pl function
+      simplifyUb(builder, newfunc);
+    }
+  }
+
+  // This function annotate the original types of the memref arguments to each
+  // extracted function
+  void annotateType(ModuleOp mod, OpBuilder builder, FuncOp func){
+    auto funcArgs = func.getArguments();
+    auto idxAttrs = func->getAttrOfType<ArrayAttr>("mem_idx");
+    auto typeAttrs = func->getAttrOfType<ArrayAttr>("mem_type");
+    if(!idxAttrs)
+      return;
+    SmallVector<int64_t, 4> idxs;
+    for (auto attr : idxAttrs) {
+      if (auto intAttr = attr.dyn_cast<IntegerAttr>()){
+        idxs.push_back(intAttr.getInt());
+      }
+    }
+    for(auto call : func.getOps<CallOp>()){
+      auto callee = mod.lookupSymbol<FuncOp>(call.getCallee());
+      // Continue when already assigned the types
+      if(callee->hasAttr("mem_idx"))
+        continue;
+      SmallVector<unsigned, 4> argIdxs;
+      SmallVector<Attribute, 4> argAttrs;
+      for(unsigned i=0; i < call.getNumOperands(); i++){
+        auto operand = call.getOperand(i);
+        // Find if operand is the arguments of the func
+        auto it = llvm::find(funcArgs, operand);
+        if(it == funcArgs.end())
+          continue;
+        int64_t dis = std::distance(funcArgs.begin(),it);
+        // Find if the argument is marked with an arttibute
+        auto it1 = llvm::find(idxs, dis);
+        if(it1 == idxs.end())
+          continue;
+        int64_t dis1 = std::distance(funcArgs.begin(),it);
+        auto attr = typeAttrs[dis1];
+        argIdxs.push_back(i);
+        argAttrs.push_back(attr);
+      }
+      if(argIdxs.empty())
+        continue;
+      SmallVector<Attribute, 4> newIdxAttrs;
+      for (int idx : argIdxs) 
+        newIdxAttrs.push_back(builder.getI32IntegerAttr(idx));
+      auto arrayAttr = builder.getArrayAttr(newIdxAttrs);
+      callee->setAttr("mem_idx", arrayAttr);
+      auto arrayTypeAttr = builder.getArrayAttr(argAttrs);
+      callee->setAttr("mem_type", arrayTypeAttr);
     }
   }
 
@@ -239,6 +368,7 @@ private:
       func->setAttr("inline",builder.getBoolAttr(false));
       // For each loop in adf.pl, create a new func marked by adf.pl
       PLFuncSplit(builder, func);
+      annotateType(mod, builder, func);
       return WalkResult::advance();
     });
 

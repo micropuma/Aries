@@ -21,6 +21,7 @@ MidLine = 24
 ChalIn = 3
 ChalOut = 3
 EnableIOCons = "false"
+Link_file = 1
 L1_0=32
 L1_1=32
 L1_2=32
@@ -199,7 +200,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-pl-double-buffer\
 			-canonicalize -cse
 
-translate: file_split kernel_file_split clean_kernel_vec
+translate: file_split kernel_file_split kernel_link clean_kernel_vec
 file_split: tempfile
 	aries-opt <${FUNC}.mlir \
 		-aries-file-split="inputfile-name=temp.cpp path-name=${PROJECT_AIE_PATH}/" \
@@ -244,6 +245,11 @@ kernel_cc: ${PROJECT_AIE_PATH}/temp.cc
 ${PROJECT_AIE_PATH}/temp.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir
 	aries-translate -o $@ $< \
 		-emit-kenrel-func
+
+ifeq ($(Link_file),1)
+kernel_link:
+	cp -r ${TEMPLATE_PATH}/template_files/kernel_mm/aie_fp32_v1/kernel_gemm* ${PROJECT_AIE_PATH}
+endif
 
 clean_kernel_vec:
 	rm -rf ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir ${PROJECT_PATH}/${KERNEL_NAME}.mlir

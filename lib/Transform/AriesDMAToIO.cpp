@@ -50,13 +50,13 @@ private:
   }
   // Here need to deal with the data packing, and we assume the AIE local
   // mem is always row major
-  bool dataPacking(OpBuilder builder, FuncOp topFunc, MemRefType type, 
+  bool dataPacking(OpBuilder builder, FuncOp func, MemRefType type, 
                    int64_t portWidth, Value val, SmallVector<Value>& sizes, 
                    SmallVector<Value>& offsets,
                    SmallVector<std::pair<AllocOp, AllocOp>, 4>& allocPairs,
                    SmallVector<std::pair<MemRefType, unsigned>, 4>& typePairs){
     auto loc = builder.getUnknownLoc();
-    auto &entryBlock = topFunc.getBody().front();
+    auto &entryBlock = func.getBody().front();
     auto indexType = builder.getIndexType();
     auto shape = type.getShape();
     auto rank = type.getRank();
@@ -132,7 +132,7 @@ private:
         }
       }else{ // Find the memref in the argument list
         unsigned idx = 0;
-        for(auto arg : topFunc.getArguments()){
+        for(auto arg : func.getArguments()){
           if(arg == val){
             SmallVector<int64_t> sizesInt(shape.begin(),shape.end());
             // Deal with dynmic shape
@@ -154,18 +154,34 @@ private:
     return true;
   }
 
-  LogicalResult LowerDMAToIO(OpBuilder builder, ModuleOp mod, FuncOp topFunc, 
+  void updateTop(Value val, Value& arg, FuncOp topFunc, 
+                 MemRefType newMemRefType,
+                 SmallVector<Type,8>& inTopTypes,
+                 SmallVector<Value, 4> arg_list,
+                 SmallVector<Value, 4>& igArgs){
+    auto igIt = std::find(igArgs.begin(), igArgs.end(), val);
+    if(igIt!=igArgs.end())
+      return;
+    igArgs.push_back(val);
+    auto it = std::find(arg_list.begin(), arg_list.end(), val);
+    auto idx_arg = std::distance(arg_list.begin(), it);
+    arg = topFunc.getArgument(idx_arg);
+    inTopTypes[idx_arg] = newMemRefType;
+    arg.setType(newMemRefType);
+  }
+
+  LogicalResult LowerDMAToIO(OpBuilder builder, ModuleOp mod, FuncOp func, 
                              std::string portType, 
                              int64_t portWidth, int64_t pliofreq, 
                              int64_t portBurst, int64_t gmiobw){
     auto context = builder.getContext();
     auto loc = builder.getUnknownLoc();
-    auto inTypes =SmallVector<Type,8>(topFunc.getArgumentTypes().begin(),
-                                      topFunc.getArgumentTypes().end());
-    auto outTypes = topFunc.getResultTypes();
+    auto inTypes =SmallVector<Type,8>(func.getArgumentTypes().begin(),
+                                      func.getArgumentTypes().end());
+    auto outTypes = func.getResultTypes();
     SmallVector<std::pair<AllocOp, AllocOp>, 4> allocPairs; //(new,old)
     SmallVector<std::pair<MemRefType, unsigned>, 4> typePairs;
-    auto flag = topFunc.walk([&](DmaOp op){
+    auto flag = func.walk([&](DmaOp op){
       auto DmaSrc = op.getSrc();
       auto DmaDst = op.getDst();
       auto SrcSpace 
@@ -242,7 +258,7 @@ private:
           auto intRAttr = dyn_cast<IntegerAttr>(readAttr);
           newOp->setAttr("read", intRAttr);
         }
-        if(!dataPacking(builder, topFunc, srcType, portWidth, 
+        if(!dataPacking(builder, func, srcType, portWidth, 
                         DmaSrc, src_sizes, src_offsets, allocPairs, typePairs))
           return WalkResult::interrupt();
         builder.setInsertionPoint(newOp);
@@ -277,7 +293,7 @@ private:
           auto intWAttr = dyn_cast<IntegerAttr>(writeAttr);
           newOp->setAttr("write", intWAttr);
         }
-        if(!dataPacking(builder, topFunc, dstType, portWidth, 
+        if(!dataPacking(builder, func, dstType, portWidth, 
                         DmaDst, dst_sizes, dst_offsets, allocPairs, typePairs))
           return WalkResult::interrupt();
         builder.setInsertionPointAfter(newOp);
@@ -303,47 +319,67 @@ private:
       newAllocOp.getResult().replaceAllUsesWith(oldAllocOp.getResult());
       oldAllocOp.erase();
     }
-    // Update topFunc InputTypes
+    // Update func InputTypes
     for(auto pair : typePairs){
       auto newMemRefType = pair.first;
       auto idx = pair.second;
-      auto arg = topFunc.getArgument(idx);
+      auto arg = func.getArgument(idx);
       inTypes[idx] = newMemRefType;
       arg.setType(newMemRefType);
     }
-    topFunc.setType(builder.getFunctionType(inTypes, outTypes));
+    func.setType(builder.getFunctionType(inTypes, outTypes));
 
     // Update the caller functions
     // TODO:: Now assumes that the operands of the caller functions are defined
-    // by the argument list in the parent func of the callers
-    for (auto func : mod.getOps<FuncOp>()) {
-      if(!func->hasAttr("top_func"))
+    // by the argument list in the parent func of the callers or are defined by
+    // memref.cast operations
+    for (auto topFunc : mod.getOps<FuncOp>()) {
+      if(!topFunc->hasAttr("top_func"))
         continue;
-      auto inTopTypes =SmallVector<Type,8>(func.getArgumentTypes().begin(),
-                                           func.getArgumentTypes().end());
-      auto outTopTypes = func.getResultTypes();
-      SmallVector<Value, 4> arg_list(func.getArguments().begin(),
-                                     func.getArguments().end());
+      auto inTopTypes =SmallVector<Type,8>(topFunc.getArgumentTypes().begin(),
+                                           topFunc.getArgumentTypes().end());
+      auto outTopTypes = topFunc.getResultTypes();
+      SmallVector<Value, 4> arg_list(topFunc.getArguments().begin(),
+                                     topFunc.getArguments().end());
       SmallVector<Value, 4> igArgs; 
-      for (auto caller : func.getOps<CallOp>()) {
-        if(caller.getCallee() != topFunc.getName())
+      for (auto caller : topFunc.getOps<CallOp>()) {
+        if(caller.getCallee() != func.getName())
           continue;
         for(auto pair : typePairs){
           auto newMemRefType = pair.first;
           auto idx_op = pair.second;
           auto operand = caller.getOperand(idx_op);
-          // Check if the argument has already been changed
-          auto igIt = std::find(igArgs.begin(), igArgs.end(), operand);
-          if(igIt!=igArgs.end())
-            continue;
-          auto it = std::find(arg_list.begin(), arg_list.end(), operand);
-          auto idx_arg = std::distance(arg_list.begin(), it);
-          auto arg = func.getArgument(idx_arg);
-          inTopTypes[idx_arg] = newMemRefType;
-          arg.setType(newMemRefType);
+          auto definingOp = operand.getDefiningOp();
+          if(!definingOp){
+            Value arg;
+            updateTop(operand, arg, topFunc, newMemRefType, 
+                      inTopTypes, arg_list, igArgs);
+          }else if(auto castOp = dyn_cast<CastOp>(definingOp)){
+            auto src = castOp.getSource();
+            auto memType = dyn_cast<MemRefType>(src.getType());
+            auto shape = memType.getShape();
+            auto rank = memType.getRank();
+            auto width = memType.getElementTypeBitWidth();
+            auto widthNew = newMemRefType.getElementTypeBitWidth();
+            auto newType = newMemRefType.getElementType();
+            SmallVector<int64_t> sizesInt(shape.begin(),shape.end());
+            // Deal with dynmic shape
+            if (sizesInt[rank-1]>0)
+              sizesInt[rank-1] = sizesInt[rank-1] / (widthNew/width);
+            auto newMemType = MemRefType::get(sizesInt, newType);
+            Value arg;
+            updateTop(src, arg, topFunc, newMemType, 
+                      inTopTypes, arg_list, igArgs);
+            if(!arg)
+              continue;
+            builder.setInsertionPoint(castOp);
+            auto newCast = builder.create<CastOp>(loc, newMemRefType, src);
+            castOp.getResult().replaceAllUsesWith(newCast);
+            castOp.erase();
+          }
         }
       }
-      func.setType(builder.getFunctionType(inTopTypes, outTopTypes));
+      topFunc.setType(builder.getFunctionType(inTopTypes, outTopTypes));
     }
 
     if (flag == WalkResult::interrupt())
@@ -351,9 +387,9 @@ private:
     return success();
   }
 
-  LogicalResult BroadcastDetect(FuncOp topFunc){
+  LogicalResult BroadcastDetect(FuncOp func){
     SmallVector<IOPushOp, 6> iopushs;
-    topFunc.walk([&](IOPushOp op){
+    func.walk([&](IOPushOp op){
       iopushs.push_back(op);
     });
 
@@ -408,7 +444,7 @@ private:
       if (failed(LowerDMAToIO(builder, mod, func, PortType, PortWidth, PLIOFreq, 
                               PortBurst, GMIOBW)))
         return false;
-      return true;
+
       MLIRContext &context = getContext();
       RewritePatternSet patterns(&context);
       PassManager pm(&getContext());

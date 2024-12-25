@@ -72,9 +72,9 @@ private:
     }
   }
 
-  // Anotate the output arguments
-  void argAnotate(OpBuilder builder, FuncOp topFunc, FuncOp func,
-                    SmallVector<Attribute, 4>& attrs){
+  // Annotate the output arguments
+  void outAnnotate(OpBuilder builder, FuncOp topFunc, FuncOp func){
+    SmallVector<Attribute, 4> attrs;
     SmallVector<int64_t, 4> ids;
     func.walk([&](AffineStoreOp op){
       auto dst = op.getMemRef();
@@ -97,8 +97,16 @@ private:
       for(auto id: ids){
         unsigned idx = 0;
         auto dst = call.getOperand(id);
+        auto defineOp = dst.getDefiningOp();
+        Value operand;
+        //TODO::Handle more defining operations
+        if(!defineOp){
+          operand= dst;
+        }else if(auto castOp = dyn_cast<memref::CastOp>(defineOp)){
+          operand = castOp.getSource();
+        }
         for(auto arg : topFunc.getArguments()){
-          if(arg == dst){
+          if(arg == operand){
             auto intAttr = builder.getI32IntegerAttr(idx);
             if(!llvm::is_contained(attrs, intAttr)){
               attrs.push_back(intAttr);
@@ -109,6 +117,8 @@ private:
         }
       }
     }
+    auto outAttrs = builder.getArrayAttr(attrs);
+    topFunc->setAttr("outArgs",outAttrs);
   }
 
   // For memory with dynamic size, only reserve the celldiv at the outermost
@@ -141,48 +151,6 @@ private:
       }else{
         return false;
       }
-      // llvm::SmallVector<int64_t> flatExpr0;
-      // if (failed(getFlattenedAffineExpr(res0, numDims, numSyms, &flatExpr0)))
-      //   return false;
-      // llvm::SmallVector<int64_t> flatExpr1;
-      // if (failed(getFlattenedAffineExpr(res1, numDims, numSyms, &flatExpr1)))
-      //   return false;
-      // bool flag0=false, flag1=false;
-      // unsigned index0=0, index1=0;
-      // unsigned symidx0,  symidx1;
-      // for(auto coeff : flatExpr0){
-      //   if(coeff != 0){
-      //     if(flag0==true || coeff != 1){
-      //       flag0=false;
-      //       break;
-      //     }
-      //     symidx0=index0;
-      //     flag0=true;
-      //   }
-      //   index0++;
-      // }
-      // for(auto coeff : flatExpr1){
-      //   if(coeff != 0){
-      //     if(flag1==true || coeff != 1){
-      //       flag1=false;
-      //       break;
-      //     }
-      //     symidx1=index1;
-      //     flag1=true;
-      //   }
-      //   index1++;
-      // }
-      // Value operand;
-      // AffineExpr res;
-      // if(flag0&&!flag1&&symidx0>=numDims&&symidx0<numDims+numSyms){
-      //   operand = uboperands[symidx0];
-      //   res = res1;
-      // }else if(!flag0&&flag1&&symidx1>=numDims&&symidx1<numDims+numSyms){
-      //   operand = uboperands[symidx1];
-      //   res = res0;
-      // }else{
-      //   return false;
-      // }
       // Check if the operand is one of the argument of the function
       bool flag=false;
       for (auto arg:func.getArguments()){
@@ -214,10 +182,7 @@ private:
     }
     if(!func)
       return true;
-    SmallVector<Attribute, 4> attrs;
-    argAnotate(builder, topFunc, func, attrs); 
-    auto outAttrs = builder.getArrayAttr(attrs);
-    topFunc->setAttr("outArgs",outAttrs);
+    outAnnotate(builder, topFunc, func);
     preprocess(mod, builder, topFunc);
     // Tile the functions specified in the command line.
     func->setAttr("adf.func", builder.getUnitAttr());

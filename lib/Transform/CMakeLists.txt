@@ -7,22 +7,23 @@ add_mlir_library(MLIRAriesPasses
     AriesMemCopy.cpp
     AriesDependencyExtract.cpp
     AriesFuncUnroll.cpp
-    AriesCorePlacement.cpp
     AriesLocalDataForward.cpp
     AriesKernelInterfaceCreate.cpp
     AriesBroadcastToForwarding.cpp
     AriesDMAToIO.cpp
     AriesADFCellCreate.cpp
+    AriesCorePlacement.cpp
     AriesIOPlacement.cpp
-    AriesKernelSplit.cpp
     AriesGMIOMaterialize.cpp
     AriesPLIOMaterialize.cpp
     AriesAXIPacking.cpp
     AriesPLDataflow.cpp
-    AriesPLDoubleBuffer.cpp
     AriesBurstDetection.cpp
     AriesFuncEliminate.cpp
+    AriesPLDoubleBuffer.cpp
+    AriesPLSerialize.cpp
     AriesFileSplit.cpp
+    AriesKernelSplit.cpp
     Passes.cpp
     Utils.cpp
 

@@ -5,7 +5,7 @@ PROJECT_PATH=./${PROJECT_NAME}
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
-Template_PATH=..
+TEMPLATE_PATH=..
 EN_PL = 1
 PLIOWidth = 128
 AXIWidth = 512
@@ -21,25 +21,7 @@ MidLine = 24
 ChalIn = 3
 ChalOut = 3
 EnableIOCons = "true"
-# L1_0=2
-# L1_1=16
-# L1_2=16
-# L1_3=16
-# L1_4=32
-# L2_0=1
-# L2_1=2
-# L2_2=1
-# L2_3=1
-# L2_4=2
-# L3_0=2#I3
-# L3_1=2#J3
-# L3_2=2#K3
-# L3_3=2#L3
-# L3_4=2#L3
-# BUFF_0=0
-# BUFF_1=1
-# BUFF_2=0
-# BUFF_3=1
+Link_file = 1
 L1_0=2
 L1_1=16
 L1_2=16
@@ -68,7 +50,7 @@ endif
 all: fileCreate copyFile pass translate copyplhost printcommand
 
 printcommand:
-	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, ColGap=${ColGap}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, EnableIOCons=${EnableIOCons}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L1_3=${L1_3}, L1_4=${L1_4}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L2_3=${L2_3}, L2_4=${L2_4}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, L3_3=${L3_3}, L3_4=${L3_4}, IOType=${IOType}" >${PROJECT_PATH}/command.txt
+	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, ColGap=${ColGap}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, EnableIOCons=${EnableIOCons}, L1_0=${L1_0}, L1_1=${L1_1}, L1_2=${L1_2}, L1_3=${L1_3}, L1_4=${L1_4}, L2_0=${L2_0}, L2_1=${L2_1}, L2_2=${L2_2}, L2_3=${L2_3}, L2_4=${L2_4}, L3_0=${L3_0}, L3_1=${L3_1}, L3_2=${L3_2}, L3_3=${L3_3}, L3_4=${L3_4}, IOType=${IOType}" >${PROJECT_PATH}/command
 
 fileCreate:
 	mkdir -p ${PROJECT_AIE_PATH}
@@ -76,14 +58,14 @@ fileCreate:
 	mkdir -p ${PROJECT_Host_PATH}
 
 copyFile:
-	cp -r ${Template_PATH}/template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
+	cp -r ${TEMPLATE_PATH}/template_files/Makefile_VCK190 ${PROJECT_PATH}/Makefile
 
 test: doublebuffer
 
 tile:${PROJECT_PATH}/0_${FUNC}.tiled.mlir
 ${PROJECT_PATH}/0_${FUNC}.tiled.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=${L1_0},${L1_1},${L1_2},${L1_3},${L1_4} l2-tile-sizes=${L2_0},${L2_1},${L2_2},${L2_3},${L2_4} l3-tile-sizes=${L3_0},${L3_1},${L3_2},${L3_3},${L3_4}"
+			-aries-tiling="tile-func-name=ttmc l1-tile-sizes=${L1_0},${L1_1},${L1_2},${L1_3},${L1_4} l2-tile-sizes=${L2_0},${L2_1},${L2_2},${L2_3},${L2_4} l3-tile-sizes=${L3_0},${L3_1},${L3_2},${L3_3},${L3_4}"
 
 exfunc: ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir
 ${PROJECT_PATH}/1_${FUNC}.exfunc.mlir: ${PROJECT_PATH}/0_${FUNC}.tiled.mlir
@@ -203,13 +185,14 @@ ${PROJECT_AIE_PATH}/adf_graph_test.cpp: ${PROJECT_PATH}/21_${FUNC}.doublebuffer.
 pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 	aries-opt -o $@ $< \
-			-aries-tiling="l1-tile-sizes=${L1_0},${L1_1},${L1_2},${L1_3},${L1_4} l2-tile-sizes=${L2_0},${L2_1},${L2_2},${L2_3},${L2_4} l3-tile-sizes=${L3_0},${L3_1},${L3_2},${L3_3},${L3_4}" \
+			-aries-tiling="tile-func-name=ttmc l1-tile-sizes=${L1_0},${L1_1},${L1_2},${L1_3},${L1_4} l2-tile-sizes=${L2_0},${L2_1},${L2_2},${L2_3},${L2_4} l3-tile-sizes=${L3_0},${L3_1},${L3_2},${L3_3},${L3_4}" \
 			-aries-func-extract \
 			-aries-loop-simplify \
 			-aries-mem-subview \
 			-aries-mem-hoist \
 			-aries-mem-copy \
 			-aries-lower-to-adf \
+			-canonicalize -cse \
 			-aries-dependency-extract \
 			-aries-func-unroll \
 			-aries-local-data-forward \
@@ -230,7 +213,7 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${FUNC}.mlir
 			-aries-pl-double-buffer\
 			-canonicalize -cse
 
-translate: file_split clean_kernel_vec#kernel_file_split
+translate: file_split kernel_link clean_kernel_vec
 file_split: tempfile
 	aries-opt <${FUNC}.mlir \
 		-aries-file-split="inputfile-name=temp.cpp path-name=${PROJECT_AIE_PATH}/" \
@@ -264,7 +247,7 @@ ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir: ${PROJECT_PATH}/${KERNEL_NAME}_unrol
 		--canonicalize
 ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir: ${PROJECT_PATH}/${KERNEL_NAME}.mlir
 	aries-opt -o $@ $< \
-		--affine-loop-unroll="unroll-full unroll-full-threshold=3" \
+		--affine-loop-unroll="unroll-factor=8" \
 		--canonicalize
 
 kernel_file_split: kernel_cc
@@ -275,6 +258,11 @@ kernel_cc: ${PROJECT_AIE_PATH}/temp.cc
 ${PROJECT_AIE_PATH}/temp.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir
 	aries-translate -o $@ $< \
 		-emit-kenrel-func
+
+ifeq ($(Link_file),1)
+kernel_link:
+	cp -r ${TEMPLATE_PATH}/template_files/kernel_ttmc/aie_int32/kernel_ttmc* ${PROJECT_AIE_PATH}
+endif
 
 clean_kernel_vec:
 	rm -rf ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir ${PROJECT_PATH}/${KERNEL_NAME}.mlir
