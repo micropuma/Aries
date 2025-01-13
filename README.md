@@ -37,7 +37,7 @@ sudo apt install python3.8-venv
 
 ### 1. Download Aries & Submodules
 ```sh
-$ git clone --recursive https://github.com/JinmingZhuang/FPGA25_ARIES_AE.git
+$ git clone --recursive https://github.com/JinmingZhuang/Aries.git
 $ cd FPGA25_ARIES_AE
 ```
 
