@@ -137,7 +137,7 @@ SmallString<16> ADFEmitterBase::getTypeName(Type valType, bool isPtr,
   if (auto memType = dyn_cast<MemRefType>(valType)){
     auto attr = memType.getMemorySpace();
     if(attr && dyn_cast<StringAttr>(attr) &&
-       attr.cast<StringAttr>().getValue().str().substr(0, 4) == "plio")
+       dyn_cast<StringAttr>(attr).getValue().str().substr(0, 4) == "plio")
       PLIO_FLAG = true;
   }
 
@@ -147,19 +147,19 @@ SmallString<16> ADFEmitterBase::getTypeName(Type valType, bool isPtr,
   SmallString<16> typeName;
 
   // Handle float types.
-  if (valType.isa<Float32Type>()){
+  if (isa<Float32Type>(valType)){
     if (PLIO_FLAG)
       typeName = SmallString<16>("ap_axiu<32, 0, 0, 0>");
     else
       typeName = SmallString<16>("float");
-  }else if (valType.isa<Float64Type>()){
+  }else if (isa<Float64Type>(valType)){
     if (PLIO_FLAG)
       typeName = SmallString<16>("ap_axiu<64, 0, 0, 0>");
     else
       typeName = SmallString<16>("double");
   }
   // Handle integer types.
-  else if (valType.isa<IndexType>())
+  else if (isa<IndexType>(valType))
     typeName = SmallString<16>("int");
   else if (auto intType = dyn_cast<IntegerType>(valType)) {
     if (intType.getWidth() == 1) {
@@ -242,19 +242,19 @@ SmallString<16> ADFEmitterBase::getTypeName(Value val, bool isPtr,
 
 void fixUnsignedType(Value &result, bool isUnsigned) {
   if (isUnsigned) { // unsigned type
-    if (result.getType().isa<MemRefType>()) {
-      auto arrayType = result.getType().dyn_cast<MemRefType>();
+    if (isa<MemRefType>(result.getType())) {
+      auto arrayType = dyn_cast<MemRefType>(result.getType());
       Type elt = IntegerType::get(
           arrayType.getContext(),
-          arrayType.getElementType().cast<IntegerType>().getWidth(),
+          dyn_cast<IntegerType>(arrayType.getElementType()).getWidth(),
           IntegerType::SignednessSemantics::Unsigned);
       result.setType(MemRefType::get(arrayType.getShape(), elt,
                                      arrayType.getLayout(),
                                      arrayType.getMemorySpace()));
-    } else if (result.getType().isa<IntegerType>()) {
+    } else if (isa<IntegerType>(result.getType())) {
       Type type =
           IntegerType::get(result.getType().getContext(),
-                           result.getType().cast<IntegerType>().getWidth(),
+                           dyn_cast<IntegerType>(result.getType()).getWidth(),
                            IntegerType::SignednessSemantics::Unsigned);
       result.setType(type);
     }
@@ -317,7 +317,7 @@ SmallVector<int64_t, 8> getIntArrayAttrValue(Operation *op,
   SmallVector<int64_t, 8> array;
   if (auto arrayAttr = op->getAttrOfType<ArrayAttr>(name)) {
     for (auto attr : arrayAttr)
-      if (auto intAttr = attr.dyn_cast<IntegerAttr>())
+      if (auto intAttr = dyn_cast<IntegerAttr>(attr))
         array.push_back(intAttr.getInt());
       else
         return SmallVector<int64_t, 8>();
@@ -1032,7 +1032,7 @@ void ModuleEmitter::emitCall(func::CallOp op) {
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
       indent();
-      if (result.getType().isa<ShapedType>())
+      if (isa<ShapedType>(result.getType()))
         emitArrayDecl(result);
       else
         emitValue(result);
@@ -1062,7 +1062,7 @@ void ModuleEmitter::emitCall(func::CallOp op) {
   // Handle output arguments.
   for (auto result : op.getResults()) {
     // The address should be passed in for scalar result arguments.
-    if (result.getType().isa<ShapedType>())
+    if (isa<ShapedType>(result.getType()))
       os << ", ";
     else
       os << ", &";
@@ -1115,7 +1115,7 @@ void ModuleEmitter::emitScfIf(scf::IfOp op) {
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
       indent();
-      if (result.getType().isa<ShapedType>())
+      if (isa<ShapedType>(result.getType()))
         emitArrayDecl(result);
       else
         emitValue(result);
@@ -1172,12 +1172,12 @@ void ModuleEmitter::emitAffineFor(AffineForOp op) {
   auto iterVar = op.getInductionVar();
   std::string loop_name = "";
   if (op->hasAttr("loop_name")) { // loop label
-    loop_name = op->getAttr("loop_name").cast<StringAttr>().getValue().str();
+    loop_name = dyn_cast<StringAttr>(op->getAttr("loop_name")).getValue().str();
     std::replace(loop_name.begin(), loop_name.end(), '.', '_');
     os << "l_";
     if (op->hasAttr("op_name")) {
       std::string op_name =
-          op->getAttr("op_name").cast<StringAttr>().getValue().str();
+          dyn_cast<StringAttr>(op->getAttr("op_name")).getValue().str();
       std::replace(op_name.begin(), op_name.end(), '.', '_');
       os << op_name << "_";
     }
@@ -1253,7 +1253,7 @@ void ModuleEmitter::emitAffineIf(AffineIfOp op) {
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
       indent();
-      if (result.getType().isa<ShapedType>())
+      if (isa<ShapedType>(result.getType()))
         emitArrayDecl(result);
       else
         emitValue(result);
@@ -1304,7 +1304,7 @@ void ModuleEmitter::emitAffineParallel(AffineParallelOp op) {
   for (auto result : op.getResults()) {
     if (!isDeclared(result)) {
       indent();
-      if (result.getType().isa<ShapedType>())
+      if (isa<ShapedType>(result.getType()))
         emitArrayDecl(result);
       else
         emitValue(result);
@@ -1392,7 +1392,7 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   auto affineMap = op.getAffineMap();
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
                                   op.getMapOperands());
-  auto attr = memref.getType().dyn_cast<MemRefType>().getMemorySpace();
+  auto attr = dyn_cast<MemRefType>(memref.getType()).getMemorySpace();
   if (attr && dyn_cast<StringAttr>(attr)){
     auto stringAttr =  dyn_cast<StringAttr>(attr).getValue().str();
     if(stringAttr.substr(0, 6) == "stream"){
@@ -1419,7 +1419,7 @@ void ModuleEmitter::emitAffineLoad(AffineLoadOp op) {
   emitValue(result);
   os << " = ";
   emitValue(memref);
-  auto arrayType = memref.getType().cast<ShapedType>();
+  auto arrayType = dyn_cast<ShapedType>(memref.getType());
   if (arrayType.getShape().size() == 1 && arrayType.getShape()[0] == 1) {
     // do nothing;
   } else {
@@ -1439,7 +1439,7 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
   auto affineMap = op.getAffineMap();
   AffineExprEmitter affineEmitter(state, affineMap.getNumDims(),
                                   op.getMapOperands());
-  auto attr = memref.getType().dyn_cast<MemRefType>().getMemorySpace();
+  auto attr = dyn_cast<MemRefType>(memref.getType()).getMemorySpace();
   if (attr && dyn_cast<StringAttr>(attr)){
     auto stringAttr =  dyn_cast<StringAttr>(attr).getValue().str();
     if(stringAttr.substr(0, 6) == "stream"){
@@ -1468,7 +1468,7 @@ void ModuleEmitter::emitAffineStore(AffineStoreOp op) {
   }
   indent();
   emitValue(memref);
-  auto arrayType = memref.getType().cast<ShapedType>();
+  auto arrayType = dyn_cast<ShapedType>(memref.getType());
   if (arrayType.getShape().size() == 1 && arrayType.getShape()[0] == 1) {
     // do nothing;
   } else {
@@ -1627,7 +1627,7 @@ template <typename OpType> void ModuleEmitter::emitAlloc(OpType op) {
 
   std::string name;
   if (op->hasAttr("name")) {
-    auto attr = op->getAttr("name").template cast<StringAttr>();
+    auto attr = dyn_cast<StringAttr>(op->getAttr("name"));
     name = attr.getValue().str();
   }
 
@@ -1838,7 +1838,7 @@ void ModuleEmitter::emitBitReverse(adf::BitReverseOp op) {
 void ModuleEmitter::emitSelect(arith::SelectOp op) {
   unsigned rank = emitNestedLoopHead(op.getResult());
   unsigned conditionRank = rank;
-  if (!op.getCondition().getType().isa<ShapedType>())
+  if (!isa<ShapedType>(op.getCondition().getType()))
     conditionRank = 0;
   indent();
   Value result = op.getResult();
@@ -1872,12 +1872,12 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
     fixUnsignedType(result, op->hasAttr("unsigned"));
     emitArrayDecl(result);
     os << " = {";
-    auto type = op.getResult().getType().cast<ShapedType>().getElementType();
+    auto type = dyn_cast<ShapedType>(op.getResult().getType()).getElementType();
 
     unsigned elementIdx = 0;
     for (auto element : denseAttr.getValues<Attribute>()) {
       if (type.isF32()) {
-        auto value = element.cast<FloatAttr>().getValue().convertToFloat();
+        auto value = dyn_cast<FloatAttr>(element).getValue().convertToFloat();
         if (std::isfinite(value))
           os << value;
         else if (value > 0)
@@ -1886,7 +1886,7 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
           os << "-INFINITY";
 
       } else if (type.isF64()) {
-        auto value = element.cast<FloatAttr>().getValue().convertToDouble();
+        auto value = dyn_cast<FloatAttr>(element).getValue().convertToDouble();
         if (std::isfinite(value))
           os << value;
         else if (value > 0)
@@ -1895,9 +1895,9 @@ void ModuleEmitter::emitConstant(arith::ConstantOp op) {
           os << "-INFINITY";
 
       } else if (type.isInteger(1))
-        os << element.cast<BoolAttr>().getValue();
+        os << dyn_cast<BoolAttr>(element).getValue();
       else if (type.isIntOrIndex())
-        os << element.cast<IntegerAttr>().getValue();
+        os << dyn_cast<IntegerAttr>(element).getValue();
       else
         op->emitError("array has unsupported element type.");
 
@@ -1947,14 +1947,14 @@ void ModuleEmitter::emitValue(Value val, unsigned rank, bool isPtr,
 void ModuleEmitter::emitArrayDecl(Value array, bool isFunc, std::string name) {
   assert(!isDeclared(array) && "has been declared before.");
 
-  auto arrayType = array.getType().cast<ShapedType>();
+  auto arrayType = dyn_cast<ShapedType>(array.getType());
   if (arrayType && arrayType.hasStaticShape()) {
     auto memref = dyn_cast<MemRefType>(array.getType());
     if (memref) {
       auto attr = memref.getMemorySpace();
       if (attr && dyn_cast<StringAttr>(attr) &&
-          (attr.cast<StringAttr>().getValue().str().substr(0, 6) == "stream"||
-           attr.cast<StringAttr>().getValue().str().substr(0, 4) == "plio")){
+          (dyn_cast<StringAttr>(attr).getValue().str().substr(0, 6) == "stream"||
+           dyn_cast<StringAttr>(attr).getValue().str().substr(0, 4) == "plio")){
         // Value has been declared before or is a constant number.
         if (isDeclared(array)) {
           os << getName(array);
@@ -2127,7 +2127,7 @@ int main(int argc, char ** argv) {
     addIndent();
     for(auto arg: func.getArguments()){
       indent();
-      if (arg.getType().isa<ShapedType>())
+      if (isa<ShapedType>(arg.getType()))
         emitArrayDecl(arg);
       else
         emitValue(arg);
@@ -2157,12 +2157,12 @@ int main(int argc, char ** argv) {
 }
 
 void ModuleEmitter::emitArrayDirectives(Value memref) {
-  auto type = memref.getType().cast<MemRefType>();
+  auto type = dyn_cast<MemRefType>(memref.getType());
 
   // streaming
   auto attr = type.getMemorySpace();
   if (attr && dyn_cast<StringAttr>(attr)) {
-    std::string attr_str = attr.cast<StringAttr>().getValue().str();
+    std::string attr_str = dyn_cast<StringAttr>(attr).getValue().str();
     if (attr_str.substr(0, 6) == "stream" && attr_str.length() > 6) {
       indent();
       os << "#pragma HLS stream variable=";
@@ -2178,7 +2178,7 @@ void ModuleEmitter::emitArrayDirectives(Value memref) {
   }
   if (auto defineOp = memref.getDefiningOp()){
     if (auto defineAttr = defineOp->getAttr("buffer_type")){
-      std::string attrStr = defineAttr.cast<StringAttr>().getValue().str();
+      std::string attrStr = dyn_cast<StringAttr>(defineAttr).getValue().str();
       auto ramType = attrStr.substr(1, 8);
       auto ramImp = attrStr.substr(0, 4);
       indent();
@@ -2195,7 +2195,7 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto ii = op->getAttr("pipeline_ii")) {
     reduceIndent();
     indent();
-    os << "#pragma HLS pipeline II=" << ii.cast<IntegerAttr>().getValue();
+    os << "#pragma HLS pipeline II=" << dyn_cast<IntegerAttr>(ii).getValue();
     // https://docs.xilinx.com/r/en-US/ug1399-vitis-hls/Rewinding-Pipelined-Loops-for-Performance
     if (op->hasAttr("rewind"))
       os << " rewind";
@@ -2206,7 +2206,7 @@ void ModuleEmitter::emitLoopDirectives(Operation *op) {
   if (auto factor = op->getAttr("unroll")) {
     reduceIndent();
     indent();
-    auto val = factor.cast<IntegerAttr>().getValue();
+    auto val = dyn_cast<IntegerAttr>(factor).getValue();
     if (val == 0)
       os << "#pragma HLS unroll"
          << "\n";
@@ -2241,7 +2241,7 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
     for (auto &port : portList) {
       // Array ports and scalar ports are handled separately. Here, we only
       // handle MemRef types since we assume the IR has be fully bufferized.
-      if (auto memrefType = port.getType().dyn_cast<MemRefType>()) {
+      if (auto memrefType = dyn_cast<MemRefType>(port.getType())) {
         indent();
         os << "#pragma HLS interface";
         auto attr = memrefType.getMemorySpace();
@@ -2297,7 +2297,7 @@ void ModuleEmitter::emitFunctionDirectives(func::FuncOp func,
 
   // // Emit other pragmas for function ports.
   // for (auto &port : portList)
-  //   if (port.getType().isa<MemRefType>())
+  //   if (isa<MemRefType>(port.getType()))
   //     emitArrayDirectives(port);
 }
 
@@ -2471,7 +2471,7 @@ void ModuleEmitter::emitHLSFunction(func::FuncOp func){
   for(unsigned i = 0; i < argNum; i++){
     indent();
     auto arg = func.getArgument(i);
-    if (arg.getType().isa<ShapedType>())
+    if (isa<ShapedType>(arg.getType()))
       emitArrayDecl(arg, true);
     else
       emitValue(arg);
@@ -2520,7 +2520,7 @@ int main(int argc, char **argv) {
     for(unsigned i = 0; i < argNum; i++){
       indent();
       auto arg = hostFunc.getArgument(i);
-      if (arg.getType().isa<ShapedType>())
+      if (isa<ShapedType>(arg.getType()))
         emitArrayDecl(arg, true);
       else
         emitValue(arg);

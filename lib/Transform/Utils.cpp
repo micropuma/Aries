@@ -203,10 +203,10 @@ void addMetaData(OpBuilder builder, FuncOp func, SmallVector<Value, 6>& inputs,
   auto metaAttr= func->getAttrOfType<ArrayAttr>("meta_data");
   if (metaAttr) {
     for (auto rowAttr : metaAttr) {
-      if (auto rowArrayAttr = rowAttr.dyn_cast<ArrayAttr>()) {
+      if (auto rowArrayAttr = dyn_cast<ArrayAttr>(rowAttr)) {
         SmallVector<int64_t, 4> row;
         for (auto element : rowArrayAttr) {
-          if (auto intAttr = element.dyn_cast<IntegerAttr>()) {
+          if (auto intAttr = dyn_cast<IntegerAttr>(element)) {
             row.push_back(intAttr.getInt());
           }
         }

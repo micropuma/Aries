@@ -229,7 +229,7 @@ private:
     SmallVector<int64_t, 4> idxs;
     if(idxAttrs){
       for (auto attr : idxAttrs) {
-        if (auto intAttr = attr.dyn_cast<IntegerAttr>()){
+        if (auto intAttr = dyn_cast<IntegerAttr>(attr)){
           idxs.push_back(intAttr.getInt());
         }
       }
@@ -239,10 +239,10 @@ private:
     auto metaAttr= func->getAttrOfType<ArrayAttr>("meta_data");
     if (metaAttr) {
       for (auto rowAttr : metaAttr) {
-        if (auto rowArrayAttr = rowAttr.dyn_cast<ArrayAttr>()) {
+        if (auto rowArrayAttr = dyn_cast<ArrayAttr>(rowAttr)) {
           SmallVector<int64_t, 4> row;
           for (auto element : rowArrayAttr) {
-            if (auto intAttr = element.dyn_cast<IntegerAttr>()) {
+            if (auto intAttr = dyn_cast<IntegerAttr>(element)) {
               row.push_back(intAttr.getInt());
             }
           }

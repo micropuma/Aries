@@ -232,7 +232,7 @@ private:
       return;
     SmallVector<int64_t, 4> idxs;
     for (auto attr : idxAttrs) {
-      if (auto intAttr = attr.dyn_cast<IntegerAttr>()){
+      if (auto intAttr = dyn_cast<IntegerAttr>(attr)){
         idxs.push_back(intAttr.getInt());
       }
     }
@@ -342,7 +342,7 @@ private:
         auto newInnerYiled = newInnerLoop.getBody()->getTerminator();
         builder.setInsertionPoint(newInnerYiled);
         Value value;
-        if (eleType.isa<IntegerType>()) {
+        if (isa<IntegerType>(eleType)) {
           auto zeroAttr = builder.getIntegerAttr(eleType, 0);
           value = builder.create<arith::ConstantOp>(loc, eleType, zeroAttr);
         }else{

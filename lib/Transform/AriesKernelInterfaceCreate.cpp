@@ -152,7 +152,7 @@ private:
       Value value;
       if(edgeKernel){
         auto eleType = type.getElementType();
-        if (eleType.isa<IntegerType>()) {
+        if (isa<IntegerType>(eleType)) {
           auto zeroAttr = builder.getIntegerAttr(eleType, 0);
           value = builder.create<arith::ConstantOp>(loc, eleType, zeroAttr);
         }else{

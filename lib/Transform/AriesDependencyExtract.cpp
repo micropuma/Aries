@@ -34,9 +34,9 @@ private:
       auto dmaSrc = dma.getSrc();
       auto dmaDst = dma.getDst();
       auto SrcSpace 
-          = dmaSrc.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
+          = dyn_cast<MemRefType>(dmaSrc.getType()).getMemorySpaceAsInt();
       auto DstSpace 
-          = dmaDst.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
+          = dyn_cast<MemRefType>(dmaDst.getType()).getMemorySpaceAsInt();
 
       if(SrcSpace && SrcSpace == (int)mlir::aries::adf::MemorySpace::L1){
         if (!DstSpace || DstSpace!=(int)mlir::aries::adf::MemorySpace::L1) {
@@ -54,7 +54,7 @@ private:
   bool IsWrite(DmaOp dma){
     auto dmaDst = dma.getDst();
     auto DstSpace 
-        = dmaDst.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
+        = dyn_cast<MemRefType>(dmaDst.getType()).getMemorySpaceAsInt();
     if(!DstSpace || DstSpace!=(int)mlir::aries::adf::MemorySpace::L1)
       return true;
     else

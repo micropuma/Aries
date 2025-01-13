@@ -185,9 +185,9 @@ private:
       auto DmaSrc = op.getSrc();
       auto DmaDst = op.getDst();
       auto SrcSpace 
-           = DmaSrc.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
+           = dyn_cast<MemRefType>(DmaSrc.getType()).getMemorySpaceAsInt();
       auto DstSpace 
-           = DmaDst.getType().dyn_cast<MemRefType>().getMemorySpaceAsInt();
+           = dyn_cast<MemRefType>(DmaDst.getType()).getMemorySpaceAsInt();
       auto srcType = dyn_cast<MemRefType>(DmaSrc.getType());
       auto dstType = dyn_cast<MemRefType>(DmaDst.getType());
       auto writeAttr = op->getAttr("write");

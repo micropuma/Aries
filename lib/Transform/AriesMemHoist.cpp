@@ -71,7 +71,7 @@ private:
         for (auto subview : 
                   llvm::make_early_inc_range(calleeFuncOp.getOps<SubViewOp>())) {
           //check if the source of the subview is an argument of the callee
-          auto arg = subview.getSource().dyn_cast<BlockArgument>();
+          auto arg = dyn_cast<BlockArgument>(subview.getSource());
           if (!arg)
             continue;
 

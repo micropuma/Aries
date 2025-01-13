@@ -49,7 +49,7 @@ private:
 
         for (auto arg : calleeFuncOp.getArguments()) {
           // Traverse the memref arguments in the callee function
-          auto argType = arg.getType().dyn_cast<MemRefType>();
+          auto argType = dyn_cast<MemRefType>(arg.getType());
           if (!argType)
             continue;
 
@@ -135,10 +135,9 @@ private:
             builder.setInsertionPointAfter(applyOp);
           }
           // Create the SubViewOp with dynmic entries and inferred result type
-          auto subviewOutputType =
-          SubViewOp::inferResultType(arg.getType().dyn_cast<MemRefType>(),
-                                     memOffsets, memSizes, memStrides)
-                                    .dyn_cast<MemRefType>();
+          auto subviewOutputType = dyn_cast<MemRefType>(
+          SubViewOp::inferResultType(dyn_cast<MemRefType>(arg.getType()),
+                                     memOffsets, memSizes, memStrides));
           auto subview =
               builder.create<SubViewOp>(loc, 
                                         subviewOutputType, arg, memOffsets, 

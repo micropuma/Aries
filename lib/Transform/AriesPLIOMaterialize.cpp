@@ -677,7 +677,7 @@ private:
         auto splitNum = (unsigned)(width/originWidth);
         if(splitNum==1){
           Value addOp;
-          if (elementType.isa<FloatType>())
+          if (isa<FloatType>(elementType))
             addOp = builder.create<arith::AddFOp>(loc, loadOp, result);
           else
             addOp = builder.create<arith::AddIOp>(loc, loadOp, result);
@@ -982,7 +982,7 @@ private:
       builder.create<AffineStoreOp>(loc, newLoad, allocOp, zeroValues);
       // After data store back to L2, initialize local buffer with zero
       Value value;
-      if (elementType.isa<IntegerType>()) {
+      if (isa<IntegerType>(elementType)) {
         auto intAttr = builder.getIntegerAttr(elementType, 0);
         value = builder.create<arith::ConstantOp>(loc, elementType, intAttr);
       }else{

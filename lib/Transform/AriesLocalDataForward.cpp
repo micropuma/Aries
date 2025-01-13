@@ -136,7 +136,7 @@ private:
       }
       RewritePatternSet patterns(context);
       patterns.add<DMAForward>(patterns.getContext());
-      (void)applyPatternsAndFoldGreedily(mod, std::move(patterns));
+      (void)applyPatternsGreedily(mod, std::move(patterns));
     }
 
     return true;
