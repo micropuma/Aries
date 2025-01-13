@@ -10,8 +10,10 @@ set (LIBS
     MLIRPass
     MLIRADF
     AIE
+    AIEX
     AIETransforms
     MLIRAIEVecDialect
+    MLIRAIEVecAIE1Dialect
     MLIRAIEVecTransformOps
     MLIRAIEVecTransforms
 )

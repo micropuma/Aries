@@ -5,11 +5,11 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
-#include "aries/Translation/Emitter.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
+#include "aries/Translation/Emitter.h"
 #include "aries/Dialect/ADF/ADFDialect.h"
-#include "aie/Dialect/AIE/IR/AIEDialect.h"
-#include "aie/Dialect/AIEVec/IR/AIEVecOps.h"
+#include "aie/Dialect/AIEVec/AIE1/IR/AIEVecAIE1Ops.h"
+#include "aie/Dialect/AIEVec/IR/AIEVecDialect.h"
 
 using namespace mlir;
 using namespace aries;
@@ -35,6 +35,7 @@ void aries::registerEmitAriesCppTranslation() {
       math::MathDialect,
       cf::ControlFlowDialect,
       DLTIDialect,
+      xilinx::aievec::aie1::AIEVecAIE1Dialect,
       xilinx::aievec::AIEVecDialect,
       index::IndexDialect
     >();
@@ -58,6 +59,7 @@ void aries::registeremitKernelFuncTranslation() {
           math::MathDialect,
           cf::ControlFlowDialect,
           DLTIDialect,
+          xilinx::aievec::aie1::AIEVecAIE1Dialect,
           xilinx::aievec::AIEVecDialect,
           index::IndexDialect
         >();

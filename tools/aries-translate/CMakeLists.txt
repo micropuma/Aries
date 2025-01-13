@@ -26,6 +26,7 @@ target_link_libraries(aries-translate
   AIETargets
   MLIRTargetAIEVecCpp
   MLIRAIEVecDialect
+  MLIRAIEVecAIE1Dialect
   )
 
 mlir_check_all_link_libraries(aries-translate)
