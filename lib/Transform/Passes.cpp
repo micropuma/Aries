@@ -26,11 +26,14 @@ void mlir::aries::registerAriesPassPipeline() {
     pm.addPass(createAriesLowerToADFPass());
     pm.addPass(createAriesFuncUnrollPass());
     pm.addPass(createAriesLocalDataForwardPass());
+    pm.addPass(createAriesL2BufferCreatePass());
+    pm.addPass(createAriesL2BufferCreatePass(opts));
     pm.addPass(createAriesKernelInterfaceCreatePass());
     pm.addPass(createAriesBroadcastToForwardingPass());
     pm.addPass(createAriesDMAToIOPass());
     pm.addPass(createAriesDMAToIOPass(opts));
     pm.addPass(createAriesADFCellCreatePass());
+    pm.addPass(createAriesADFCellCreatePass(opts));
     pm.addPass(createAriesCorePlacementPass());
     pm.addPass(createAriesCorePlacementPass(opts));
     pm.addPass(createAriesIOPlacementPass());

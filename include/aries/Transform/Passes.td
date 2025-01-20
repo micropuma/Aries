@@ -101,6 +101,19 @@ def AriesLocalDataForward : Pass<"aries-local-data-forward"> {
   let constructor = "mlir::aries::createAriesLocalDataForwardPass()";
 }
 
+def AriesL2BufferCreate : Pass<"aries-l2-buffer-create"> {
+  let summary = "Create L2 buffer";
+  let description = [{
+    This pass extracts the L2 buffer after AIE array has been unrolled.
+  }];
+  let constructor = "mlir::aries::createAriesL2BufferCreatePass()";
+  let dependentDialects = ["mlir::memref::MemRefDialect"];
+  let options = [
+    Option<"EnablePL", "en-pl", "bool", /*default=*/"true",
+           "Enable programmable logic(PL) or not">
+  ];
+}
+
 def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
   let summary = "Create new kenrel with interface compatable with ADF kernels";
   let description = [{
@@ -147,6 +160,12 @@ def AriesADFCellCreate : Pass<"aries-adf-cell-create"> {
     This pass create the adf cell with input arguments and output values.
   }];
   let constructor = "mlir::aries::createAriesADFCellCreatePass()";
+  let options = [
+    Option<"EnablePL", "en-pl", "bool", /*default=*/"true",
+           "Enable programmable logic(PL) or not">,
+    Option<"EnableAIE2", "en-aie2", "bool", /*default=*/"false",
+           "Enable AIE2 architecture or not">
+  ];
 }
 
 def AriesCorePlacement : Pass<"aries-core-placement"> {
@@ -164,7 +183,11 @@ def AriesCorePlacement : Pass<"aries-core-placement"> {
     Option<"ColGap", "core-gap", "int64_t", /*default=*/"0",
            "Specify the gap between columns to improve corner cases">,
     Option<"CoreAlgo", "core-algo", "int64_t", /*default=*/"0",
-           "Specify the algorithm for core placement 0:vertical,1:horizontally">
+           "Specify an algorithm for core placement 0:vertical,1:horizontally">,
+    Option<"EnablePL", "en-pl", "bool", /*default=*/"true",
+           "Enable programmable logic(PL) or not">,
+    Option<"EnableAIE2", "en-aie2", "bool", /*default=*/"false",
+           "Enable AIE2 architecture or not">
   ];
 }
 
@@ -186,7 +209,11 @@ def AriesIOPlacement : Pass<"aries-io-placement"> {
     Option<"ChalOut", "chal-out", "int64_t", /*default=*/"3",
            "Specify the output PLIO channel in each shim">,
     Option<"EnableIOCons", "iocons", "bool", /*default=*/"false",
-           "Enable limiting the IO used in a shim for certain PLIOs">
+           "Enable limiting the IO used in a shim for certain PLIOs">,
+    Option<"EnablePL", "en-pl", "bool", /*default=*/"true",
+           "Enable programmable logic(PL) or not">,
+    Option<"EnableAIE2", "en-aie2", "bool", /*default=*/"false",
+           "Enable AIE2 architecture or not">
   ];
 }
 
