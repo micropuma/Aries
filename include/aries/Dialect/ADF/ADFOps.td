@@ -210,9 +210,9 @@ def BufferOp : ADF_Op<"buffer.create", []> {
       %buffer0 = adf.buffer.create() : memref<32x32xi32>
     ```
   }];
-
+  let arguments = (ins FlatSymbolRefAttr:$symbol);
   let results = (outs AnyMemRef:$buffer);
-  let assemblyFormat = " `(``)` attr-dict `:` type(results)";
+  let assemblyFormat = " $symbol `(``)` attr-dict `:` type(results)";
   let hasCanonicalizer = 1;
 }
 
@@ -389,7 +389,7 @@ def IOWriteOp: ADF_Op<"io.write", []> {
       : (f32, , !adf.plio<In>)
     ```
   }];
-  let arguments = (ins AnyType:$src, PLIOType:$dst);
+  let arguments = (ins AnyType:$src, GraphIOType:$dst);
   let assemblyFormat = [{
     `(` $src  `,` $dst `)`  attr-dict `:` `(` type($src) `,` type($dst) `)`
   }];
@@ -407,7 +407,7 @@ def IOReadOp: ADF_Op<"io.read", []> {
       : (!adf.plio<In>, f32)
     ```
   }];
-  let arguments = (ins PLIOType:$src);
+  let arguments = (ins GraphIOType:$src);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     `(` $src  `)`  attr-dict `:` functional-type($src, results)
