@@ -471,41 +471,6 @@ private:
   }
 
   // 1) Eliminate the output initialization loops
-  // 2) Move store to outside of the reduction loop
-  // 3) Unroll the loops within the array partitioning loop
-  bool unrollDMA1(OpBuilder builder, FuncOp adfFunc){
-    AffineForOp arrayForOp;   
-    adfFunc.walk([&](AffineForOp forOp){
-      if(forOp->hasAttr("Array_Partition"))
-        arrayForOp = forOp;
-    });
-    if(arrayForOp){
-      for (auto forOp : llvm::make_early_inc_range(
-                        arrayForOp.getOps<AffineForOp>())){
-        if(forOp->hasAttr("initialize"))
-          forOp.erase();
-        else if(forOp->hasAttr("store")){
-          forOp->moveAfter(arrayForOp);
-          SmallVector<AffineForOp, 6> band;
-          getNestedLoops(band, forOp);
-          for(auto loop: band){
-            if (failed(loopUnrollFull(loop)))
-              return false;
-          }
-        }else{
-          SmallVector<AffineForOp, 6> band;
-          getNestedLoops(band, forOp);
-          for(auto loop: band){
-            if (failed(loopUnrollFull(loop)))
-              return false;
-          }
-        }
-      }
-    }
-    return true;
-  }
-
-  // 1) Eliminate the output initialization loops
   // 2) Unroll the loops that has tripCount = 1
   bool unrollDMA(OpBuilder builder, FuncOp adfFunc){
     AffineForOp arrayForOp;   
@@ -624,6 +589,133 @@ private:
     pm.addPass(createCanonicalizerPass());
     if (failed(pm.run(adfFunc)))
       signalPassFailure();
+    return true;
+  }
+
+  // Current AIE-ML supports 4D slicing DMA instructions.
+  // This function will splict each IO with maximum 4 loops under
+  // common nested loops for all the IOs. The common nested loops will
+  // be unrolled and converted to different DMA ins. 
+  bool splitIO(OpBuilder builder, FuncOp adfFunc){
+    auto loc = builder.getUnknownLoc();
+    auto firstForOp = getFirstOpOfType<AffineForOp>(adfFunc.getRegion());
+    if(!firstForOp)
+      return true;
+    //Get the common perfect nested loops
+    SmallVector<AffineForOp, 6> comBand;
+    getPerfectlyNestedLoops(comBand, firstForOp);
+    unsigned comBandSize = comBand.size();
+    // Get the surrounding non-common loops for IOWrite/IORead
+    // From innermost to outermost
+    SmallVector<SmallVector<AffineForOp, 6>, 6> bands;
+    SmallVector<unsigned, 6> bandSizes;
+    adfFunc.walk([&](Operation* op){
+      if(auto writeOp = dyn_cast<IOWriteOp>(op)){
+        SmallVector<AffineForOp, 6> nestedBand;
+        auto loop = writeOp->getParentOfType<AffineForOp>();
+        if(!loop)
+          return WalkResult::advance();
+        nestedBand.push_back(loop);
+        getSurroundingLoops(*loop, nestedBand, false);
+        for(unsigned i = 0 ; i < comBandSize; i++)
+          nestedBand.pop_back();
+        bands.push_back(nestedBand);
+        bandSizes.push_back(nestedBand.size());
+      }else if(auto readOp = dyn_cast<IOReadOp>(op)){
+        SmallVector<AffineForOp, 6> nestedBand;
+        auto loop = readOp->getParentOfType<AffineForOp>();
+        if(!loop)
+          return WalkResult::advance();
+        nestedBand.push_back(loop);
+        getSurroundingLoops(*loop, nestedBand, false);
+        for(unsigned i = 0 ; i < comBandSize; i++)
+          nestedBand.pop_back();
+        bands.push_back(nestedBand);
+        bandSizes.push_back(nestedBand.size());
+      }
+      return WalkResult::advance();
+    });
+    // For each band, limit the number of loops to 4. If for every band, it's
+    // under 4. Then add common loops in until one of the band first reach 4.
+    auto maxIt = std::max_element(bandSizes.begin(), bandSizes.end());
+    auto maxSize = *maxIt;
+    AffineForOp oldComLoop; //Outermost loop that needs to be deleted
+    if(maxSize < 4){
+      for(unsigned i = 0; i < 4-maxSize; i++){
+        if(comBand.empty())
+          break;
+        auto newLoop = comBand.back();
+        oldComLoop = newLoop;
+        comBand.pop_back();
+        comBandSize--;
+        for (auto &band : bands)
+          band.push_back(newLoop);
+        for (auto &bandSize : bandSizes)
+          bandSize++;
+      }
+      if(comBandSize==0)
+        return true;
+      // Split the IOs into different region under the remaining common nested
+      // loops. And unroll the common nested for loops 
+      // 1) Tranverse the bands, and clone the forLoops, then move the
+      // operations inside the new innermost Loop.
+      auto comInnerLoop = comBand[comBandSize-1];
+      auto comInnerYiled = comInnerLoop.getBody()->getTerminator();
+      for (auto band : bands){
+        auto newBand = band;
+        // Reverse it back, newBand start with the outermost loop
+        std::reverse(newBand.begin(), newBand.end());
+        builder.setInsertionPoint(comInnerYiled);
+        SmallVector<AffineForOp, 4> newForOps;
+        for(auto loop : newBand){
+          auto newForOp 
+               = builder.create<AffineForOp>(loc,
+                                             loop.getLowerBoundOperands(),
+                                             loop.getLowerBoundMap(),
+                                             loop.getUpperBoundOperands(),
+                                             loop.getUpperBoundMap(),
+                                             loop.getStepAsInt());
+          newForOps.push_back(newForOp);
+          if(loop->hasAttr("reduction"))
+            newForOp->setAttr("reduction",builder.getUnitAttr());
+          builder.setInsertionPointToStart(newForOp.getBody());
+        }
+        auto innerNewLoop = newForOps[newForOps.size()-1];
+        auto innerNewYiled = innerNewLoop.getBody()->getTerminator();
+        // Move operations insert newInnerLoop
+        auto innerLoop = newBand[newBand.size()-1];
+        for(auto& op : llvm::make_early_inc_range(innerLoop.getOps())){
+          if(!dyn_cast<AffineYieldOp>(op))
+            op.moveBefore(innerNewYiled);
+        }
+        // Update the loop variables
+        auto numVi = newForOps.size();
+        for (unsigned i = 0; i < numVi; ++i) {
+          auto oldvi = newBand[i].getInductionVar();
+          auto newvi = newForOps[i].getInductionVar();
+          oldvi.replaceUsesWithIf(newvi,[&](OpOperand &use){
+              return innerNewLoop->isProperAncestor(use.getOwner());
+          });
+        }
+      }
+      // Delete the original loops
+      // If the loops are moved to a common loop then just delete it
+      if(oldComLoop)
+        oldComLoop.erase();
+      // Unroll the common nested Loops
+      for(auto loop : comBand){
+        if (failed(loopUnrollFull(loop)))
+            return false;
+      }
+    }else{ 
+      // TODO:: Deal with the case that maxSize is greater than 5 
+      // Need to tranverse the loop nest and unroll some of the non-common loops
+      // Unroll the common nested Loops
+      for(auto loop : comBand){
+        if (failed(loopUnrollFull(loop)))
+            return false;
+      }
+    }
     return true;
   }
 
@@ -765,6 +857,8 @@ private:
     if(!unrollDMA(builder, adfFunc))
       return false;
     processIO(builder, adfFunc);
+    if(!splitIO(builder, adfFunc))
+      return false;
     createSeq(builder, adfFunc, endOp, seqOp);
     // Record tiles of shim, L1 and L2 mem, tile = memMap[buf/shim].first
     DenseMap<Value, std::pair<Value, std::string>> memMap;
