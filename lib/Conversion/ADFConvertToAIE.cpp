@@ -24,12 +24,47 @@ using namespace xilinx::AIE;
 using namespace xilinx::AIEX;
 
 
+// Set the name to the graphio of the connectOp, find the corresponding
+// graphio in the aiex.runtime_sequence
+static void setGraphIOAttr(RuntimeSequenceOp seqOp, CreateGraphIOOp newio,
+                           StringAttr stringAttr, bool input){
+  std::string dirName;
+  if(input)
+    dirName = "input_io";
+  else
+    dirName = "output_io";
+  CreateGraphIOOp oldio;
+  auto input_attr = newio->getAttr(dirName);
+  if(input_attr){
+    auto idx = dyn_cast<IntegerAttr>(input_attr).getInt();
+    seqOp.walk([&](CreateGraphIOOp graphio){
+      auto attr = graphio->getAttr(dirName);
+      if(!attr)
+        return WalkResult::advance();
+      auto idxOld = dyn_cast<IntegerAttr>(attr).getInt();
+      if(idxOld == idx){
+        oldio = graphio;
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+  }
+  newio->setAttr("objFIFOName", stringAttr);
+  newio->removeAttr(dirName);
+  if(oldio){
+    oldio->setAttr("objFIFOName", stringAttr);
+    oldio->removeAttr(dirName);
+  }
+}
+
 struct ConnectConvert : public OpConversionPattern<adf::ConnectOp> {
   using OpConversionPattern<adf::ConnectOp>::OpConversionPattern;
+  RuntimeSequenceOp& seqOp;
   DenseMap<Value, std::pair<Value, std::string>>& memMap;
-  ConnectConvert(MLIRContext *context, 
+  ConnectConvert(MLIRContext *context, RuntimeSequenceOp& seqOp,
                  DenseMap<Value, std::pair<Value, std::string>>& memMap)
-        : OpConversionPattern<adf::ConnectOp>(context), memMap(memMap){}
+        : OpConversionPattern<adf::ConnectOp>(context), seqOp(seqOp), 
+          memMap(memMap){}
   LogicalResult matchAndRewrite(
       adf::ConnectOp op, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
@@ -47,12 +82,19 @@ struct ConnectConvert : public OpConversionPattern<adf::ConnectOp> {
     auto dstTile = memMap[dst].first;
     MemRefType memrefType;
     std::string objFIFOName;
+    StringAttr stringAttr;
     if(!srcMemType){
       memrefType = dstMemType;
       objFIFOName = memMap[dst].second;
+      stringAttr = StringAttr::get(context, objFIFOName);
+      auto newio = dyn_cast<CreateGraphIOOp>(src.getDefiningOp());
+      setGraphIOAttr(seqOp,  newio, stringAttr, true);
     }else if(!dstMemType){
       memrefType = srcMemType;
       objFIFOName = memMap[src].second;
+      stringAttr = StringAttr::get(context, objFIFOName);
+      auto newio = dyn_cast<CreateGraphIOOp>(dst.getDefiningOp());
+      setGraphIOAttr(seqOp, newio, stringAttr, false);
     }else{
       ;
       // TODO: Currently do nothing, but need to deal with connect between mems
@@ -61,7 +103,6 @@ struct ConnectConvert : public OpConversionPattern<adf::ConnectOp> {
       rewriter.eraseOp(op);
       return success();
     }
-    auto stringAttr = StringAttr::get(context, objFIFOName);
     auto objectType = AIEObjectFifoType::get(memrefType);
     rewriter.replaceOpWithNewOp<ObjectFifoCreateOp>(op, stringAttr, srcTile, 
                                                     ValueRange{dstTile}, 
@@ -262,6 +303,127 @@ struct BufferConvert : public OpConversionPattern<adf::BufferOp> {
   }
 };
 
+static bool getDMALayout(mlir::AffineMap map, MemRefType memType,
+                         SmallVector<Value> operands,
+                         SmallVector<AffineForOp, 6> nestedBand,
+                         SmallVector<int64_t, 4>& offsets,
+                         SmallVectorImpl<int64_t>& sizes,
+                         SmallVector<int64_t, 4>& strides,
+                         const int dmaDim, const int numZeroLoop){
+  auto dimNum = map.getNumDims();
+  auto dimSymbol = map.getNumSymbols();
+  auto shape = memType.getShape();
+  auto rank = memType.getRank();
+  // Get sizes
+  for(auto loop : nestedBand){
+    auto size = getConstantTripCount(loop);
+    if(!size.has_value())
+      return false;
+    sizes.push_back(size.value());
+  }
+  //Get offset and strides
+  for(unsigned i = 0; i < rank; i++){
+    auto expr = map.getResult(i);
+    // flattened form [dims, symbols, locals, constant]
+    llvm::SmallVector<int64_t> flattenedExpr;
+    if (failed(getFlattenedAffineExpr(expr, dimNum, dimSymbol, 
+                                      &flattenedExpr)))
+      return false;
+    // Get stides by tranversing all the operands
+    for (unsigned dim = 0; dim < dimNum; ++dim) {
+      auto loop = getForInductionVarOwner(operands[dim]);
+      if (!loop)
+        continue;
+      auto it = llvm::find(nestedBand, loop);
+      if(it!=nestedBand.end()){
+        auto coeff = flattenedExpr[dim];
+        if(coeff==0)
+          continue;
+        // Serialize the strides of current rank by multiplying the size of 
+        // the higher ranks
+        for(unsigned j = i+1; j < rank; j++)
+          coeff = coeff * shape[j];
+        unsigned depth = it - nestedBand.begin();
+        strides[depth+numZeroLoop] += coeff;
+      }else{
+        llvm::errs() << "Loop not found in the surrounding loop band\n";
+        return false;
+      }
+    }
+    // Get offset by analyze the constant
+    auto coeff = flattenedExpr[flattenedExpr.size()-1];
+    // Serialize the strides of current rank by multiplying the size of 
+    // the higher ranks
+    for(unsigned j = i+1; j < rank; j++)
+      coeff = coeff * shape[j];
+    offsets[dmaDim-1] += coeff;
+  }
+  return true;
+}
+
+// Convert the Surrounding nest for loops and the IOWriteOp to dma_memcpy_nd
+struct IOWriteConvert : public OpConversionPattern<adf::IOWriteOp> {
+  using OpConversionPattern<adf::IOWriteOp>::OpConversionPattern;
+  int& numBD;
+  IOWriteConvert(MLIRContext *context, int& numBD)
+        : OpConversionPattern<adf::IOWriteOp>(context), numBD(numBD){}
+  LogicalResult matchAndRewrite(
+      adf::IOWriteOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+    
+    const int dmaDim=4;
+    auto loc = rewriter.getUnknownLoc();
+    // May need to set as an input of the conversion
+    auto loop = op->getParentOfType<AffineForOp>();
+    if(!loop){
+      //TODO:: Convert to dma_memcpy_nd with only offset
+      return success();
+    }
+    // Get nested loop from outermost and assume the loops have been normalized
+    SmallVector<AffineForOp, 6> nestedBand;
+    getSurroundingLoops(*loop, nestedBand);
+    nestedBand.push_back(loop);
+    int numLoop = nestedBand.size();
+    int numZeroLoop = dmaDim - numLoop;
+    if(numZeroLoop<0){
+      llvm::errs() << "Number of loop invariant exceeds DMA capability(4)\n";
+      return failure();
+    }
+    // Serialize the nd memory access and get the offsets, sizes and strides
+    // Currently only considered static offsets, stride
+    // And only consider the loop-index as operands of affine.load
+    auto loadVal = op.getSrc();
+    auto loadOp = dyn_cast<AffineLoadOp>(loadVal.getDefiningOp());
+    auto map = loadOp.getAffineMap();
+    auto operands = loadOp.getMapOperands();
+    auto memType = loadOp.getMemRefType();
+    auto mem = loadOp.getMemRef();
+    SmallVector<int64_t, 4> offsets(dmaDim, 0);
+    SmallVector<int64_t, dmaDim> sizes(numZeroLoop, 0);
+    SmallVector<int64_t, 4> strides(dmaDim, 0);
+    if(!getDMALayout(map, memType, operands, nestedBand, offsets, sizes, 
+                     strides, dmaDim, numZeroLoop))
+      return failure();
+    // Create NpuDmaMemcpyNdOp op and delete the outerLoop
+    auto outLoop = nestedBand[0];
+    rewriter.setInsertionPoint(outLoop);
+    PacketInfoAttr emptyPacket;
+    auto dst = op.getDst();
+    auto graphio = dyn_cast<CreateGraphIOOp>(dst.getDefiningOp());
+    StringRef metadata = dyn_cast<StringAttr>(graphio->getAttr("objFIFOName"));
+    rewriter.create<NpuDmaMemcpyNdOp>(loc, 0, 0, mem,
+                                      SmallVector<Value>{}, 
+                                      SmallVector<Value>{},
+                                      SmallVector<Value>{},
+                                      ArrayRef(offsets), ArrayRef(sizes),
+                                      ArrayRef(strides), emptyPacket, metadata, 
+                                      /*bd_id*/ 0, false, 0, 0, 0, 0, 0, 0);
+    rewriter.eraseOp(op);
+    rewriter.eraseOp(outLoop);
+    return success();
+  }
+};
+
 namespace {
 
 struct ADFConvertToAIE : public ADFConvertToAIEBase<ADFConvertToAIE> {
@@ -298,7 +460,8 @@ private:
   // Tranverse each operands of adf.cell calls and create a newIO before endOp
   void createNewIO(OpBuilder builder, CallOp call, EndOp endOp,
                    unsigned &inCnt, unsigned &outCnt,
-                   SmallVector<Value, 6>& graphIOs){
+                   SmallVector<Value, 6>& graphIOs,
+                   DenseMap<CreateGraphIOOp, CreateGraphIOOp>& graphIOMap){
     auto indexType = builder.getIndexType();
     for(auto operand : call.getOperands()){
       auto defineOp = operand.getDefiningOp();
@@ -325,6 +488,16 @@ private:
       builder.setInsertionPoint(endOp);
       builder.insert(newio);
       graphIOs.push_back(newio.getResult());
+      // Record all the GraphIO maps
+      if(graphIOMap.count(newio)){
+        auto oldio = graphIOMap[newio];
+        if (oldio != graphio){
+          llvm::errs() << "Find IOs has one-to-many mapping\n";
+          return;
+        }
+      }else{
+        graphIOMap[newio] = graphio;
+      }
     }
   }
 
@@ -354,7 +527,8 @@ private:
 
   // This function creates the graphios and lift the operations
   // inside the func marked by adf.cell to deviceOp
-  void liftCell(OpBuilder builder, DeviceOp device, EndOp endOp){
+  void liftCell(OpBuilder builder, DeviceOp device, EndOp endOp,
+                DenseMap<CreateGraphIOOp, CreateGraphIOOp>& graphIOMap){
     unsigned inCnt=0, outCnt=0;
     // First tranverse create newIOs and move ops from callee to device
     for(auto func: device.getOps<FuncOp>()){
@@ -364,7 +538,7 @@ private:
         if(!call->hasAttr("adf.cell"))
           return WalkResult::advance();
         SmallVector<Value, 6> graphIOs;
-        createNewIO(builder, call, endOp, inCnt, outCnt, graphIOs);
+        createNewIO(builder, call, endOp, inCnt, outCnt, graphIOs, graphIOMap);
         moveToDevice(builder, call, device, endOp, graphIOs);
         call.erase();
         return WalkResult::advance();
@@ -716,6 +890,11 @@ private:
             return false;
       }
     }
+    PassManager pm(&getContext());
+    pm.addPass(createCSEPass());
+    pm.addPass(createCanonicalizerPass());
+    if (failed(pm.run(adfFunc)))
+      signalPassFailure();
     return true;
   }
 
@@ -824,14 +1003,19 @@ private:
   bool ADFtoAIE(OpBuilder builder, DeviceOp& device, RuntimeSequenceOp seqOp,
                 DenseMap<Value, std::pair<Value, std::string>>& memMap,
                 DenseMap<CallOp, Value>& coreMap){
+    int numBD = 16;
     MLIRContext *context = device->getContext();
     RewritePatternSet patterns(context);
     ConversionTarget target(*context);
     target.addIllegalOp<adf::ConnectOp>();
-    patterns.add<ConnectConvert>(patterns.getContext(), memMap);
+    target.addIllegalOp<adf::LaunchCellOp>();
+    target.addIllegalOp<adf::DmaOp>();
+    target.addIllegalOp<adf::BufferOp>();
+    patterns.add<ConnectConvert>(patterns.getContext(), seqOp, memMap);
     patterns.add<CellLaunchConvert>(patterns.getContext(), coreMap);
     patterns.add<DmaConvert>(patterns.getContext(), memMap);
     patterns.add<BufferConvert>(patterns.getContext());
+    patterns.add<IOWriteConvert>(patterns.getContext(), numBD);
     target.addLegalOp<ObjectFifoAcquireOp>();
     target.addLegalOp<ObjectFifoSubviewAccessOp>();
     target.addLegalDialect<FuncDialect>();
@@ -849,8 +1033,10 @@ private:
     EndOp endOp;
     RuntimeSequenceOp seqOp;
     FuncOp adfFunc;
+    // This map records the corresponding IOs in the adf.cell and adf.func
+    DenseMap<CreateGraphIOOp, CreateGraphIOOp> graphIOMap;
     createDevice(mod, builder, device, endOp);
-    liftCell(builder, device, endOp);
+    liftCell(builder, device, endOp, graphIOMap);
     splitCores(builder, device);
     if(!findADFFunc(device, adfFunc))
       return false;

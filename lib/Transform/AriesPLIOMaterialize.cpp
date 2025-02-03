@@ -1222,7 +1222,7 @@ private:
         auto it = llvm::find(originBand, loop);
         if(it!=originBand.end()){
           auto coeff = flattenedExpr[i];
-          unsigned depth = llvm::find(originBand, loop) - originBand.begin();
+          unsigned depth = it - originBand.begin();
           innerLoops.push_back(std::pair(depth, coeff));
         }
       }
