@@ -364,9 +364,8 @@ static bool getDMALayout(mlir::AffineMap map, MemRefType memType,
 // Convert the Surrounding nest for loops and the IOWriteOp to dma_memcpy_nd
 struct IOWriteConvert : public OpConversionPattern<adf::IOWriteOp> {
   using OpConversionPattern<adf::IOWriteOp>::OpConversionPattern;
-  int& numBD;
-  IOWriteConvert(MLIRContext *context, int& numBD)
-        : OpConversionPattern<adf::IOWriteOp>(context), numBD(numBD){}
+  IOWriteConvert(MLIRContext *context)
+        : OpConversionPattern<adf::IOWriteOp>(context){}
   LogicalResult matchAndRewrite(
       adf::IOWriteOp op, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
@@ -411,13 +410,14 @@ struct IOWriteConvert : public OpConversionPattern<adf::IOWriteOp> {
     auto dst = op.getDst();
     auto graphio = dyn_cast<CreateGraphIOOp>(dst.getDefiningOp());
     StringRef metadata = dyn_cast<StringAttr>(graphio->getAttr("objFIFOName"));
+    int64_t id = dyn_cast<IntegerAttr>(op->getAttr("id")).getInt();
     rewriter.create<NpuDmaMemcpyNdOp>(loc, 0, 0, mem,
                                       SmallVector<Value>{}, 
                                       SmallVector<Value>{},
                                       SmallVector<Value>{},
                                       ArrayRef(offsets), ArrayRef(sizes),
                                       ArrayRef(strides), emptyPacket, metadata, 
-                                      /*bd_id*/ 0, false, 0, 0, 0, 0, 0, 0);
+                                      /*bd_id*/ id, false, 0, 0, 0, 0, 0, 0);
     rewriter.eraseOp(op);
     rewriter.eraseOp(outLoop);
     return success();
@@ -427,9 +427,8 @@ struct IOWriteConvert : public OpConversionPattern<adf::IOWriteOp> {
 // Convert the Surrounding nest for loops and the IOReadOp to dma_memcpy_nd
 struct IOReadConvert : public OpConversionPattern<adf::IOReadOp> {
   using OpConversionPattern<adf::IOReadOp>::OpConversionPattern;
-  int& numBD;
-  IOReadConvert(MLIRContext *context, int& numBD)
-        : OpConversionPattern<adf::IOReadOp>(context), numBD(numBD){}
+  IOReadConvert(MLIRContext *context)
+        : OpConversionPattern<adf::IOReadOp>(context){}
   LogicalResult matchAndRewrite(
       adf::IOReadOp op, OpAdaptor adaptor,
       ConversionPatternRewriter &rewriter) const override {
@@ -482,13 +481,15 @@ struct IOReadConvert : public OpConversionPattern<adf::IOReadOp> {
     auto ioVal = op.getSrc();
     auto graphio = dyn_cast<CreateGraphIOOp>(ioVal.getDefiningOp());
     StringRef metadata = dyn_cast<StringAttr>(graphio->getAttr("objFIFOName"));
+    int64_t id = dyn_cast<IntegerAttr>(op->getAttr("id")).getInt();
     rewriter.create<NpuDmaMemcpyNdOp>(loc, 0, 0, mem,
                                       SmallVector<Value>{}, 
                                       SmallVector<Value>{},
                                       SmallVector<Value>{},
                                       ArrayRef(offsets), ArrayRef(sizes),
                                       ArrayRef(strides), emptyPacket, metadata, 
-                                      /*bd_id*/ 0, false, 0, 0, 0, 0, 0, 0);
+                                      /*bd_id*/ id, false, 0, 0, 0, 0, 0, 0);
+    rewriter.create<NpuDmaWaitOp>(loc, metadata);
     rewriter.eraseOp(op);
     rewriter.eraseOp(outLoop);
     return success();
@@ -994,6 +995,27 @@ private:
     return true;
   }
 
+  // Assign bd ID for IOReadOp and IOWriteOp
+  void assignID(OpBuilder builder, FuncOp adfFunc){
+    const int maxBD = 16;
+    int halfBD = maxBD/2;
+    bool ping_pang = false;
+    int cnt = 0;
+    adfFunc.walk([&](Operation* op){
+      int id = ping_pang * halfBD + (cnt%halfBD);
+      auto attr = builder.getIntegerAttr(builder.getIndexType(), id);
+      if(auto writeOp = dyn_cast<IOWriteOp>(op)){
+        writeOp->setAttr("id", attr);
+        cnt++;
+      }else if(auto readOp = dyn_cast<IOReadOp>(op)){
+        readOp->setAttr("id", attr);
+        cnt=0;
+        ping_pang = !ping_pang;
+      }
+      return WalkResult::advance();
+    });
+  }
+
   // Create aiex.runtime_sequence with deviceOp
   // Move all the operations in func.func makred by adf.func to runtime_sequence
   void createSeq(OpBuilder builder, FuncOp adfFunc, EndOp endOp,
@@ -1099,7 +1121,6 @@ private:
   bool ADFtoAIE(OpBuilder builder, DeviceOp& device, RuntimeSequenceOp seqOp,
                 DenseMap<Value, std::pair<Value, std::string>>& memMap,
                 DenseMap<CallOp, Value>& coreMap){
-    int numBD = 16;
     MLIRContext *context = device->getContext();
     RewritePatternSet patterns(context);
     ConversionTarget target(*context);
@@ -1111,8 +1132,8 @@ private:
     patterns.add<CellLaunchConvert>(patterns.getContext(), coreMap);
     patterns.add<DmaConvert>(patterns.getContext(), memMap);
     patterns.add<BufferConvert>(patterns.getContext());
-    patterns.add<IOWriteConvert>(patterns.getContext(), numBD);
-    patterns.add<IOReadConvert>(patterns.getContext(), numBD);
+    patterns.add<IOWriteConvert>(patterns.getContext());
+    patterns.add<IOReadConvert>(patterns.getContext());
     patterns.add<GraphIOConvert>(patterns.getContext());
     target.addLegalOp<ObjectFifoAcquireOp>();
     target.addLegalOp<ObjectFifoSubviewAccessOp>();
@@ -1143,6 +1164,7 @@ private:
     processIO(builder, adfFunc);
     if(!splitIO(builder, adfFunc))
       return false;
+    assignID(builder, adfFunc);
     createSeq(builder, adfFunc, endOp, seqOp);
     // Record tiles of shim, L1 and L2 mem, tile = memMap[buf/shim].first
     DenseMap<Value, std::pair<Value, std::string>> memMap;
