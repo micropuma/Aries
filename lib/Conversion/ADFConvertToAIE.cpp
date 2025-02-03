@@ -399,7 +399,7 @@ struct IOWriteConvert : public OpConversionPattern<adf::IOWriteOp> {
     auto memType = loadOp.getMemRefType();
     auto mem = loadOp.getMemRef();
     SmallVector<int64_t, 4> offsets(dmaDim, 0);
-    SmallVector<int64_t, dmaDim> sizes(numZeroLoop, 0);
+    SmallVector<int64_t, dmaDim> sizes(numZeroLoop, 1);
     SmallVector<int64_t, 4> strides(dmaDim, 0);
     if(!getDMALayout(map, memType, operands, nestedBand, offsets, sizes, 
                      strides, dmaDim, numZeroLoop))
@@ -420,6 +420,88 @@ struct IOWriteConvert : public OpConversionPattern<adf::IOWriteOp> {
                                       /*bd_id*/ 0, false, 0, 0, 0, 0, 0, 0);
     rewriter.eraseOp(op);
     rewriter.eraseOp(outLoop);
+    return success();
+  }
+};
+
+// Convert the Surrounding nest for loops and the IOReadOp to dma_memcpy_nd
+struct IOReadConvert : public OpConversionPattern<adf::IOReadOp> {
+  using OpConversionPattern<adf::IOReadOp>::OpConversionPattern;
+  int& numBD;
+  IOReadConvert(MLIRContext *context, int& numBD)
+        : OpConversionPattern<adf::IOReadOp>(context), numBD(numBD){}
+  LogicalResult matchAndRewrite(
+      adf::IOReadOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+    
+    const int dmaDim=4;
+    auto loc = rewriter.getUnknownLoc();
+    // May need to set as an input of the conversion
+    auto loop = op->getParentOfType<AffineForOp>();
+    if(!loop){
+      //TODO:: Convert to dma_memcpy_nd with only offset
+      return success();
+    }
+    // Get nested loop from outermost and assume the loops have been normalized
+    SmallVector<AffineForOp, 6> nestedBand;
+    getSurroundingLoops(*loop, nestedBand);
+    nestedBand.push_back(loop);
+    int numLoop = nestedBand.size();
+    int numZeroLoop = dmaDim - numLoop;
+    if(numZeroLoop<0){
+      llvm::errs() << "Number of loop invariant exceeds DMA capability(4)\n";
+      return failure();
+    }
+    // Serialize the nd memory access and get the offsets, sizes and strides
+    // Currently only considered static offsets, stride
+    // And only consider the loop-index as operands of affine.load
+    auto readVal = op.getResult();
+    AffineStoreOp storeOp;
+    for(auto use: readVal.getUsers()){
+      if(auto store = dyn_cast<AffineStoreOp>(use)){
+        storeOp = store;
+        break;
+      }
+    }
+    if(!storeOp)
+      return failure();
+    auto map = storeOp.getAffineMap();
+    auto operands = storeOp.getMapOperands();
+    auto memType = storeOp.getMemRefType();
+    auto mem = storeOp.getMemRef();
+    SmallVector<int64_t, 4> offsets(dmaDim, 0);
+    SmallVector<int64_t, dmaDim> sizes(numZeroLoop, 1);
+    SmallVector<int64_t, 4> strides(dmaDim, 0);
+    if(!getDMALayout(map, memType, operands, nestedBand, offsets, sizes, 
+                     strides, dmaDim, numZeroLoop))
+      return failure();
+    // Create NpuDmaMemcpyNdOp op and delete the outerLoop
+    auto outLoop = nestedBand[0];
+    rewriter.setInsertionPoint(outLoop);
+    PacketInfoAttr emptyPacket;
+    auto ioVal = op.getSrc();
+    auto graphio = dyn_cast<CreateGraphIOOp>(ioVal.getDefiningOp());
+    StringRef metadata = dyn_cast<StringAttr>(graphio->getAttr("objFIFOName"));
+    rewriter.create<NpuDmaMemcpyNdOp>(loc, 0, 0, mem,
+                                      SmallVector<Value>{}, 
+                                      SmallVector<Value>{},
+                                      SmallVector<Value>{},
+                                      ArrayRef(offsets), ArrayRef(sizes),
+                                      ArrayRef(strides), emptyPacket, metadata, 
+                                      /*bd_id*/ 0, false, 0, 0, 0, 0, 0, 0);
+    rewriter.eraseOp(op);
+    rewriter.eraseOp(outLoop);
+    return success();
+  }
+};
+
+struct GraphIOConvert : public OpConversionPattern<adf::CreateGraphIOOp> {
+  using OpConversionPattern<adf::CreateGraphIOOp>::OpConversionPattern;
+  LogicalResult matchAndRewrite(
+      adf::CreateGraphIOOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+    
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -775,12 +857,30 @@ private:
     auto firstForOp = getFirstOpOfType<AffineForOp>(adfFunc.getRegion());
     if(!firstForOp)
       return true;
+    // Check if the first op is a common nested loop for all the IOWrite/IORead
+    bool flag = true;
+    adfFunc.walk([&](Operation* op){
+      if(auto writeOp = dyn_cast<IOWriteOp>(op)){
+        if(!firstForOp->isAncestor(writeOp)){
+          flag = false;
+          return WalkResult::interrupt();
+        }
+      }else if(auto readOp = dyn_cast<IOReadOp>(op)){
+        if(!firstForOp->isAncestor(readOp)){
+          flag = false;
+          return WalkResult::interrupt();
+        }
+      }
+      return WalkResult::advance();
+    });
     //Get the common perfect nested loops
     SmallVector<AffineForOp, 6> comBand;
-    getPerfectlyNestedLoops(comBand, firstForOp);
+    // flag=1 means firstForOp is a common nested loop
+    if(flag)
+      getPerfectlyNestedLoops(comBand, firstForOp);
     unsigned comBandSize = comBand.size();
     // Get the surrounding non-common loops for IOWrite/IORead
-    // From innermost to outermost
+    // From innermost to outermost, meaning nestedBand[0] is innermost loop
     SmallVector<SmallVector<AffineForOp, 6>, 6> bands;
     SmallVector<unsigned, 6> bandSizes;
     adfFunc.walk([&](Operation* op){
@@ -827,19 +927,15 @@ private:
         for (auto &bandSize : bandSizes)
           bandSize++;
       }
-      if(comBandSize==0)
-        return true;
       // Split the IOs into different region under the remaining common nested
       // loops. And unroll the common nested for loops 
       // 1) Tranverse the bands, and clone the forLoops, then move the
       // operations inside the new innermost Loop.
-      auto comInnerLoop = comBand[comBandSize-1];
-      auto comInnerYiled = comInnerLoop.getBody()->getTerminator();
       for (auto band : bands){
         auto newBand = band;
         // Reverse it back, newBand start with the outermost loop
         std::reverse(newBand.begin(), newBand.end());
-        builder.setInsertionPoint(comInnerYiled);
+        builder.setInsertionPoint(oldComLoop);
         SmallVector<AffineForOp, 4> newForOps;
         for(auto loop : newBand){
           auto newForOp 
@@ -1016,6 +1112,8 @@ private:
     patterns.add<DmaConvert>(patterns.getContext(), memMap);
     patterns.add<BufferConvert>(patterns.getContext());
     patterns.add<IOWriteConvert>(patterns.getContext(), numBD);
+    patterns.add<IOReadConvert>(patterns.getContext(), numBD);
+    patterns.add<GraphIOConvert>(patterns.getContext());
     target.addLegalOp<ObjectFifoAcquireOp>();
     target.addLegalOp<ObjectFifoSubviewAccessOp>();
     target.addLegalDialect<FuncDialect>();
