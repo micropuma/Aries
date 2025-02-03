@@ -268,8 +268,6 @@ def CreateKernelIOOp : ADF_Op<"kernel.io", []> {
 // Operations for connecting the ADF Graph
 // -------------
 
-
-//This is similar to dma_memcpy_nd in MLIR-AIR
 def DmaOp: ADF_Op<"dma", [AttrSizedOperandSegments]> {
   let summary = "This is a dma operator that copy data between memrefs";
   let description = [{
@@ -291,6 +289,29 @@ def DmaOp: ADF_Op<"dma", [AttrSizedOperandSegments]> {
     `(` type($src) `,` type($dst) `)`
   }];
   let hasVerifier = 1;
+}
+
+def DmaBroadcastOp: ADF_Op<"dma.broadcast", [AttrSizedOperandSegments]> {
+  let summary = "This is a dma broadcast operator that copy data between memrefs";
+  let description = [{
+    This is a dma broadcast operator that allows one source memory to be 
+    broadcast to different dsts
+  }];
+  let arguments = (
+    ins AnyMemRef:$src,
+        Variadic<Index>:$src_offsets,
+        Variadic<Index>:$src_sizes,
+        Variadic<Index>:$src_strides,
+        Variadic<AnyMemRef>:$dst,
+        Variadic<Index>:$dst_offsets,
+        Variadic<Index>:$dst_sizes,
+        Variadic<Index>:$dst_strides
+  );
+  let assemblyFormat = [{
+    `(` $src `[` ($src_offsets^)? `]``[` ($src_sizes^)? `]``[` ($src_strides^)? `]` `,`
+        `{` $dst `}` `[` ($dst_offsets^)? `]``[` ($dst_sizes^)? `]``[` ($dst_strides^)? `]` `)`  attr-dict `:`
+    `(` type($src) `,` type($dst) `)`
+  }];
 }
 
 def ConnectOp : ADF_Op<"connect", []> {
