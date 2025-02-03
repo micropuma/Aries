@@ -255,8 +255,13 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
       auto srcArray = ArrayAttr::get(context, {srcAttr});
       auto dstArray = ArrayAttr::get(context, {dstAttr});
       auto empty = ArrayAttr::get(context, {});
-      rewriter.create<ObjectFifoLinkOp>(loc, srcArray, dstArray, empty, empty);
+      auto objLink = rewriter.create<ObjectFifoLinkOp>(
+                     loc, srcArray, dstArray, empty, empty);
       if(store_flag){
+        // Currently store (L1->L2->L3) is different than load
+        // In load, layout transform happens during L2->L1
+        // In store, layout transform happens during L2->L3 (instead of L1->L2)
+        objLink->setAttr("reverse", rewriter.getUnitAttr());
         rewriter.setInsertionPointAfter(redLoop);
         rewriter.create<ObjectFifoReleaseOp>(loc, ObjectFifoPort::Produce, 
                                              objFIFOName, 1);
@@ -932,11 +937,20 @@ private:
       // loops. And unroll the common nested for loops 
       // 1) Tranverse the bands, and clone the forLoops, then move the
       // operations inside the new innermost Loop.
+      SmallVector<AffineForOp, 4> oldLoops;
       for (auto band : bands){
         auto newBand = band;
         // Reverse it back, newBand start with the outermost loop
         std::reverse(newBand.begin(), newBand.end());
-        builder.setInsertionPoint(oldComLoop);
+        if(oldComLoop){
+          builder.setInsertionPoint(oldComLoop);
+        }else{
+          auto outerLoop = newBand[0];
+          builder.setInsertionPoint(outerLoop);
+          auto it = llvm::find(oldLoops, outerLoop);
+          if(it == oldLoops.end())
+            oldLoops.push_back(outerLoop);
+        }
         SmallVector<AffineForOp, 4> newForOps;
         for(auto loop : newBand){
           auto newForOp 
@@ -973,6 +987,10 @@ private:
       // If the loops are moved to a common loop then just delete it
       if(oldComLoop)
         oldComLoop.erase();
+      else{ // Delete the previous loops
+        for(auto loop : llvm::make_early_inc_range(oldLoops))
+          loop.erase();
+      }
       // Unroll the common nested Loops
       for(auto loop : comBand){
         if (failed(loopUnrollFull(loop)))
