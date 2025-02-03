@@ -137,7 +137,7 @@ std::unique_ptr<Pass> createAriesLocalDataForwardPass();
 std::unique_ptr<Pass> createAriesL2BufferCreatePass();
 std::unique_ptr<Pass> createAriesL2BufferCreatePass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesKernelInterfaceCreatePass();
-std::unique_ptr<Pass> createAriesBroadcastToForwardingPass();
+std::unique_ptr<Pass> createAriesBroadcastDetectPass();
 std::unique_ptr<Pass> createAriesDMAToIOPass();
 std::unique_ptr<Pass> createAriesDMAToIOPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesADFCellCreatePass();

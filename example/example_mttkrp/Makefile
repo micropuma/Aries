@@ -116,13 +116,8 @@ ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir: ${PROJECT_PATH}/9_${FUNC}.dataforward.
 	aries-opt -o $@ $< \
 			-aries-kernel-interface-create
 
-boradcasttoforward: ${PROJECT_PATH}/11_${FUNC}.boradcasttoforward.mlir
-${PROJECT_PATH}/11_${FUNC}.boradcasttoforward.mlir: ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir
-	aries-opt -o $@ $< \
-			-aries-broadcast-to-forwarding
-
 dmaio: ${PROJECT_PATH}/12_${FUNC}.dmaio.mlir
-${PROJECT_PATH}/12_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/11_${FUNC}.boradcasttoforward.mlir
+${PROJECT_PATH}/12_${FUNC}.dmaio.mlir: ${PROJECT_PATH}/10_${FUNC}.kernelio.mlir
 	aries-opt -o $@ $< \
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
 			-canonicalize -cse
@@ -195,7 +190,6 @@ ${PROJECT_PATH}/${FUNC}.adf.mlir: ${MLIR}.mlir
 			-aries-func-unroll \
 			-aries-local-data-forward \
 			-aries-kernel-interface-create \
-			-aries-broadcast-to-forwarding \
 			-aries-dma-to-io="port-type=${IOType} plio-width=${PLIOWidth}" \
 			-canonicalize -cse \
 			-aries-adf-cell-create \

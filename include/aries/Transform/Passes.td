@@ -125,13 +125,13 @@ def AriesKernelInterfaceCreate : Pass<"aries-kernel-interface-create"> {
   let dependentDialects = ["mlir::memref::MemRefDialect"];
 }
 
-def AriesBroadcastToForwarding : Pass<"aries-broadcast-to-forwarding"> {
-  let summary = "Change the broadcast in the reduction chain by forwarding";
+def AriesBroadcastDetect : Pass<"aries-broadcast-detect"> {
+  let summary = "Detect broadcast opportunity from L2->L1 memory";
   let description = [{
-    This pass tranverses every reduction chain, detects the broadcast pattern
-    exists on the entire chain and replace it by direct data forwarding.
+    This pass tranverses the DmaOps incide the adf.cell and merge the ones that
+    shares the same source.
   }];
-  let constructor = "mlir::aries::createAriesBroadcastToForwardingPass()";
+  let constructor = "mlir::aries::createAriesBroadcastDetectPass()";
 }
 
 def AriesDMAToIO : Pass<"aries-dma-to-io"> {
