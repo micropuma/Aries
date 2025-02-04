@@ -1081,6 +1081,23 @@ private:
                 }
               }
               break;
+            }else if(auto broadcast = dyn_cast<DmaBroadcastOp>(use)){
+              auto dsts = broadcast.getDst();
+              auto dstNum = dsts.size();
+              unsigned finalCol = 0;
+              for(auto dst : dsts){
+                for(auto useOp : dst.getUsers()){
+                  if(auto call = dyn_cast<CallOp>(useOp)){
+                    auto attr = dyn_cast<ArrayAttr>(call->getAttr("col, row"));
+                    unsigned colInt = dyn_cast<IntegerAttr>(attr[0]).getInt();
+                    finalCol += colInt;
+                    break;
+                  }
+                }
+              }
+              finalCol = std::floor(finalCol/dstNum);
+              createBufLoc(builder, buffer, finalCol, 1);
+              break;
             }
           }
         }else{

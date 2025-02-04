@@ -422,62 +422,67 @@ private:
     return success();
   }
 
-  LogicalResult AIE2DMAToIO(OpBuilder builder, FuncOp func){
+  bool ConvertDMA(OpBuilder builder, DmaOp op){
     auto loc = builder.getUnknownLoc();
     auto context = builder.getContext();
-    auto flag = func.walk([&](DmaOp op){
-      auto srcDMA = op.getSrc();
-      auto srcType = dyn_cast<MemRefType>(srcDMA.getType());
-      auto srcSpace = srcType.getMemorySpaceAsInt();
-      auto dstDMA = op.getDst();
-      auto dstType = dyn_cast<MemRefType>(dstDMA.getType());
-      auto dstSpace = dstType.getMemorySpaceAsInt();
-      auto portName = GraphIOName::GMIO;
-      auto portburst = PortBurst::BurstNULL;
-      if(!srcSpace && dstSpace == (int)MemorySpace::L2){
-        auto portIn = GMIOType::get(context, PortDir::In);
-        auto dstDefineOp = dstDMA.getDefiningOp();
-        if(dstDefineOp){
-          builder.setInsertionPointAfter(dstDefineOp);
-        }else{
-          llvm::errs() << "Find L2 memory not created by other Op\n";
-          return WalkResult::interrupt();
-        }
-        auto port = builder.create<CreateGraphIOOp>(loc, portIn, portName);
-        builder.setInsertionPointAfter(port);
-        auto conncetOp = builder.create<ConnectOp>(loc, port, dstDMA);
-        if(op->hasAttr("initialize"))
-          conncetOp->setAttr("initialize", builder.getUnitAttr());
-        builder.create<ConfigGMIOOp>(loc, port, portburst, 0);
-        SmallVector<Value> src_offsets=op.getSrcOffsets();
-        SmallVector<Value> src_sizes=op.getSrcSizes();
-        SmallVector<Value> src_strides=op.getSrcStrides();
-        builder.setInsertionPoint(op);
-        builder.create<IOPushOp>(loc, srcDMA, src_offsets, src_sizes, 
-                                 src_strides, port);
-        op.erase();
-        return WalkResult::advance();
-      }else if(srcSpace == (int)MemorySpace::L2 && !dstSpace){
-        auto portOut = GMIOType::get(context, PortDir::Out);
-        auto srcDefineOp = srcDMA.getDefiningOp();
-        if(srcDefineOp){
-          builder.setInsertionPointAfter(srcDefineOp);
-        }else{
-          llvm::errs() << "Find L2 memory not created by other Op\n";
-          return WalkResult::interrupt();
-        }
-        auto port = builder.create<CreateGraphIOOp>(loc, portOut, portName);
-        builder.setInsertionPointAfter(port);
-        builder.create<ConnectOp>(loc, srcDMA, port);
-        builder.create<ConfigGMIOOp>(loc, port, portburst, 0);
-        SmallVector<Value> dst_offsets=op.getDstOffsets();
-        SmallVector<Value> dst_sizes=op.getDstSizes();
-        SmallVector<Value> dst_strides=op.getDstStrides();
-        builder.setInsertionPoint(op);
-        builder.create<IOPopOp>(loc, port, dstDMA, dst_offsets, 
-                                dst_sizes, dst_strides);
-        op.erase();
+    auto srcDMA = op.getSrc();
+    auto srcType = dyn_cast<MemRefType>(srcDMA.getType());
+    auto srcSpace = srcType.getMemorySpaceAsInt();
+    auto dstDMA = op.getDst();
+    auto dstType = dyn_cast<MemRefType>(dstDMA.getType());
+    auto dstSpace = dstType.getMemorySpaceAsInt();
+    auto portName = GraphIOName::GMIO;
+    auto portburst = PortBurst::BurstNULL;
+    if(!srcSpace && dstSpace == (int)MemorySpace::L2){
+      auto portIn = GMIOType::get(context, PortDir::In);
+      auto dstDefineOp = dstDMA.getDefiningOp();
+      if(dstDefineOp){
+        builder.setInsertionPointAfter(dstDefineOp);
+      }else{
+        llvm::errs() << "Defining operation of L2 memory not found\n";
+        return false;
       }
+      auto port = builder.create<CreateGraphIOOp>(loc, portIn, portName);
+      builder.setInsertionPointAfter(port);
+      auto conncetOp = builder.create<ConnectOp>(loc, port, dstDMA);
+      if(op->hasAttr("initialize"))
+        conncetOp->setAttr("initialize", builder.getUnitAttr());
+      builder.create<ConfigGMIOOp>(loc, port, portburst, 0);
+      SmallVector<Value> src_offsets=op.getSrcOffsets();
+      SmallVector<Value> src_sizes=op.getSrcSizes();
+      SmallVector<Value> src_strides=op.getSrcStrides();
+      builder.setInsertionPoint(op);
+      builder.create<IOPushOp>(loc, srcDMA, src_offsets, src_sizes, 
+                               src_strides, port);
+      op.erase();
+    }else if(srcSpace == (int)MemorySpace::L2 && !dstSpace){
+      auto portOut = GMIOType::get(context, PortDir::Out);
+      auto srcDefineOp = srcDMA.getDefiningOp();
+      if(srcDefineOp){
+        builder.setInsertionPointAfter(srcDefineOp);
+      }else{
+        llvm::errs() << "Defining operation of L2 memory not found\n";
+        return false;
+      }
+      auto port = builder.create<CreateGraphIOOp>(loc, portOut, portName);
+      builder.setInsertionPointAfter(port);
+      builder.create<ConnectOp>(loc, srcDMA, port);
+      builder.create<ConfigGMIOOp>(loc, port, portburst, 0);
+      SmallVector<Value> dst_offsets=op.getDstOffsets();
+      SmallVector<Value> dst_sizes=op.getDstSizes();
+      SmallVector<Value> dst_strides=op.getDstStrides();
+      builder.setInsertionPoint(op);
+      builder.create<IOPopOp>(loc, port, dstDMA, dst_offsets, 
+                              dst_sizes, dst_strides);
+      op.erase();
+    }
+    return true;
+  }
+
+  LogicalResult AIE2DMAToIO(OpBuilder builder, FuncOp func){
+    auto flag = func.walk([&](Operation* op){
+      if(auto dmaOp = dyn_cast<DmaOp>(op))
+        ConvertDMA(builder, dmaOp);
       return WalkResult::advance();
     });
     if (flag == WalkResult::interrupt())

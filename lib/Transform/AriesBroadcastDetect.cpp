@@ -47,6 +47,9 @@ private:
       auto dmaNum = dmaOps.size();
       for(unsigned i = 0; i < dmaNum; i++){
         auto dma0 = dmaOps[i];
+        auto it = llvm::find(eraseOps, dma0);
+        if(it != eraseOps.end())
+          continue;
         auto lastDmaOp = dma0;
         SmallVector<Value, 6> dsts;
         dsts.push_back(dma0.getDst());
