@@ -103,10 +103,10 @@ struct ConnectConvert : public OpConversionPattern<adf::ConnectOp> {
       rewriter.eraseOp(op);
       return success();
     }
-    auto objectType = AIEObjectFifoType::get(memrefType);
+    auto objType = AIEObjectFifoType::get(memrefType);
     rewriter.replaceOpWithNewOp<ObjectFifoCreateOp>(op, stringAttr, srcTile, 
                                                     ValueRange{dstTile}, 
-                                                    depthAttr, objectType);
+                                                    depthAttr, objType);
     return success();
   }
 };
@@ -175,15 +175,28 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
     std::string objFIFOName;
     auto srcSpace = dyn_cast<IntegerAttr>(srcMemType.getMemorySpace());
     bool store_flag; // Identify if stored to outer mem hierarchy
+    Value val;
     if(srcSpace.getInt() == (int)MemorySpace::L1){
       memrefType = srcMemType;
       objFIFOName = memMap[src].second;
       store_flag = true;
+      val = src;
     }else{
       memrefType = dstMemType;
       objFIFOName = memMap[dst].second;
       store_flag = false;
+      val = dst;
     }
+    // Get the call op that uses the memrefs
+    CallOp call;
+    for(auto use: val.getUsers()){
+      if(auto callOp = dyn_cast<CallOp>(use)){
+        call = callOp;
+        break;
+      }
+    }
+    if(!call)
+      return failure();
     auto coreOp = op->getParentOfType<xilinx::AIE::CoreOp>();
     SmallVector<AffineForOp, 6> band;
     getNestedLoopBand(coreOp.getRegion(), band);
@@ -195,12 +208,29 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         break;
       }
     }
+    // Create ObjectFifo and ObjectFifoLink
     auto device = op->getParentOfType<xilinx::AIE::DeviceOp>();
     auto& entryBlock = device.getRegion().front();
-    if(op->hasAttr("initialize")){
+    auto stringAttr = StringAttr::get(context, objFIFOName);
+    auto objType = AIEObjectFifoType::get(memrefType);
+    rewriter.setInsertionPoint(coreOp);
+    rewriter.create<ObjectFifoCreateOp>(loc, stringAttr, srcTile, 
+                                        ValueRange{dstTile}, 
+                                        depthAttr, objType);
+    auto srcName = srcDefOp.getSymbol();
+    auto dstName = dstDefOp.getSymbol();
+    auto srcAttr = SymbolRefAttr::get(context, srcName);
+    auto dstAttr = SymbolRefAttr::get(context, dstName);
+    auto srcArray = ArrayAttr::get(context, {srcAttr});
+    auto dstArray = ArrayAttr::get(context, {dstAttr});
+    auto empty = ArrayAttr::get(context, {});
+    auto objLink = rewriter.create<ObjectFifoLinkOp>(
+                   loc, srcArray, dstArray, empty, empty);
+    if(store_flag){
+      // For store operations now initialize the output buffer automatically
       // Create zero init callee at the beginning of deviceOp
       rewriter.setInsertionPointToStart(&entryBlock);
-      auto eleType = dstMemType.getElementType();
+      auto eleType = srcMemType.getElementType();
       auto eleAttr = TypeAttr::get(eleType);
       std::string eleStr;
       llvm::raw_string_ostream os(eleStr);
@@ -210,26 +240,29 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
       FuncOp funcOp = callee;
       if(!callee){
         auto funcType 
-             = rewriter.getFunctionType(TypeRange({dstMemType}), TypeRange({}));
+          = rewriter.getFunctionType(TypeRange({srcMemType}), TypeRange({}));
         auto newfunc = rewriter.create<FuncOp>(loc, funcName, funcType);
         funcOp = newfunc;
         newfunc.setVisibility(SymbolTable::Visibility::Private);
       }
       // Create zero init caller outside of reduction loop
       // The buffer should be changed from dst to the objectfifo
-      rewriter.setInsertionPoint(redLoop);
-      auto objectName = dstDefOp.getSymbol();
-      auto acqType = AIEObjectFifoSubviewType::get(dstMemType);
+      if(!redLoop){
+        rewriter.setInsertionPoint(call);
+      }else{
+        rewriter.setInsertionPoint(redLoop);
+      }
+      auto acqType = AIEObjectFifoSubviewType::get(srcMemType);
       auto objACQ = rewriter.create<ObjectFifoAcquireOp>(
-                    loc, acqType, ObjectFifoPort::Produce, objectName, 1);
+                    loc, acqType, ObjectFifoPort::Produce, srcName, 1);
       auto objSubview = rewriter.create<ObjectFifoSubviewAccessOp>(
-                        loc, dstMemType, objACQ.getSubview(), zeroAttr);
+                        loc, srcMemType, objACQ.getSubview(), zeroAttr);
       rewriter.create<CallOp>(loc, funcOp, ValueRange{objSubview});
       // Replace the use of the buffer
       adf::BufferOp buffer;
       device.walk([&](adf::BufferOp bufferOp) {
         // Check if the symbol name matches.
-        if (bufferOp.getSymbol() == objectName) {
+        if (bufferOp.getSymbol() == srcName) {
           buffer = bufferOp;
           return WalkResult::interrupt();
         }
@@ -240,59 +273,149 @@ struct DmaConvert : public OpConversionPattern<DmaOp> {
         bool flag = !(dyn_cast<DmaOp>(use.getOwner()));
         return flag;
       });
+      // Currently store (L1->L2->L3) is different than load
+      // In load, layout transform happens during L2->L1
+      // In store, layout transform happens during L2->L3 (instead of L1->L2)
+      objLink->setAttr("reverse", rewriter.getUnitAttr());
+      if(!redLoop){
+        rewriter.setInsertionPointAfter(call);
+      }else{
+        rewriter.setInsertionPointAfter(redLoop);
+      }
+      rewriter.create<ObjectFifoReleaseOp>(loc, ObjectFifoPort::Produce, 
+                                           objFIFOName, 1);
       rewriter.eraseOp(op);
     }else{
-      auto stringAttr = StringAttr::get(context, objFIFOName);
-      auto objectType = AIEObjectFifoType::get(memrefType);
-      rewriter.setInsertionPoint(coreOp);
-      rewriter.create<ObjectFifoCreateOp>(loc, stringAttr, srcTile, 
-                                          ValueRange{dstTile}, 
-                                          depthAttr, objectType);
-      auto srcName = srcDefOp.getSymbol();
-      auto dstName = dstDefOp.getSymbol();
-      auto srcAttr = SymbolRefAttr::get(context, srcName);
-      auto dstAttr = SymbolRefAttr::get(context, dstName);
-      auto srcArray = ArrayAttr::get(context, {srcAttr});
-      auto dstArray = ArrayAttr::get(context, {dstAttr});
-      auto empty = ArrayAttr::get(context, {});
-      auto objLink = rewriter.create<ObjectFifoLinkOp>(
-                     loc, srcArray, dstArray, empty, empty);
-      if(store_flag){
-        // Currently store (L1->L2->L3) is different than load
-        // In load, layout transform happens during L2->L1
-        // In store, layout transform happens during L2->L3 (instead of L1->L2)
-        objLink->setAttr("reverse", rewriter.getUnitAttr());
-        rewriter.setInsertionPointAfter(redLoop);
-        rewriter.create<ObjectFifoReleaseOp>(loc, ObjectFifoPort::Produce, 
-                                             objFIFOName, 1);
-        rewriter.eraseOp(op);
-      }else{
-        rewriter.setInsertionPoint(op);
-        auto acqType = AIEObjectFifoSubviewType::get(memrefType);
-        auto objACQ = rewriter.create<ObjectFifoAcquireOp>(
-                      loc, acqType, ObjectFifoPort::Consume, objFIFOName, 1);
-        auto objSubview = rewriter.create<ObjectFifoSubviewAccessOp>(
-                          loc, memrefType, objACQ.getSubview(), zeroAttr);
-        auto forOp = op->getParentOfType<AffineForOp>();
-        auto& block = forOp.getRegion().front();
-        auto terminator = block.getTerminator();
-        rewriter.setInsertionPoint(terminator);
-        rewriter.create<ObjectFifoReleaseOp>(loc, ObjectFifoPort::Consume, 
-                                             objFIFOName, 1);
-        // Replace the use of the buffer
-        adf::BufferOp buffer;
-        device.walk([&](adf::BufferOp bufferOp) {
-          // Check if the symbol name matches.
-          if (bufferOp.getSymbol().str() == objFIFOName) {
-            buffer = bufferOp;
-            return WalkResult::interrupt();
-          }
-          return WalkResult::advance();
-        });
-        buffer.getResult().replaceAllUsesWith(objSubview.getResult());
-        rewriter.eraseOp(op);
+      rewriter.setInsertionPoint(op);
+      auto acqType = AIEObjectFifoSubviewType::get(memrefType);
+      auto objACQ = rewriter.create<ObjectFifoAcquireOp>(
+                    loc, acqType, ObjectFifoPort::Consume, objFIFOName, 1);
+      auto objSubview = rewriter.create<ObjectFifoSubviewAccessOp>(
+                        loc, memrefType, objACQ.getSubview(), zeroAttr);
+      rewriter.setInsertionPointAfter(call);
+      rewriter.create<ObjectFifoReleaseOp>(loc, ObjectFifoPort::Consume, 
+                                           objFIFOName, 1);
+      // Replace the use of the buffer
+      adf::BufferOp buffer;
+      device.walk([&](adf::BufferOp bufferOp) {
+        // Check if the symbol name matches.
+        if (bufferOp.getSymbol().str() == objFIFOName) {
+          buffer = bufferOp;
+          return WalkResult::interrupt();
+        }
+        return WalkResult::advance();
+      });
+      buffer.getResult().replaceAllUsesWith(objSubview.getResult());
+      rewriter.eraseOp(op);
+    }
+    return success();
+  }
+};
+
+// Broadcast is only for load from L2->L1
+struct DmaBroadcastConvert : public OpConversionPattern<DmaBroadcastOp> {
+  using OpConversionPattern<DmaBroadcastOp>::OpConversionPattern;
+  DenseMap<Value, std::pair<Value, std::string>>& memMap;
+  DmaBroadcastConvert(MLIRContext *context, 
+             DenseMap<Value, std::pair<Value, std::string>>& memMap)
+        : OpConversionPattern<adf::DmaBroadcastOp>(context), memMap(memMap){}
+  LogicalResult matchAndRewrite(
+      DmaBroadcastOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+    
+    auto loc = rewriter.getUnknownLoc();
+    auto context = op.getContext();
+    auto int32Type = rewriter.getIntegerType(32);
+    auto zeroAttr = rewriter.getIntegerAttr(int32Type, 0);
+    auto depthAttr = rewriter.getIntegerAttr(int32Type, 2);
+    auto src = op.getSrc();
+    auto srcTile = memMap[src].first;
+    auto srcDefOp = dyn_cast<adf::BufferOp>(src.getDefiningOp());
+    auto srcName = srcDefOp.getSymbol(); 
+    auto dsts = op.getDst();
+    auto dst = dsts[0];
+    auto dstTile = memMap[dst].first;
+    auto dstDefOp = dyn_cast<adf::BufferOp>(dst.getDefiningOp());
+    auto dstName = dstDefOp.getSymbol();
+    if (dsts.size() > 1){
+      llvm::errs() << "DmaBroadcast not been properly splited\n";
+      return failure();
+    }
+    // Get the call op that uses the memrefs
+    CallOp call;
+    for(auto use: dst.getUsers()){
+      if(auto callOp = dyn_cast<CallOp>(use)){
+        call = callOp;
+        break;
       }
     }
+    if(!call)
+      return failure();
+    auto memrefType = dyn_cast<MemRefType>(dst.getType());
+    auto objFIFOName = memMap[dst].second;
+    auto objType = AIEObjectFifoType::get(memrefType);
+    // Create ObjectFifo or update dsttiles of ObjectFifo
+    auto device = op->getParentOfType<xilinx::AIE::DeviceOp>();
+    auto coreOp = op->getParentOfType<xilinx::AIE::CoreOp>();
+    ObjectFifoCreateOp objfifo;
+    // Find if the object fifo has already been created
+    for(auto objop : device.getOps<ObjectFifoCreateOp>()){
+      if(auto attr = objop->getAttr("srcName")){
+        auto srcArr = dyn_cast<StringAttr>(attr);
+        if(srcArr.getValue() == srcName){
+          objfifo = objop;
+          objFIFOName = objfifo.getSymName();
+          break;
+        }
+      }
+    }
+    auto stringAttr = StringAttr::get(context, objFIFOName);
+    if(objfifo){
+      SmallVector<Value, 4> consumeTiles = objfifo.getConsumerTiles();
+      consumeTiles.push_back(dstTile);
+      rewriter.setInsertionPoint(objfifo);
+      auto objOp = rewriter.create<ObjectFifoCreateOp>(loc, stringAttr, srcTile, 
+                                          consumeTiles, depthAttr, objType);
+      auto strAttr = objfifo->getAttr("srcName");
+      objOp->setAttr("srcName", strAttr);
+      objfifo.erase();
+    }else{
+      rewriter.setInsertionPoint(coreOp);
+      auto objOp = rewriter.create<ObjectFifoCreateOp>(loc, stringAttr, srcTile, 
+                                          ValueRange{dstTile}, 
+                                          depthAttr, objType);
+      auto strAttr = StringAttr::get(context, srcName);
+      objOp->setAttr("srcName", strAttr);
+      auto srcAttr = SymbolRefAttr::get(context, srcName);
+      auto dstAttr = SymbolRefAttr::get(context, dstName);
+      auto srcArr = ArrayAttr::get(context, {srcAttr});
+      auto dstArr = ArrayAttr::get(context, {dstAttr});
+      auto empty = ArrayAttr::get(context, {});
+      rewriter.create<ObjectFifoLinkOp>(loc, srcArr, dstArr, empty, empty);
+    }
+    rewriter.setInsertionPoint(op);
+    auto acqType = AIEObjectFifoSubviewType::get(memrefType);
+    auto objACQ = rewriter.create<ObjectFifoAcquireOp>(
+                  loc, acqType, ObjectFifoPort::Consume, objFIFOName, 1);
+    auto objSubview = rewriter.create<ObjectFifoSubviewAccessOp>(
+                      loc, memrefType, objACQ.getSubview(), zeroAttr);
+    rewriter.setInsertionPoint(call);
+    rewriter.create<ObjectFifoReleaseOp>(loc, ObjectFifoPort::Consume, 
+                                         objFIFOName, 1);
+    // Replace the use of the buffer by using the original objFIFOName
+    adf::BufferOp buffer;
+    auto objFIFONameOrigin = memMap[dst].second;
+    device.walk([&](adf::BufferOp bufferOp) {
+      // Check if the symbol name matches.
+      if (bufferOp.getSymbol().str() == objFIFONameOrigin) {
+        buffer = bufferOp;
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    if(buffer)
+      buffer.getResult().replaceAllUsesWith(objSubview.getResult());
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -640,7 +763,21 @@ private:
     }
   }
 
-  // Keep a specific callOp and delete the unused callOp, DmaOp, connectOp
+  void eraseUnusedOp(Value src, Value dst, Operation* op,
+                     SmallVector<Value, 4> oprands,
+                     SmallVector<Value, 4> results){
+    auto it0 = llvm::find(oprands, src);
+    auto it1 = llvm::find(oprands, dst);
+    auto it2 = llvm::find(results, src);
+    auto it3 = llvm::find(results, dst);
+    // If op not used in operands and results then erase it
+    if(it0 == oprands.end() && it1 == oprands.end() &&
+       it2 == results.end() && it3 == results.end())
+      op->erase();
+  }
+
+  // Keep a specific callOp and delete the unused callOp, DmaOp, ConnectOp,
+  // and DmaBroadcastOp
   void removeOps(LaunchCellOp cellLaunch, IntegerAttr attr){
     // First traverse find the specific CallOp
     CallOp call;
@@ -653,27 +790,21 @@ private:
       }
       return WalkResult::advance();
     });
-    auto oprands = call.getOperands();
-    auto results = call.getResults();
+    SmallVector<Value, 4> oprands = call.getOperands();
+    SmallVector<Value, 4> results = call.getResults();
     cellLaunch.walk([&](Operation* op){
-      if(dyn_cast<DmaOp>(op) || dyn_cast<adf::ConnectOp>(op)){
-        Value src, dst;
-        if(auto dmaOp = dyn_cast<DmaOp>(op)){
-          src = dmaOp.getSrc();
-          dst = dmaOp.getDst();
-        }else{
-          auto connect = dyn_cast<adf::ConnectOp>(op);
-          src = connect.getSrc();
-          dst = connect.getDst();
-        }
-        auto it0 = llvm::find(oprands, src);
-        auto it1 = llvm::find(oprands, dst);
-        auto it2 = llvm::find(results, src);
-        auto it3 = llvm::find(results, dst);
-        // If op not used in operands and results then erase it
-        if(it0 == oprands.end() && it1 == oprands.end() &&
-           it2 == results.end() && it3 == results.end())
-          op->erase();
+      if(auto dmaOp = dyn_cast<adf::DmaOp>(op)){
+        auto src = dmaOp.getSrc();
+        auto dst = dmaOp.getDst();
+        eraseUnusedOp(src, dst, op, oprands, results);
+      }else if(auto conncetOp = dyn_cast<adf::ConnectOp>(op)){
+        auto src = conncetOp.getSrc();
+        auto dst = conncetOp.getDst();
+        eraseUnusedOp(src, dst, op, oprands, results);
+      }else if(auto broadcast = dyn_cast<adf::DmaBroadcastOp>(op)){
+        auto src = broadcast.getSrc();
+        auto dst = broadcast.getDst()[0];
+        eraseUnusedOp(src, dst, op, oprands, results);
       }else if(auto newCall = dyn_cast<CallOp>(op)){
         if(newCall != call)
           op->erase();
@@ -729,6 +860,41 @@ private:
     });
     if(!adfFunc)
       return false;
+    return true;
+  }
+
+  // Move store to after reduction loop to construct output stationary dataflow
+  bool moveStore(FuncOp func){
+    AffineForOp arrayForOp;  
+    func.walk([&](AffineForOp forOp){
+      if(forOp->hasAttr("Array_Partition"))
+        arrayForOp = forOp;
+    });
+    if(!arrayForOp)
+      return false;
+    SmallVector<AffineForOp, 6> band;
+    band.push_back(arrayForOp);
+    getSurroundingLoops(*arrayForOp, band, false);
+    if(!band[0]->hasAttr("reduction"))
+      return true;
+    AffineForOp outerRedLoop;
+    for(auto loop: band){
+      if(loop->hasAttr("reduction")){
+        if(loop == band[0] || outerRedLoop->getParentOp() == loop){
+          outerRedLoop = loop;
+        }else{
+          llvm::errs() << "Find non-nested reduction loops\n";
+          return false;
+        }
+      }else{
+        break;
+      }
+    }
+    for (auto loop: llvm::make_early_inc_range(
+                    arrayForOp.getOps<AffineForOp>())){
+      if(loop->hasAttr("store"))
+        loop->moveAfter(outerRedLoop);
+    }
     return true;
   }
 
@@ -1145,11 +1311,16 @@ private:
     target.addIllegalOp<adf::ConnectOp>();
     target.addIllegalOp<adf::LaunchCellOp>();
     target.addIllegalOp<adf::DmaOp>();
-    target.addIllegalOp<adf::BufferOp>();
+    //target.addIllegalOp<adf::DmaBroadcastOp>();
+    //target.addIllegalOp<adf::BufferOp>();
+    //target.addIllegalOp<adf::IOWriteOp>();
+    //target.addIllegalOp<adf::IOReadOp>();
+    //target.addIllegalOp<adf::CreateGraphIOOp>();
     patterns.add<ConnectConvert>(patterns.getContext(), seqOp, memMap);
     patterns.add<CellLaunchConvert>(patterns.getContext(), coreMap);
     patterns.add<DmaConvert>(patterns.getContext(), memMap);
-    patterns.add<BufferConvert>(patterns.getContext());
+    patterns.add<DmaBroadcastConvert>(patterns.getContext(), memMap);
+    //patterns.add<BufferConvert>(patterns.getContext());
     patterns.add<IOWriteConvert>(patterns.getContext());
     patterns.add<IOReadConvert>(patterns.getContext());
     patterns.add<GraphIOConvert>(patterns.getContext());
@@ -1176,6 +1347,8 @@ private:
     liftCell(builder, device, endOp, graphIOMap);
     splitCores(builder, device);
     if(!findADFFunc(device, adfFunc))
+      return false;
+    if(!moveStore(adfFunc))
       return false;
     if(!unrollDMA(builder, adfFunc))
       return false;
