@@ -1137,7 +1137,7 @@ private:
       unsigned col = ivIdeices[dim0] + colOffset;
       unsigned row = ivIdeices[dim1] + rowOffset;
       if((col > colNum-1) || (row > rowNum-1)){
-        llvm::errs() << "Placement exceeds array boundary";
+        llvm::errs() << "Placement exceeds array boundary\n";
         return WalkResult::interrupt();
       }
       auto colAttr = builder.getIntegerAttr(indexType, col);
