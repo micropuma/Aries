@@ -5,9 +5,10 @@ import sympy as sp
 from .aries_decorators import TaskTileWrapper, TaskKernelWrapper, TaskTopWrapper
 
 # =========== Code Transformation and IR Builder ===========
-# =========== Parser and Emitter ===========
+
+# =========== Base Emitter Class ===========
 class MLIRGenerator(ast.NodeVisitor):
-    def __init__(self, dmaInfo, map_cnt=0):
+    def __init__(self, mapInfo, map_cnt=0):
         self.mlir_func_code = [] # Store the code within func
         self.mlir_map_code = [] # Store the AffineMap code
         self.indent = 2
@@ -18,14 +19,15 @@ class MLIRGenerator(ast.NodeVisitor):
         self.valType = {} # E.g., valType["A"] = (T, [32, 32])
         self.valNameCnt = {} # valNameCnt["%A"] = cnt, to avoid name conflict
         self.map = {} # map["ti"] = # map, dims  now only record the offset map
-        self.dmaInfo = dmaInfo # dic["ti"] = (32*i, 32, 1) (offset, size, step)
+        self.mapInfo = mapInfo # dic["ti"] = (32*i), stores key and expression
         self.in_assign  = False # Track whether inside an Assign node
-        
+
+    ## -- Variable & Type Management -- ##
     def add_var_name(self, val, name=""):
         if(name != ""):
             name = "%" + name
             if(self.valNameCnt.get(name, 0) > 0):
-                valNameStr = name + str(self.valNameCnt[name])
+                valNameStr = name + "_" + str(self.valNameCnt[name])
                 self.valNameCnt[name] += 1
             else:
                 self.valNameCnt[name] = 1
@@ -42,12 +44,24 @@ class MLIRGenerator(ast.NodeVisitor):
         valNameStr = self.valName[val]
         return valNameStr
     
-    def add_type_name(self, val, type, shape, memSpace = ""):
+    def add_type_name(self, val, type, shape=[], memSpace = ""):
         self.valType[val] = (type, shape, memSpace)
         typeName = self.get_type_name(val)
         return typeName
+    
+    def get_elewidth(self, dtype: str) -> int:
+        if dtype.startswith("int"):
+            return int(dtype[3:])
+        elif dtype.startswith("float"):
+            return int(dtype[5:])
+        elif dtype.startswith("i"):
+            return int(dtype[1:])
+        elif dtype.startswith("f"):
+            return int(dtype[1:])
+        raise ValueError(f"Invalid dtype: {dtype}")
         
-    def get_eletype_name(self, ty):
+    def get_eletype_name(self, arg):
+        ty = self.valType[arg][0]
         if(ty == "float32"):
           return "f32"
         elif(ty == "int32"):
@@ -70,9 +84,10 @@ class MLIRGenerator(ast.NodeVisitor):
             type_name += ", " + str(0)
         return type_name
     
-    def get_MemRefType_name(self, ty, shape, memSpace):
+    def get_MemRefType_name(self, arg):
+      _, shape, memSpace = self.valType[arg]
       shape_name = "x".join([str(s) for s in shape])
-      type_name = self.get_eletype_name(ty)
+      type_name = self.get_eletype_name(arg)
       type_name = self.addMemSpace(type_name, memSpace)
       memrefType_name = f"memref<{shape_name}x{type_name}>"
       return memrefType_name
@@ -80,11 +95,10 @@ class MLIRGenerator(ast.NodeVisitor):
     def get_type_name(self, arg):
         if arg not in self.valType:
             assert False, f"KeyError: The type of '{arg}' was not found."
-        ty, shape, memSpace = self.valType[arg]
-        if len(shape) == 0:
-            typeName = self.get_eletype_name(arg, ty)
+        if not self.is_array(arg):
+            typeName = self.get_eletype_name(arg)
         else:
-            typeName = self.get_MemRefType_name(ty, shape, memSpace)
+            typeName = self.get_MemRefType_name(arg)
         return typeName
     
     def is_declared(self, arg):
@@ -110,12 +124,16 @@ class MLIRGenerator(ast.NodeVisitor):
                 ty = arg.annotation
                 if isinstance(ty, ast.Subscript):
                     # Extract shape
-                    shape = tuple(constant.value for constant in ty.slice.elts)
+                    if isinstance(ty.slice, ast.Tuple):
+                        shape = tuple(constant.value for constant in ty.slice.elts)
+                    else:
+                        shape = [ty.slice.value]
                     self.add_type_name(arg.arg, ty.value.id, shape)
                 else:
                     assert False, "Unspported argument type found!"
         return
     
+    ## -- Core AST Processing -- ##
     def visit_FunctionDef(self, node):
         # Add types for each arg
         self.addArgType(node)
@@ -157,132 +175,7 @@ class MLIRGenerator(ast.NodeVisitor):
         else:
           self.emit("}")
     
-    def getDmaInfo(self, call):
-        # Stores the VarName of offsets, sizes and strides
-        # that can be printed out directly
-        offsets = []
-        sizes = []
-        strides = []
-        srcMemName = None
-        dstMemName = None
-        name_cnt = 0
-        for arg in call.args:
-            if isinstance(arg, ast.Name):
-                if name_cnt == 0:
-                    srcMemName = arg.id
-                    name_cnt += 1
-                else:
-                    dstMemName = arg.id
-            elif isinstance(arg, ast.Tuple):
-                for elt in arg.elts:
-                    eltName = elt.id
-                    # For each dim, create the affine.apply op for each offset
-                    mapName, dims = self.map[eltName] #mapName, dims
-                    dimNames = [self.get_var_name(dim) for dim in dims]
-                    offsetVar = elt.id + "_offset"
-                    offsetVarName = self.add_var_name(offsetVar)
-                    offsets.append(offsetVarName)
-                    self.emit(f"{offsetVarName} = affine.apply {mapName}({', '.join(dimNames)})")
-                    # For each dim, create constant for size and stride
-                    _, size, step = self.dmaInfo[eltName]
-                    sizeVar = elt.id + "_size"
-                    sizeVarName = self.add_var_name(sizeVar, "c" + sizeVar)
-                    sizes.append(sizeVarName)
-                    self.emit(f"{sizeVarName} = arith.constant {size} : index")
-                    strideVar = elt.id + "_stride"
-                    strideVarName = self.add_var_name(strideVar, "c" + strideVar)
-                    strides.append(strideVarName)
-                    self.emit(f"{strideVarName} = arith.constant {step} : index")
-        return offsets, sizes, strides, srcMemName, dstMemName
-    
-    def visit_Assign(self, node):
-        assert len(node.targets) == 1
-        target = node.targets[0]
-        
-        if isinstance(node.value, ast.Call):
-            assert isinstance(node.value.func, ast.Attribute)
-            assert isinstance(node.value.func.value, ast.Name)
-            assert node.value.func.value.id == 'aries'
-            
-            if node.value.func.attr == 'load':
-                call = node.value
-                dstMemName = target.id
-                offsets, sizes, strides, srcMemName, _ = self.getDmaInfo(call)
-                srcMem = self.get_var_name(srcMemName)
-                srcType = self.get_type_name(srcMemName)
-                dstMem = self.get_var_name(dstMemName)
-                dstType = self.get_type_name(dstMemName)
-                self.emit(f"adf.dma({srcMem}[{' ,'.join(offsets)}] [{' ,'.join(sizes)}] [{' ,'.join(strides)}], {dstMem}[] [] []) : ({srcType} , {dstType})")  
-                return
-            
-            elif node.value.func.attr == 'buffer':
-                buffer = target.id
-                self.add_var_name(buffer, buffer)
-                shape_node = node.value.args[0]
-                type_node = node.value.args[1]
-                shape = tuple(constant.value for constant in shape_node.elts)
-                type = type_node.value
-                typeName = self.add_type_name(buffer, type, shape, "L1")
-                bufferName = self.get_var_name(buffer)
-                self.emit(f"{bufferName} = adf.buffer.create @L1_{buffer}() : {typeName}")
-                return
-
-        # For Task kernel
-        elif isinstance(node.value, ast.BinOp):
-            self.in_assign = True 
-        # if isinstance(target, ast.Subscript):
-        #     if isinstance(node.value, ast.BinOp):
-        #         self.generate_binop(node)
-        #     array_name = self.get_var_name(target.value.id)
-        #     ivNames = [self.get_var_name(elt.id) for elt in target.slice.elts]
-            
-            
-            
-    # def visit_Name(self, node):
-    #     """Visit a variable and return its MLIR representation."""
-    #     return self.get_var_name(node.id)
-    
-    # def visit_Constant(self, node):
-    #     """Visit a constant and return MLIR representation."""
-    #     value = node.value
-    #     result_var = f"%c{len(self.mlir_code)}"
-    #     self.mlir_code.append(f"{result_var} = arith.constant {value} : f32")
-    #     return result_var
-    
-    # def visit_BinOp(self, node):
-    #     """Visit a binary operation node."""
-    #     return self.generate_binop(node)
-    
-    def generate_binop(self, node):
-        """Recursively parse BinOp and generate MLIR code."""
-        lhs = self.visit(node.left)
-        rhs = self.visit(node.right)
-        
-        return
-    
-    def visit_Expr(self, node):
-        if isinstance(node.value, ast.Call):
-            if isinstance(node.value.func, ast.Name):
-                calleeName = node.value.func.id
-                args = node.value.args
-                argNames = []
-                argTypes = []
-                for arg in args:
-                    argNames.append(self.get_var_name(arg.id))
-                    argTypes.append(self.get_type_name(arg.id))
-                self.emit(f"func.call @{calleeName}({', '.join(argNames)}) : (")
-                self.emit(f"{', '.join(argTypes)}) -> ()", True)
-            elif isinstance(node.value.func, ast.Attribute):
-                if node.value.func.attr == 'store':
-                    call = node.value
-                    offsets, sizes, strides, srcMemName, dstMemName = self.getDmaInfo(call)
-                    srcMem = self.get_var_name(srcMemName)
-                    srcType = self.get_type_name(srcMemName)
-                    dstMem = self.get_var_name(dstMemName)
-                    dstType = self.get_type_name(dstMemName)
-                    self.emit(f"adf.dma({srcMem}[] [] [], {dstMem}[{' ,'.join(offsets)}] [{' ,'.join(sizes)}] [{' ,'.join(strides)}]) : ({srcType} , {dstType})")  
-                    return
-    
+    ## -- Emit Functions -- ##
     def emit(self, code, same_line=False):
         if same_line:
             self.mlir_func_code[-1] = self.mlir_func_code[-1] + code
@@ -334,9 +227,9 @@ class MLIRGenerator(ast.NodeVisitor):
     
     # Generate map for offset
     def gen_map(self):
-        if self.dmaInfo is None:
+        if self.mapInfo is None:
             return
-        for key, value in self.dmaInfo.items():
+        for key, value in self.mapInfo.items():
             offestExpr = value[0]
             dims = self.find_dim(offestExpr)
             affineMap = self.emit_affine_map(offestExpr, dims, [])
@@ -356,6 +249,250 @@ class MLIRGenerator(ast.NodeVisitor):
         map_code = "\n".join(self.mlir_map_code)
         return func_code, map_code, self.map_cnt
 
+
+# =========== Emitter for task tile ===========
+class TileMLIRGenerator(MLIRGenerator):
+    # dmaInfo: dic["ti"] = (32*i, 32, 1) (offset, size, step)
+    # This is a slightly different than this parent class where the mapInfo 
+    # only contains the expression
+    def __init__(self, dmaInfo, map_cnt=0):
+        super().__init__(dmaInfo, map_cnt)
+    
+    def DmaInfo(self, arg, offsets, sizes, strides):
+        eltName = arg.id
+        # For each dim, create the affine.apply op for each offset
+        mapName, dims = self.map[eltName] #mapName, dims
+        dimNames = [self.get_var_name(dim) for dim in dims]
+        offsetVar = arg.id + "_offset"
+        offsetVarName = self.add_var_name(offsetVar)
+        offsets.append(offsetVarName)
+        self.emit(f"{offsetVarName} = affine.apply {mapName}({', '.join(dimNames)})")
+        # For each dim, create constant for size and stride
+        _, size, step = self.mapInfo[eltName]
+        sizeVar = arg.id + "_size"
+        sizeVarName = self.add_var_name(sizeVar, "c" + sizeVar)
+        sizes.append(sizeVarName)
+        self.emit(f"{sizeVarName} = arith.constant {size} : index")
+        strideVar = arg.id + "_stride"
+        strideVarName = self.add_var_name(strideVar, "c" + strideVar)
+        strides.append(strideVarName)
+        self.emit(f"{strideVarName} = arith.constant {step} : index")
+        return offsets, sizes, strides
+    
+    def getDmaInfo(self, call, is_load = False):
+        # Stores the VarName of offsets, sizes and strides
+        # that can be printed out directly
+        offsets = []
+        sizes = []
+        strides = []
+        srcMemName = None
+        dstMemName = None
+        name_cnt = 0
+        srcMemName = call.args[0].id
+        if is_load:
+            idx = 1
+        else:
+            dstMemName = call.args[1].id
+            idx = 2
+        if isinstance(call.args[idx], ast.Name):
+            offsets, sizes, strides = self.DmaInfo(call.args[idx], offsets, sizes, strides)
+        else:
+            for elt in call.args[idx].elts:
+                offsets, sizes, strides = self.DmaInfo(elt, offsets, sizes, strides)
+        return offsets, sizes, strides, srcMemName, dstMemName
+    
+    def visit_Assign(self, node):
+        assert len(node.targets) == 1
+        target = node.targets[0]
+        
+        if isinstance(node.value, ast.Call):
+            assert isinstance(node.value.func, ast.Attribute)
+            assert isinstance(node.value.func.value, ast.Name)
+            assert node.value.func.value.id == 'aries'
+            
+            if node.value.func.attr == 'load':
+                call = node.value
+                dstMemName = target.id
+                offsets, sizes, strides, srcMemName, _ = self.getDmaInfo(call, True)
+                srcMem = self.get_var_name(srcMemName)
+                srcType = self.get_type_name(srcMemName)
+                dstMem = self.get_var_name(dstMemName)
+                dstType = self.get_type_name(dstMemName)
+                self.emit(f"adf.dma({srcMem}[{' ,'.join(offsets)}] [{' ,'.join(sizes)}] [{' ,'.join(strides)}], {dstMem}[] [] []) : ({srcType} , {dstType})")  
+                return
+            
+            elif node.value.func.attr == 'buffer':
+                buffer = target.id
+                self.add_var_name(buffer, buffer)
+                shape_node = node.value.args[0]
+                type_node = node.value.args[1]
+                shape = tuple(constant.value for constant in shape_node.elts)
+                type = type_node.value
+                typeName = self.add_type_name(buffer, type, shape, "L1")
+                bufferName = self.get_var_name(buffer)
+                self.emit(f"{bufferName} = adf.buffer.create @L1_{buffer}() : {typeName}")
+                return
+    
+    def visit_Expr(self, node):
+        if isinstance(node.value, ast.Call):
+            if isinstance(node.value.func, ast.Name):
+                calleeName = node.value.func.id
+                args = node.value.args
+                argNames = []
+                argTypes = []
+                for arg in args:
+                    argNames.append(self.get_var_name(arg.id))
+                    argTypes.append(self.get_type_name(arg.id))
+                self.emit(f"func.call @{calleeName}({', '.join(argNames)}) : (")
+                self.emit(f"{', '.join(argTypes)}) -> ()", True)
+            elif isinstance(node.value.func, ast.Attribute):
+                if node.value.func.attr == 'store':
+                    call = node.value
+                    offsets, sizes, strides, srcMemName, dstMemName = self.getDmaInfo(call)
+                    srcMem = self.get_var_name(srcMemName)
+                    srcType = self.get_type_name(srcMemName)
+                    dstMem = self.get_var_name(dstMemName)
+                    dstType = self.get_type_name(dstMemName)
+                    self.emit(f"adf.dma({srcMem}[] [] [], {dstMem}[{' ,'.join(offsets)}] [{' ,'.join(sizes)}] [{' ,'.join(strides)}]) : ({srcType} , {dstType})")  
+                    return
+                
+# =========== Emitter for task kernel ===========
+class KernelMLIRGenerator(MLIRGenerator):
+    def __init__(self, dmaInfo, map_cnt=0):
+        super().__init__(dmaInfo, map_cnt)
+        self.is_assign = False
+        
+    def get_type(self, node):
+        """Retrieve the type of a variable or constant."""
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, int):
+                return "int32"
+            elif isinstance(node.value, float):
+                return "float32"
+            else:
+                raise TypeError(f"Unsupported constant type: {type(node.value)}")
+        elif isinstance(node, ast.Call): # Defined constant type
+            return node.func.id
+        elif isinstance(node, ast.Subscript): # Memref
+            if node.value.id in self.valType:
+                return self.valType[node.value.id][0]
+            else:
+                raise KeyError(f"Variable '{node.value.id}' is not declared.")
+        elif isinstance(node, ast.Name):
+            if node.id in self.valType:
+                return self.valType[node.id][0]  # Extract stored type
+            else:
+                raise KeyError(f"Variable '{node.id}' is not declared.")
+        elif isinstance(node, ast.BinOp):
+            # If it's a BinOp, recursively check the types of the left and right operands
+            left_type = self.get_type(node.left)
+            right_type = self.get_type(node.right)
+            # Check that the types of the left and right operands are compatible
+            if left_type != right_type:
+                raise TypeError(f"Type mismatch: {left_type} and {right_type} are not compatible.")
+            # Return the type of the BinOp (same as the operand types)
+            return left_type
+        else:
+            raise TypeError(f"Unsupported type retrieval for node: {ast.dump(node)}")
+    
+    def get_op_type(self, op, operand_type):
+        """Maps Python operators to MLIR integer or floating-point operations."""
+        float_ops = {
+            ast.Add: "arith.addf",
+            ast.Sub: "arith.subf",
+            ast.Mult: "arith.mulf",
+            ast.Div: "arith.divf",
+        }
+        int_ops = {
+            ast.Add: "arith.addi",
+            ast.Sub: "arith.subi",
+            ast.Mult: "arith.muli",
+            ast.Div: "arith.divsi",  # Signed integer division
+        }
+
+        if operand_type.startswith("f"):
+            return float_ops.get(type(op), None)
+        elif operand_type.startswith("i"):
+            return int_ops.get(type(op), None)
+        else:
+            raise NotImplementedError(f"Unsupported operand type: {operand_type}")
+    
+    def visit_Call(self, node):
+        if self.is_assign == False:
+            return
+        assert isinstance(node.func, ast.Name)
+        assert len(node.args) == 1
+        value = node.args[0].value
+        
+        if node.func.id.startswith("f"):
+            formatted_value = f"{value:.6f}"
+        elif node.func.id.startswith("i"):
+            formatted_value = value
+        else:
+            raise NotImplementedError(f"Unsupported operand type: {node.func.id}")
+        varName = "c" + str(value)
+        result = self.add_var_name("temp", varName)
+        type = self.add_type_name("temp", node.func.id)
+        self.emit(f"{result} = arith.constant {formatted_value} : {type}")
+        return result
+    
+    def visit_BinOp(self, node):
+        """Processes binary operations."""
+        lhs = self.visit(node.left)
+        rhs = self.visit(node.right)
+        
+        # Retrieve types from stored values
+        lhs_type = self.get_type(node.left)
+        rhs_type = self.get_type(node.right)
+        assert lhs_type == rhs_type, f"Type mismatch: {lhs_type} vs {rhs_type}"
+        
+        result = self.add_var_name("temp")
+        type = self.add_type_name("temp", lhs_type)
+        
+        op_type = self.get_op_type(node.op, type)
+        self.emit(f"{result} = {op_type} {lhs}, {rhs} : {type}")
+
+        return result
+
+    def visit_Subscript(self, node):
+        if self.is_assign == False:
+            return
+        """Handles memory accesses like chunk[i, j]."""
+        memref = node.value.id
+        memType = self.get_type_name(memref)
+        memName = self.get_var_name(memref)
+        if isinstance(node.slice, ast.Tuple):
+            indices = [self.get_var_name(idx.id) for idx in node.slice.elts]
+        else:
+            indices = [self.get_var_name(node.slice.id)]
+        
+        if isinstance(node.ctx, ast.Store):
+            return memref, indices
+        elif isinstance(node.ctx, ast.Load):
+            result = self.add_var_name("load")
+            self.emit(f"{result} = affine.load {memName}[{', '.join(indices)}] : {memType}")
+            return result 
+        else:
+            raise NotImplementedError(f"Unsupported context {type(node.ctx)} in Subscript.")
+
+    def visit_Assign(self, node):
+        assert len(node.targets) == 1
+        target_node = node.targets[0]
+        self.is_assign = True
+        value = self.visit(node.value)
+        if isinstance(target_node, ast.Subscript):
+            # Handle memory store case
+            memref, indices = self.visit(target_node)
+            memType = self.get_type_name(memref)
+            memName = self.get_var_name(memref)
+            self.emit(f"memref.store {value}, {memName}[{', '.join(indices)}] : {memType}")
+        else:
+            # Standard variable assignment
+            target = self.visit(target_node)
+            self.emit(f"{target} = {value}")
+        self.is_assign = False
+        return
+
 class TileToLoop(ast.NodeTransformer):
     """Transform tile ranks to loops"""
     def __init__(self, grid_dims=None):
@@ -371,7 +508,10 @@ class TileToLoop(ast.NodeTransformer):
             if (isinstance(stmt, ast.Assign) and 
                 stmt.value.func.value.id == "aries" and 
                 stmt.value.func.attr == "tile_ranks"):
-                loop_var_names = [elt.id for elt in stmt.targets[0].elts]
+                if isinstance(stmt.targets[0], ast.Tuple):
+                    loop_var_names = [elt.id for elt in stmt.targets[0].elts]
+                else:
+                    loop_var_names = [stmt.targets[0].id]
                 for idx, var in enumerate(loop_var_names):
                     loop_vars[var] = self.grid_dims[idx]
                 continue
@@ -458,12 +598,15 @@ class TilePreprocess(ast.NodeTransformer):
             # TI, TJ, TK = tile_sizes()
             # Record the tile size which are constant values
             if node.value.func.attr == "tile_sizes":
-                assert isinstance(target, ast.Tuple)
-                assert len(target.elts) == len(self.tile_sizes)
-
-                for i, tsize in enumerate(self.tile_sizes):
-                    self.constant_mapping[target.elts[i].id] = int(tsize)
-                return None
+                if isinstance(target, ast.Tuple):
+                    assert len(target.elts) == len(self.tile_sizes)
+                    for i, tsize in enumerate(self.tile_sizes):
+                        self.constant_mapping[target.elts[i].id] = int(tsize)
+                    return None
+                else:
+                    tsize = self.tile_sizes
+                    self.constant_mapping[target.id] = int(tsize)
+                    return None
             
             # Need to visit the nested nodes to propagate constants and 
             # record the arange Info
@@ -565,14 +708,14 @@ class Schedule:
         # print("Parsed New AST 1", ast.dump(tree, indent=4))
         
         # Add func and map code
-        func_code, map_code, self.map_cnt = MLIRGenerator(dmaInfo, self.map_cnt).generate(tree)
+        func_code, map_code, self.map_cnt = TileMLIRGenerator(dmaInfo, self.map_cnt).generate(tree)
         self.mlir_func_code.append(func_code)
         print(func_code)
         self.mlir_map_code.append(map_code)
     
     def task_kernel_emit(self, parsed_ast):
-        print("Parsed AIE Kernel AST", ast.dump(parsed_ast, indent=4))
-        func_code, map_code, self.map_cnt = MLIRGenerator(None, self.map_cnt).generate(parsed_ast)
+        # print("Parsed AIE Kernel AST", ast.dump(parsed_ast, indent=4))
+        func_code, map_code, self.map_cnt = KernelMLIRGenerator(None, self.map_cnt).generate(parsed_ast)
         self.mlir_func_code.append(func_code)
         self.mlir_map_code.append(map_code)
         print(func_code)

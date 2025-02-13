@@ -8,6 +8,8 @@ class aries:
 
     @staticmethod
     def buffer(shape: Tuple[int, ...], dtype: str) -> Tensor:
+        if isinstance(shape, int):
+            shape = (shape,)
         return Tensor(shape, dtype)
     
     @staticmethod
@@ -20,7 +22,11 @@ class aries:
 
     @staticmethod
     def tile_ranks(**kwargs):
-        return kwargs.get('IVs')
+        ivs = kwargs.get('IVs')
+        if len(ivs) == 1:
+            return ivs[0]
+        else:
+            return ivs
 
     @staticmethod
     def tile_sizes(**kwargs):

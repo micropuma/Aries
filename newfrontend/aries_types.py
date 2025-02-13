@@ -15,6 +15,9 @@ class FloatingType(float):  # Base class for float-like types
 # Define a generic Tensor type as a wrapper around ndarray
 class Tensor(np.ndarray, Generic[Shape]):
     def __new__(cls, shape: Tuple[int, ...], dtype: str):
+        # Ensure shape is a tuple, even for 1D
+        if isinstance(shape, int):
+            shape = (shape,)
         # Create an ndarray of the given shape and dtype
         obj = np.empty(shape, dtype=dtype).view(cls)
         obj.dtype_str = dtype

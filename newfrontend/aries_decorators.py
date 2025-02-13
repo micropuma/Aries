@@ -32,6 +32,9 @@ class TaskTileWrapper:
             raise ValueError(
                 "Grid dimensions and tile sizes must be specified")
         
+        if isinstance(self.grid_dims, int):
+            self.grid_dims = (self.grid_dims,)
+        
         # Generate all tile index combinations (e.g., (i, j) for a 2D grid)
         tile_indices = itertools.product(*(range(g) for g in self.grid_dims))
         call_kwargs['TSizes'] = self.tile_sizes  # Add tuple of sizes
