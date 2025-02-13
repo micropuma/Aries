@@ -116,7 +116,7 @@ class MLIRGenerator(ast.NodeVisitor):
         else:
             return True       
     
-    def addArgType(self, node):
+    def addArgType(self, node, memSpace = ""):
         # Record the type of arguments in the function
         for arg in node.args.args:
             self.add_var_name(arg.arg, arg.arg)
@@ -128,7 +128,7 @@ class MLIRGenerator(ast.NodeVisitor):
                         shape = tuple(constant.value for constant in ty.slice.elts)
                     else:
                         shape = [ty.slice.value]
-                    self.add_type_name(arg.arg, ty.value.id, shape)
+                    self.add_type_name(arg.arg, ty.value.id, shape, memSpace)
                 else:
                     assert False, "Unspported argument type found!"
         return
@@ -395,6 +395,10 @@ class KernelMLIRGenerator(MLIRGenerator):
         else:
             raise TypeError(f"Unsupported type retrieval for node: {ast.dump(node)}")
     
+    def addArgType(self, node, memSpace="L1"):
+        """Overrides parent method, specifying memorySpace = 'L1'."""
+        super().addArgType(node, memSpace=memSpace)  # Calls parent with L1
+    
     def get_op_type(self, op, operand_type):
         """Maps Python operators to MLIR integer or floating-point operations."""
         float_ops = {
@@ -492,6 +496,57 @@ class KernelMLIRGenerator(MLIRGenerator):
             self.emit(f"{target} = {value}")
         self.is_assign = False
         return
+
+class TopMLIRGenerator(MLIRGenerator):
+    def __init__(self, dmaInfo, map_cnt=0):
+        super().__init__(dmaInfo, map_cnt)
+        self.is_assign = False
+    
+    def visit_Expr(self, node):
+        if isinstance(node.value, ast.Call):
+            if isinstance(node.value.func, ast.Name):
+                calleeName = node.value.func.id
+                args = node.value.args
+                argNames = []
+                argTypes = []
+                for arg in args:
+                    argNames.append(self.get_var_name(arg.id))
+                    argTypes.append(self.get_type_name(arg.id))
+                self.emit(f"func.call @{calleeName}({', '.join(argNames)}) : (")
+                self.emit(f"{', '.join(argTypes)}) -> ()", True)
+            elif isinstance(node.value.func, ast.Subscript):
+                calleeName = node.value.func.value.id
+                args = node.value.args
+                argNames = []
+                argTypes = []
+                for arg in args:
+                    argNames.append(self.get_var_name(arg.id))
+                    argTypes.append(self.get_type_name(arg.id))
+                self.emit(f"func.call @{calleeName}({', '.join(argNames)}) : (")
+                self.emit(f"{', '.join(argTypes)}) -> ()", True)
+    
+    def visit_Assign(self, node):
+        if isinstance(node.value, ast.Call):
+            if isinstance(node.value.func, ast.Name):
+                calleeName = node.value.func.id
+                args = node.value.args
+                argNames = []
+                argTypes = []
+                for arg in args:
+                    argNames.append(self.get_var_name(arg.id))
+                    argTypes.append(self.get_type_name(arg.id))
+                self.emit(f"func.call @{calleeName}({', '.join(argNames)}) : (")
+                self.emit(f"{', '.join(argTypes)}) -> ()", True)
+            elif isinstance(node.value.func, ast.Subscript):
+                calleeName = node.value.func.value.id
+                args = node.value.args
+                argNames = []
+                argTypes = []
+                for arg in args:
+                    argNames.append(self.get_var_name(arg.id))
+                    argTypes.append(self.get_type_name(arg.id))
+                self.emit(f"func.call @{calleeName}({', '.join(argNames)}) : (")
+                self.emit(f"{', '.join(argTypes)}) -> ()", True)     
 
 class TileToLoop(ast.NodeTransformer):
     """Transform tile ranks to loops"""
@@ -674,15 +729,19 @@ class Schedule:
     # A helper function to collect funcs from the given module
     def collect_func(self, module):
         funcs= []
-        top_func = []
+        top_func_flag = False # Can only have one top function
         for _, obj in module.items():
             if isinstance(obj, TaskKernelWrapper):
                 funcs.append(obj.func)
             elif isinstance(obj, TaskTileWrapper):
                 funcs.append(obj.func)
             elif isinstance(obj, TaskTopWrapper):
-                top_func.append(obj.func)
-        return funcs, top_func
+                if top_func_flag == False:
+                    top_func_flag = True
+                    funcs.append(obj.func)
+                else:
+                    raise TypeError("Can only has one TaskTopWrapper")
+        return funcs
     
     def task_tile_emit(self, func_name, parsed_ast):
         task = None
@@ -710,20 +769,34 @@ class Schedule:
         # Add func and map code
         func_code, map_code, self.map_cnt = TileMLIRGenerator(dmaInfo, self.map_cnt).generate(tree)
         self.mlir_func_code.append(func_code)
-        print(func_code)
         self.mlir_map_code.append(map_code)
+        # print(func_code)
     
     def task_kernel_emit(self, parsed_ast):
         # print("Parsed AIE Kernel AST", ast.dump(parsed_ast, indent=4))
         func_code, map_code, self.map_cnt = KernelMLIRGenerator(None, self.map_cnt).generate(parsed_ast)
         self.mlir_func_code.append(func_code)
         self.mlir_map_code.append(map_code)
-        print(func_code)
-        
+        # print(func_code)
+    
+    def task_top_emit(self, parsed_ast):
+        # print("Parsed Top  AST", ast.dump(parsed_ast, indent=4))
+        func_code, map_code, self.map_cnt = TopMLIRGenerator(None, self.map_cnt).generate(parsed_ast)
+        self.mlir_func_code.append(func_code)
+        self.mlir_map_code.append(map_code)
+        # print(func_code)
+    
+    def code_emit(self):
+        final_map_code = "\n".join(filter(None, self.mlir_map_code))
+        final_func_code = "\n".join(filter(None, self.mlir_func_code))
+        print(final_map_code)
+        print("module {")
+        print(final_func_code)
+        print("}")
+        return
+    
     def build(self, module):
-        funcs, top_func = self.collect_func(module)
-        assert len(top_func) == 1
-        
+        funcs = self.collect_func(module)
         for func in funcs:
             source_code = inspect.getsource(func)
             parsed_ast = ast.parse(source_code)
@@ -745,6 +818,8 @@ class Schedule:
                 self.task_tile_emit(func_name, parsed_ast)
                 continue
             elif decorator_id == 'task_top':
+                self.task_top_emit(parsed_ast)
                 continue
             else:
                 raise ValueError(f"Unsupported decorator: {decorator_id}")
+        self.code_emit()
