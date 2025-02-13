@@ -490,10 +490,24 @@ class KernelMLIRGenerator(MLIRGenerator):
             memType = self.get_type_name(memref)
             memName = self.get_var_name(memref)
             self.emit(f"memref.store {value}, {memName}[{', '.join(indices)}] : {memType}")
-        else:
-            # Standard variable assignment
-            target = self.visit(target_node)
-            self.emit(f"{target} = {value}")
+        self.is_assign = False
+    
+    def visit_AugAssign(self, node):
+        target_node = node.target
+        self.is_assign = True
+        value = self.visit(node.value)
+        if isinstance(target_node, ast.Subscript):
+            # Handle memory store case
+            memref, indices = self.visit(target_node)
+            memType = self.get_type_name(memref)
+            memName = self.get_var_name(memref)
+            lhs = self.add_var_name("load")
+            self.emit(f"{lhs} = affine.load {memName}[{', '.join(indices)}] : {memType}")
+            type = self.get_eletype_name(memref)
+            op_type = self.get_op_type(node.op, type)
+            result = self.add_var_name("temp")
+            self.emit(f"{result} = {op_type} {lhs}, {value} : {type}")
+            self.emit(f"memref.store {result}, {memName}[{', '.join(indices)}] : {memType}")
         self.is_assign = False
         return
 
@@ -773,7 +787,7 @@ class Schedule:
         # print(func_code)
     
     def task_kernel_emit(self, parsed_ast):
-        # print("Parsed AIE Kernel AST", ast.dump(parsed_ast, indent=4))
+        print("Parsed AIE Kernel AST", ast.dump(parsed_ast, indent=4))
         func_code, map_code, self.map_cnt = KernelMLIRGenerator(None, self.map_cnt).generate(parsed_ast)
         self.mlir_func_code.append(func_code)
         self.mlir_map_code.append(map_code)
