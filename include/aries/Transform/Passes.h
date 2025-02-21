@@ -39,6 +39,11 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       llvm::cl::desc("Specify a list of L3 loop tile sizes")};
   
   /// Configure the L2bufferCreate/CorePlacement pass.
+  Option<bool> OptEnableNewTiling{
+    *this, "en-newtiling", llvm::cl::init(false), llvm::cl::desc(
+    "Enable using new tiling function for frontend or not")};
+
+  /// Configure the L2bufferCreate/CorePlacement pass.
   Option<bool> OptEnablePL{
       *this, "en-pl", llvm::cl::init(true), llvm::cl::desc(
       "Enable programmable logic(PL) or not")};

@@ -16,26 +16,27 @@ void mlir::aries::registerAriesPassPipeline() {
   PassPipelineRegistration<AriesOptions>(
   "aries-pipeline", "Compile to AIE array",
   [](OpPassManager &pm, const AriesOptions &opts) {
+
     // Perform multi-level tiling
     pm.addPass(createAriesTilingPass(opts));
 
-    // Extract the single kernel design
-    pm.addPass(createAriesFuncExtractPass());
-    pm.addPass(createAriesLoopSimplifyPass());
-    pm.addPass(createAriesMemSubviewPass());
-    pm.addPass(createAriesMemHoistPass());
-    pm.addPass(createAriesMemCopyPass());
-    
-    // Convert to ADF dialect
-    pm.addPass(createAriesLowerToADFPass());
-    pm.addPass(mlir::createCanonicalizerPass());
+    if(!opts.OptEnableNewTiling){
+      // Extract the single kernel design
+      pm.addPass(createAriesFuncExtractPass());
+      pm.addPass(createAriesLoopSimplifyPass());
+      pm.addPass(createAriesMemSubviewPass());
+      pm.addPass(createAriesMemHoistPass());
+      pm.addPass(createAriesMemCopyPass());
+      // Convert to ADF dialect
+      pm.addPass(createAriesLowerToADFPass());
+      pm.addPass(mlir::createCanonicalizerPass());
+    }
     
     // Perform global optimizations
     pm.addPass(createAriesDependencyExtractPass());
     pm.addPass(createAriesFuncUnrollPass());
     pm.addPass(createAriesLocalDataForwardPass());
     
-
     if(opts.OptEnablePL){
       pm.addPass(createAriesKernelInterfaceCreatePass());
     }else{
@@ -62,9 +63,6 @@ void mlir::aries::registerAriesPassPipeline() {
       pm.addPass(createAriesPLSerializePass());
       pm.addPass(mlir::createCanonicalizerPass());
     }
-
-    //pm.addPass(createAriesKernelSplitPass());
-    //pm.addPass(createAriesFileSplitPass(opts));
   });
 }
 
