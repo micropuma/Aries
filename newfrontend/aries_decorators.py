@@ -13,11 +13,12 @@ class TaskInstance:
         self.call_kwargs = call_kwargs
 
 class TaskTileWrapper:
-    def __init__(self, func: Callable):
+    def __init__(self, func: Callable, run=True):
         self.func = func
         self.grid_dims = None
         self.tile_sizes = None
         self.instanceIdx = 0
+        self.run = run
 
     def __getitem__(self, args: Tuple[Any, ...]):
         assert len(args) >=2
@@ -38,17 +39,18 @@ class TaskTileWrapper:
         # Generate all tile index combinations (e.g., (i, j) for a 2D grid)
         tile_indices = itertools.product(*(range(g) for g in self.grid_dims))
         call_kwargs['TSizes'] = self.tile_sizes  # Add tuple of sizes
-        for idx in tile_indices:
-            call_kwargs['IVs'] = idx  # Add tuple of indices
-            self.func(*call_args, **call_kwargs)
+        if self.run:
+            for idx in tile_indices:
+                call_kwargs['IVs'] = idx  # Add tuple of indices
+                self.func(*call_args, **call_kwargs)
         instance = TaskInstance(self.func, self.grid_dims, self.tile_sizes, 
                                 self.instanceIdx, False, call_args, call_kwargs)
         return instance
 
-def task_tile():  
+def task_tile(run_flag):  
     """Decorator to wrap the function for tiles."""
     def decorator(func: Callable):
-        return TaskTileWrapper(func)
+        return TaskTileWrapper(func, run_flag)
     return decorator
 
 class TaskKernelWrapper:
@@ -74,3 +76,17 @@ def task_top():
     def decorator(func: Callable):
         return TaskTopWrapper(func)
     return decorator
+  
+# ======= Reduction range ========
+class ReductionRange:
+    def __init__(self, start, stop, step=1):
+        if stop is None:
+            start, stop = 0, start
+        self.range = range(start, stop, step)
+        
+    def __iter__(self):
+        return iter(self.range)
+
+# Helper function to create a ReductionRange
+def reduction_range(start, stop, step=1):
+    return ReductionRange(start, stop, step)

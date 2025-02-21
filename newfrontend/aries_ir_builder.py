@@ -2,13 +2,16 @@ import ast
 import astor
 import inspect
 import sympy as sp
+import subprocess
+from pathlib import Path
+from .gen_make import *
 from .aries_decorators import TaskTileWrapper, TaskKernelWrapper, TaskTopWrapper
 
 # =========== Code Transformation and IR Builder ===========
 
 # =========== Base Emitter Class ===========
 class MLIRGenerator(ast.NodeVisitor):
-    def __init__(self, mapInfo, map_cnt=0):
+    def __init__(self, mapInfo, map_cnt=0, func_attr=None):
         self.mlir_func_code = [] # Store the code within func
         self.mlir_map_code = [] # Store the AffineMap code
         self.indent = 2
@@ -21,6 +24,7 @@ class MLIRGenerator(ast.NodeVisitor):
         self.map = {} # map["ti"] = # map, dims  now only record the offset map
         self.mapInfo = mapInfo # dic["ti"] = (32*i), stores key and expression
         self.in_assign  = False # Track whether inside an Assign node
+        self.func_attr = func_attr
 
     ## -- Variable & Type Management -- ##
     def add_var_name(self, val, name=""):
@@ -149,13 +153,16 @@ class MLIRGenerator(ast.NodeVisitor):
                 memrefs.append(f"%{arg}: {typeName}")
             else:
                 raise ValueError(f"Argument {arg} not found in valType.")
-        self.emit(f"func.func @{func_name}({', '.join(memrefs)}) {{")
+        if self.func_attr is None:
+            self.emit(f"func.func @{func_name}({', '.join(memrefs)}) {{")
+        else:
+            self.emit(f"func.func @{func_name}({', '.join(memrefs)}) attributes {{{self.func_attr}}} {{")
 
         self.indent += 2
         self.generic_visit(node)
         self.emit("return")
         self.indent -= 2
-        self.emit("}")
+        self.emit("} ")
     
     def visit_For(self, node):
         # Process affine.for loop
@@ -169,11 +176,11 @@ class MLIRGenerator(ast.NodeVisitor):
         self.indent += 2
         self.generic_visit(node)
         self.indent -= 2
-
+            
         if loop_call == "reduction_range":
-          self.emit("}{reduction}")
+            self.emit("}{reduction}")
         else:
-          self.emit("}")
+            self.emit("}")
     
     ## -- Emit Functions -- ##
     def emit(self, code, same_line=False):
@@ -256,7 +263,7 @@ class TileMLIRGenerator(MLIRGenerator):
     # This is a slightly different than this parent class where the mapInfo 
     # only contains the expression
     def __init__(self, dmaInfo, map_cnt=0):
-        super().__init__(dmaInfo, map_cnt)
+        super().__init__(dmaInfo, map_cnt, "adf.func")
     
     def DmaInfo(self, arg, offsets, sizes, strides):
         eltName = arg.id
@@ -359,7 +366,7 @@ class TileMLIRGenerator(MLIRGenerator):
 # =========== Emitter for task kernel ===========
 class KernelMLIRGenerator(MLIRGenerator):
     def __init__(self, dmaInfo, map_cnt=0):
-        super().__init__(dmaInfo, map_cnt)
+        super().__init__(dmaInfo, map_cnt, "adf.kernel")
         self.is_assign = False
         
     def get_type(self, node):
@@ -489,7 +496,7 @@ class KernelMLIRGenerator(MLIRGenerator):
             memref, indices = self.visit(target_node)
             memType = self.get_type_name(memref)
             memName = self.get_var_name(memref)
-            self.emit(f"memref.store {value}, {memName}[{', '.join(indices)}] : {memType}")
+            self.emit(f"affine.store {value}, {memName}[{', '.join(indices)}] : {memType}")
         self.is_assign = False
     
     def visit_AugAssign(self, node):
@@ -507,13 +514,13 @@ class KernelMLIRGenerator(MLIRGenerator):
             op_type = self.get_op_type(node.op, type)
             result = self.add_var_name("temp")
             self.emit(f"{result} = {op_type} {lhs}, {value} : {type}")
-            self.emit(f"memref.store {result}, {memName}[{', '.join(indices)}] : {memType}")
+            self.emit(f"affine.store {result}, {memName}[{', '.join(indices)}] : {memType}")
         self.is_assign = False
         return
 
 class TopMLIRGenerator(MLIRGenerator):
     def __init__(self, dmaInfo, map_cnt=0):
-        super().__init__(dmaInfo, map_cnt)
+        super().__init__(dmaInfo, map_cnt, "top_func")
         self.is_assign = False
     
     def visit_Expr(self, node):
@@ -564,9 +571,10 @@ class TopMLIRGenerator(MLIRGenerator):
 
 class TileToLoop(ast.NodeTransformer):
     """Transform tile ranks to loops"""
-    def __init__(self, grid_dims=None):
+    def __init__(self, grid_dims=None, ids=None):
         # tile sizes and grid ranks
         self.grid_dims = grid_dims
+        self.loopIds = ids # Record the idx of reduction loops
     
     def visit_FunctionDef(self, node):
         # Extract assignment to i, j
@@ -587,18 +595,22 @@ class TileToLoop(ast.NodeTransformer):
             
             new_body.append(stmt)
 
-        for var, max_range in reversed(loop_vars.items()):
+        for idx, (var, max_range) in enumerate(reversed(loop_vars.items())):
+            loopId = len(loop_vars) -1 - idx
+            if self.loopIds and loopId in self.loopIds:
+              idName = "reduction_range"
+            else:
+              idName = "range"
             new_body = [ast.For(
                 target=ast.Name(id=var, ctx=ast.Store()),
                 iter=ast.Call(
-                    func=ast.Name(id="range", ctx=ast.Load()),
+                    func=ast.Name(id=idName, ctx=ast.Load()),
                     args=[ast.Constant(value=0), ast.Constant(value=max_range)],
                     keywords=[]
                 ),
                 body=new_body,
                 orelse=[]
             )]
-
         node.body = new_body  # Replace function body with transformed version
         return node
 
@@ -739,6 +751,10 @@ class Schedule:
         self.mlir_func_code = []
         self.mlir_map_code = [] # AffineMap should be defined outside of Module
         self.map_cnt = 0
+        self.paraSize = {} # paraSize[task] = factor[]
+        self.l2Size = {} # l2Size[task] = factor[]
+        self.taskIdxMap = {} #Saves the reduction loops ids of a given task taskIdxMap[task] = ids
+        
     
     # A helper function to collect funcs from the given module
     def collect_func(self, module):
@@ -764,9 +780,9 @@ class Schedule:
             if task_temp.func.__name__ == func_name:
                 task = task_temp
                 break
-            
+        ids = self.taskIdxMap.get(task, None)
         # Transform the tile ranks to index
-        tileTrans = TileToLoop(task.grid_dims)
+        tileTrans = TileToLoop(task.grid_dims, ids)
         tree = tileTrans.visit(parsed_ast)
         ast.fix_missing_locations(tree)
         # print("Parsed New AST 0", ast.dump(tree, indent=4))
@@ -787,7 +803,7 @@ class Schedule:
         # print(func_code)
     
     def task_kernel_emit(self, parsed_ast):
-        print("Parsed AIE Kernel AST", ast.dump(parsed_ast, indent=4))
+        # print("Parsed AIE Kernel AST", ast.dump(parsed_ast, indent=4))
         func_code, map_code, self.map_cnt = KernelMLIRGenerator(None, self.map_cnt).generate(parsed_ast)
         self.mlir_func_code.append(func_code)
         self.mlir_map_code.append(map_code)
@@ -800,16 +816,7 @@ class Schedule:
         self.mlir_map_code.append(map_code)
         # print(func_code)
     
-    def code_emit(self):
-        final_map_code = "\n".join(filter(None, self.mlir_map_code))
-        final_func_code = "\n".join(filter(None, self.mlir_func_code))
-        print(final_map_code)
-        print("module {")
-        print(final_func_code)
-        print("}")
-        return
-    
-    def build(self, module):
+    def code_emit(self, module, prj_dir):
         funcs = self.collect_func(module)
         for func in funcs:
             source_code = inspect.getsource(func)
@@ -836,4 +843,39 @@ class Schedule:
                 continue
             else:
                 raise ValueError(f"Unsupported decorator: {decorator_id}")
-        self.code_emit()
+        final_map_code = "\n".join(filter(None, self.mlir_map_code))
+        final_func_code = "\n".join(filter(None, self.mlir_func_code))
+        mlir_file = prj_dir / "aries.mlir" 
+        with open(mlir_file, "w") as file:
+            print(final_map_code, file=file)
+        with open(mlir_file, "a") as file:
+            print("module {", file=file)
+            print(final_func_code, file=file)
+            print("}", file=file)
+        return
+    
+    def genAriesMake(self, prj_dir, temp_dir):
+        task = self.tasks[0]
+        func = task.func.__name__
+        paraSize = self.paraSize[task]
+        l2Size = self.l2Size[task]
+        gen_make_aries(prj_dir, temp_dir, func, paraSize, l2Size)
+        return
+    
+    def parallel(self, task, factor=[]):
+        self.paraSize[task] = factor
+        return
+    
+    def l2buffer(self, task, factor=[]):
+        self.l2Size[task] = factor
+        return
+      
+    def redLoop(self, task, idx=[]):
+        self.taskIdxMap[task] = idx
+        return
+    
+    def build(self, module, prj_dir="./my_project", temp_dir="./templates"):
+        subprocess.run(['mkdir', '-p' , f'{prj_dir}'])
+        prj_dir = Path(prj_dir)
+        self.code_emit(module, prj_dir)
+        self.genAriesMake(prj_dir, temp_dir)   

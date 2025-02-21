@@ -393,6 +393,17 @@ private:
         index++;
       }
     });
+    // Mark reading output arg as initialize
+    for (auto id : ids){
+      auto arg = func.getArgument(id);
+      for (auto use : arg.getUsers()){
+        if(auto dmaOp = dyn_cast<DmaOp>(use)){
+          auto src = dmaOp.getSrc();
+          if(src == arg)
+            dmaOp->setAttr("initialize", builder.getUnitAttr());
+        }
+      }
+    }
     // Record the output arguments at the top
     for (auto call: topFunc.getOps<CallOp>()){
       if(call.getCallee() != func.getName())
