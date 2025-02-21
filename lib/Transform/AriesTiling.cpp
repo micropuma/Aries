@@ -20,11 +20,9 @@ public:
   AriesTiling() = default;
   AriesTiling(const AriesOptions &opts) {
     TileFuncName = opts.OptTileFuncName;
-    for (unsigned i = 0; i < opts.OptL1TileSize.size(); ++i) {
-      L1TileSizes=opts.OptL1TileSize[i];
-      L2TileSizes=opts.OptL2TileSize[i];
-      L3TileSizes=opts.OptL3TileSize[i];
-    }
+    L1TileSizes=opts.OptL1TileSize;
+    L2TileSizes=opts.OptL2TileSize;
+    L3TileSizes=opts.OptL3TileSize;
   }
   
   void runOnOperation() override {
@@ -345,7 +343,18 @@ private:
     auto parallelOp = builder.create<AffineParallelOp>(
       loc, ArrayRef<Type>{}, ArrayRef<arith::AtomicRMWKind>{}, 
       lbMaps, lbs, ubMaps, ubs, steps);
-    
+    // Add attributes to mark the reduction dims
+    auto indexType = builder.getIndexType();
+    SmallVector<Attribute, 3> newAttrList;
+    for (auto idx: redIndeices){
+      auto valueAttr = builder.getIntegerAttr(indexType, idx);
+      newAttrList.push_back(valueAttr);
+    }
+    if(newAttrList.size()!=0){
+      auto newArrayAttr = builder.getArrayAttr(newAttrList);
+      parallelOp->setAttr("redDim", newArrayAttr);
+    }
+
     for (unsigned i=0; i<bandSize; i++){
       auto blockParallelloop = parallelops[i];
       blockParallelloop.getBody()->back().erase();

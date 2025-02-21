@@ -16,40 +16,55 @@ void mlir::aries::registerAriesPassPipeline() {
   PassPipelineRegistration<AriesOptions>(
   "aries-pipeline", "Compile to AIE array",
   [](OpPassManager &pm, const AriesOptions &opts) {
+    // Perform multi-level tiling
     pm.addPass(createAriesTilingPass(opts));
+
+    // Extract the single kernel design
     pm.addPass(createAriesFuncExtractPass());
     pm.addPass(createAriesLoopSimplifyPass());
     pm.addPass(createAriesMemSubviewPass());
     pm.addPass(createAriesMemHoistPass());
     pm.addPass(createAriesMemCopyPass());
-    pm.addPass(createAriesDependencyExtractPass());
+    
+    // Convert to ADF dialect
     pm.addPass(createAriesLowerToADFPass());
+    pm.addPass(mlir::createCanonicalizerPass());
+    
+    // Perform global optimizations
+    pm.addPass(createAriesDependencyExtractPass());
     pm.addPass(createAriesFuncUnrollPass());
     pm.addPass(createAriesLocalDataForwardPass());
-    pm.addPass(createAriesL2BufferCreatePass());
-    pm.addPass(createAriesL2BufferCreatePass(opts));
-    pm.addPass(createAriesKernelInterfaceCreatePass());
-    pm.addPass(createAriesBroadcastDetectPass());
-    pm.addPass(createAriesDMAToIOPass());
+    
+
+    if(opts.OptEnablePL){
+      pm.addPass(createAriesKernelInterfaceCreatePass());
+    }else{
+      pm.addPass(createAriesBroadcastDetectPass());
+      pm.addPass(createAriesL2BufferCreatePass(opts));
+    }
+    
+    // Perform local optimizations
     pm.addPass(createAriesDMAToIOPass(opts));
-    pm.addPass(createAriesADFCellCreatePass());
+    pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(createAriesADFCellCreatePass(opts));
-    pm.addPass(createAriesCorePlacementPass());
     pm.addPass(createAriesCorePlacementPass(opts));
-    pm.addPass(createAriesIOPlacementPass());
     pm.addPass(createAriesIOPlacementPass(opts));
     pm.addPass(createAriesGMIOMaterializePass());
-    pm.addPass(createAriesPLIOMaterializePass());
     pm.addPass(createAriesPLIOMaterializePass(opts));
-    pm.addPass(createAriesAXIPackingPass());
     pm.addPass(createAriesAXIPackingPass(opts));
     pm.addPass(createAriesPLDataflowPass());
+    pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(createAriesBurstDetectionPass());
     pm.addPass(createAriesFuncEliminatePass());
     pm.addPass(createAriesPLDoubleBufferPass());
-    pm.addPass(createAriesPLSerializePass());
-    pm.addPass(createAriesKernelSplitPass());
-    pm.addPass(createAriesFileSplitPass(opts));
+    pm.addPass(mlir::createCanonicalizerPass());
+    if(opts.OptEnableSerial){
+      pm.addPass(createAriesPLSerializePass());
+      pm.addPass(mlir::createCanonicalizerPass());
+    }
+
+    //pm.addPass(createAriesKernelSplitPass());
+    //pm.addPass(createAriesFileSplitPass(opts));
   });
 }
 

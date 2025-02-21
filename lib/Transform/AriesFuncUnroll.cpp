@@ -46,6 +46,7 @@ private:
       auto oneAttr = builder.getIntegerAttr(indexType, 1);
       //Start from the innermost loop
       bool flowFull = false;
+      bool hasRedLoop = false;
       for (unsigned index=0; index < band.size(); index++) {
         // Keep the tripCount info after unrolling
         auto loop = band[index];
@@ -57,6 +58,8 @@ private:
           auto tripCountAttr = builder.getIntegerAttr(indexType, tripCountVal);
           tripCountList.push_back(tripCountAttr);
           indexList.push_back(index);
+          if (loop->hasAttr("reduction"))
+            hasRedLoop = true;
         }
         // Unroll reduction loop
         if (loop->getAttr("flow")){
@@ -133,11 +136,12 @@ private:
         llvm::errs() << "Only 3D logic array is supported\n";
         return false;
       }else{
-        unsigned id=0;
-        for(unsigned idx=0; idx<3; idx++){
-          auto it = llvm::find(indexList, idx);
-          if (it != indexList.end()){
-            auto attr = tripCountList[id++];
+        // If no reduction then add zero before else append zero behind
+        if(!hasRedLoop)
+          newTripCounts.push_back(oneAttr);
+        for(int idx=0; idx<3; idx++){
+          if(idx < listSize){
+            auto attr = tripCountList[idx];
             newTripCounts.push_back(attr);
           }else{
             newTripCounts.push_back(oneAttr);
@@ -164,18 +168,18 @@ private:
             SmallVector<Attribute, 3> newAttrList;
             if(auto arrayAttr = call->getAttr("ivs")){
               auto ivArrayAttr = dyn_cast<ArrayAttr>(call->getAttr("ivs"));
-              unsigned id=0;
-              for(unsigned idx=0; idx<3; idx++){
-                auto it = llvm::find(indexList, idx);
-                if (it != indexList.end()){
-                  auto attr = ivArrayAttr[id++];
+              if(!hasRedLoop)
+                newAttrList.push_back(zeroAttr);
+              for(int idx=0; idx<3; idx++){
+                if(idx < listSize){
+                  auto attr = ivArrayAttr[idx];
                   newAttrList.push_back(attr);
                 }else{
                   newAttrList.push_back(zeroAttr);
                 }
               }
             }else{
-              for(unsigned idx=0; idx<3; idx++){
+              for(int idx=0; idx<3; idx++){
                 newAttrList.push_back(zeroAttr);
               }
             }
@@ -193,18 +197,18 @@ private:
           SmallVector<Attribute, 3> newAttrList;
           if(auto arrayAttr = call->getAttr("ivs")){
             auto ivArrayAttr = dyn_cast<ArrayAttr>(arrayAttr);
-            unsigned id=0;
-            for(unsigned idx=0; idx<3; idx++){
-              auto it = llvm::find(indexList, idx);
-              if (it != indexList.end()){
-                auto attr = ivArrayAttr[id++];
+            if(!hasRedLoop)
+              newAttrList.push_back(zeroAttr);
+            for(int idx=0; idx<3; idx++){
+              if(idx < listSize){
+                auto attr = ivArrayAttr[idx];
                 newAttrList.push_back(attr);
               }else{
                 newAttrList.push_back(zeroAttr);
               }
             }
           }else{
-            for(unsigned idx=0; idx<3; idx++){
+            for(int idx=0; idx<3; idx++){
               newAttrList.push_back(zeroAttr);
             }
           }

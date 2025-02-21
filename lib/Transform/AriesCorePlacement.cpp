@@ -834,7 +834,7 @@ private:
       unsigned col = colStart + std::floor(pid / (float)height);
       unsigned row = rowStart + pid % height;
       if((col > colNum-1) || (row > rowNum-1)){
-        llvm::errs() << "Placement exceeds array boundary";
+        llvm::errs() << "Placement exceeds array boundary\n";
         return WalkResult::interrupt();
       }
       auto colAttr = builder.getIntegerAttr(indexType, col);
@@ -851,7 +851,7 @@ private:
     return true;
   }
 
-  // This algorithm is different from 0 and 1, as it is a specific zipzap
+  // This algorithm is different from 0 and 1, as it is a specific zigzag
   // Placement algorithm
   bool placementNaive2(OpBuilder builder, FuncOp func, 
                        const unsigned colNum, const unsigned rowNum, 
@@ -860,7 +860,7 @@ private:
     auto indexType = builder.getIndexType();
     unsigned rowStart = rowOffset;
     if(rowStart%2!=0){
-      llvm::errs() << "Algorithm requires rowOffset is a even number\n";
+      llvm::errs() << "Algorithm requires rowOffset to be an even number\n";
       return false;
     }
     unsigned realRowNum = std::floor((rowNum-rowStart)/2);
@@ -964,7 +964,7 @@ private:
       unsigned col = colStart + std::floor(pid / (float)(height*2));
       unsigned row = rowStart + pid % (height*2);
       if((col > colNum-1) || (row > rowNum-1)){
-        llvm::errs() << "Placement exceeds array boundary";
+        llvm::errs() << "Placement exceeds array boundary\n";
         return WalkResult::interrupt();
       }
       auto colAttr = builder.getIntegerAttr(indexType, col);
@@ -980,7 +980,7 @@ private:
         order = 3;
       if(!bufPlacement(builder, callOp, colNum, rowNum, bankNum, col, row, 1,
                        order, DMAINCnt, DMAOUTCnt, bufOffsets)){
-        llvm::errs() << "Buffer placement failed";
+        llvm::errs() << "Buffer placement failed\n";
         return WalkResult::interrupt();
       }
       return WalkResult::advance();
@@ -1018,19 +1018,19 @@ private:
       if(CoreAlgo == 0){
         if(!placementNaive0(builder, func, colNum, rowNum, colOffset, rowOffset,
                             KSize, JSize, ISize)){
-          llvm::errs() << "Placement0 failed";
+          llvm::errs() << "Placement0 failed\n";
           return WalkResult::interrupt();
         }
       }else if(CoreAlgo == 1){
         if(!placementNaive1(builder, func, colNum, rowNum, colOffset, rowOffset,
                             colGap, KSize, JSize, ISize)){
-          llvm::errs() << "Placement1 failed";
+          llvm::errs() << "Placement1 failed\n";
           return WalkResult::interrupt();
         }
       }else{
         if(!placementNaive2(builder, func, colNum, rowNum, colOffset, rowOffset,
                             KSize, JSize, ISize)){
-          llvm::errs() << "Placement2 failed";
+          llvm::errs() << "Placement2 failed\n";
           return WalkResult::interrupt();
         }
       }

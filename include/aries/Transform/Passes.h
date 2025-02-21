@@ -113,6 +113,11 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       *this, "axi-width", llvm::cl::init(32), llvm::cl::desc(
       "Specify the axi width of the DDR ports in bits (32, 64, 128, ...)")};
 
+  // Enable serialize pass or not
+  Option<bool> OptEnableSerial{
+    *this, "en-serial", llvm::cl::init(false), llvm::cl::desc(
+    "Enable serialize pass or not")};
+
   /// Configure the split file pass.
   Option<std::string> OptFileName{
       *this, "inputfile-name", llvm::cl::init("adf_graph_temp.cpp"),
