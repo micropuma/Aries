@@ -1,7 +1,7 @@
 FUNC:={{func}}
 MLIR:=aries
 KERNEL_NAME:=kernel_${FUNC}
-PROJECT_PATH=.
+PROJECT_PATH=./project
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
@@ -71,7 +71,7 @@ ARIES_OPTIONS+= buf-sels=${buf_sel}
 ARIES_OPTIONS+= axi-width=${AXIWidth}
 ARIES_OPTIONS+= en-serial=${EN_SERIAL}
 
-pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
+pass: fileCreate ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${MLIR}.mlir
 	aries-opt -o $@ $< \
 			-aries-pipeline="${ARIES_OPTIONS}"
@@ -122,19 +122,19 @@ ${PROJECT_AIE_PATH}/temp.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir
 	aries-translate -o $@ $< \
 		-emit-kenrel-func
 
-ifeq ($(Link_file),1)
 kernel_link:
-	cp -r ${TEMPLATE_PATH}/kernel_mm/aie_fp32_v1/kernel_gemm* ${PROJECT_AIE_PATH}
+ifeq ($(Link_file),1)
+{{"\t\t"}}cp -r ${TEMPLATE_PATH}/kernel_mm/aie_fp32_v1/kernel_gemm* ${PROJECT_AIE_PATH}
 endif
 
 clean_kernel_vec:
-	rm -rf ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir ${PROJECT_PATH}/${KERNEL_NAME}.mlir
+	rm -r ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir ${PROJECT_PATH}/${KERNEL_NAME}.mlir
 
 clean_translate:
-	rm -rf ${PROJECT_AIE_PATH}/adf_graph.cpp ${PROJECT_AIE_PATH}/kernel.h ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc
+	rm -r ${PROJECT_AIE_PATH}/adf_graph.cpp ${PROJECT_AIE_PATH}/kernel.h ${PROJECT_AIE_PATH}/${KERNEL_NAME}.cc
 
 clean_pass:
-	rm -rf ${PROJECT_PATH}/${FUNC}.adf.mlir
+	rm -r ${PROJECT_PATH}/${FUNC}.adf.mlir
 
 clean:
-	rm -rf ${PROJECT_PATH}
+	rm -r ${PROJECT_PATH}

@@ -2507,6 +2507,7 @@ int main(int argc, char **argv) {
 )XXX";
   
   // Define function for verification
+  /* Currently unused, will verify it in frontend
   SmallVector<FuncOp, 4> funcList;
   for (auto caller: func.getOps<CallOp>()){
     auto hostFunc = module.lookupSymbol<FuncOp>(caller.getCallee());
@@ -2534,6 +2535,7 @@ int main(int argc, char **argv) {
     reduceIndent();
     os << "}\n\n";
   }
+  */
 
   os << "\n";
   os << host_string0;
