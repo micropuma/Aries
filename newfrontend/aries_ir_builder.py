@@ -805,6 +805,7 @@ class Schedule:
         self.map_cnt = 0
         self.paraSize = {} # paraSize[task] = factor[]
         self.l2Size = {} # l2Size[task] = factor[]
+        self.bufSel = {} # bufsel[task] = factor[] # 1:BRAM, 0: URAM
         self.taskIdxMap = {} #Saves the reduction loops ids of a given task taskIdxMap[task] = ids
         self.placement = [] # ColNum, RowNum, ColOffset, RowOffset, ColGap, FirstCol, NumShim, MidLine, ChalIn, ChalOut
         self.placeAlgo = [] # CoreAlgo, EnableIOCons
@@ -925,32 +926,30 @@ class Schedule:
             print("module {", file=file)
             print(final_func_code, file=file)
             print("}", file=file)
-        return
     
     def genAriesMake(self, prj_dir, temp_dir):
         task = self.tasks[0]
         func = task.func.__name__
         paraSize = self.paraSize[task]
         l2Size = self.l2Size[task]
-        gen_make_aries(prj_dir, temp_dir, self.subName, func, paraSize, l2Size, self.placement, self.placeAlgo, self.linkFile)
-        return
+        bufSel = self.bufSel[task]
+        gen_make_aries(prj_dir, temp_dir, self.subName, func, paraSize, l2Size, self.placement, self.placeAlgo, self.linkFile, bufSel)
     
     def genKernel(self, prj_dir, temp_dir):
         if self.linkFile!=0:
           gen_kernel(prj_dir, temp_dir, self.linkPath, self.paraList, self.funName)
-        return
     
     def parallel(self, task, factor=[]):
         self.paraSize[task] = factor
-        return
     
     def l2buffer(self, task, factor=[]):
         self.l2Size[task] = factor
-        return
+    
+    def bufsel(self, task, factor=[]):
+        self.bufSel[task] = factor
       
     def redLoop(self, task, idx=[]):
         self.taskIdxMap[task] = idx
-        return
     
     def to(self, device):
         if device == "VCK190" or device == "vck190":

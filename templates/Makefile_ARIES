@@ -28,13 +28,15 @@ Link_file = {{linkFile}}
 L1_{{i}} = {{paraSize}}
 L2_{{i}} = {{l2Size}}
 {% endfor -%}
-L1_Tiling = ${L1_0},${L1_1},${L1_2}
-L2_Tiling = ${L2_0},${L2_1},${L2_2}
+L1_Tiling = {% for i in range(dim) -%}${L1_{{i}}}{% if not loop.last %},{% endif %}{% endfor %}
+L2_Tiling = {% for i in range(dim) -%}${L2_{{i}}}{% if not loop.last %},{% endif %}{% endfor %}
 EN_Tiling = "true"
-BUFF_0=1#1:BRAM 0:URAM
-BUFF_1=1
-BUFF_2=0
-buf_sel = ${BUFF_0},${BUFF_1},${BUFF_2}
+{% for i in range(numBuf) -%}
+{% set sel = bufSel[i] -%}
+BUFF_{{i}} = {{sel}}
+{% endfor -%}
+# 1:BRAM, 0:URAM
+buf_sel = {% for i in range(numBuf) -%}${BUFF_{{i}}}{% if not loop.last %},{% endif %}{% endfor %}
 EN_PL = "true"
 EN_AIE2 = "false"
 EN_SERIAL = "false"
