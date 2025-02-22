@@ -28,9 +28,7 @@ struct AriesPLIOMaterialize : public AriesPLIOMaterializeBase<AriesPLIOMateriali
 public:
   AriesPLIOMaterialize() = default;
   AriesPLIOMaterialize(const AriesOptions &opts) {
-    for (unsigned i = 0; i < opts.OptBuffSels.size(); ++i) {
-      BuffSels=opts.OptBuffSels[i];
-    }
+    BuffSels=opts.OptBuffSels;
   }
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
@@ -1222,7 +1220,7 @@ private:
         auto it = llvm::find(originBand, loop);
         if(it!=originBand.end()){
           auto coeff = flattenedExpr[i];
-          unsigned depth = llvm::find(originBand, loop) - originBand.begin();
+          unsigned depth = it - originBand.begin();
           innerLoops.push_back(std::pair(depth, coeff));
         }
       }

@@ -39,6 +39,11 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       llvm::cl::desc("Specify a list of L3 loop tile sizes")};
   
   /// Configure the L2bufferCreate/CorePlacement pass.
+  Option<bool> OptEnableNewTiling{
+    *this, "en-newtiling", llvm::cl::init(false), llvm::cl::desc(
+    "Enable using new tiling function for frontend or not")};
+
+  /// Configure the L2bufferCreate/CorePlacement pass.
   Option<bool> OptEnablePL{
       *this, "en-pl", llvm::cl::init(true), llvm::cl::desc(
       "Enable programmable logic(PL) or not")};
@@ -113,6 +118,11 @@ struct AriesOptions : public PassPipelineOptions<AriesOptions> {
       *this, "axi-width", llvm::cl::init(32), llvm::cl::desc(
       "Specify the axi width of the DDR ports in bits (32, 64, 128, ...)")};
 
+  // Enable serialize pass or not
+  Option<bool> OptEnableSerial{
+    *this, "en-serial", llvm::cl::init(false), llvm::cl::desc(
+    "Enable serialize pass or not")};
+
   /// Configure the split file pass.
   Option<std::string> OptFileName{
       *this, "inputfile-name", llvm::cl::init("adf_graph_temp.cpp"),
@@ -137,7 +147,7 @@ std::unique_ptr<Pass> createAriesLocalDataForwardPass();
 std::unique_ptr<Pass> createAriesL2BufferCreatePass();
 std::unique_ptr<Pass> createAriesL2BufferCreatePass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesKernelInterfaceCreatePass();
-std::unique_ptr<Pass> createAriesBroadcastToForwardingPass();
+std::unique_ptr<Pass> createAriesBroadcastDetectPass();
 std::unique_ptr<Pass> createAriesDMAToIOPass();
 std::unique_ptr<Pass> createAriesDMAToIOPass(const AriesOptions &opts);
 std::unique_ptr<Pass> createAriesADFCellCreatePass();

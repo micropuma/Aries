@@ -137,6 +137,11 @@ private:
       RewritePatternSet patterns(context);
       patterns.add<DMAForward>(patterns.getContext());
       (void)applyPatternsGreedily(mod, std::move(patterns));
+
+      func.walk([&](DmaOp dmaOp){
+        if(dmaOp->hasAttr("initialize"))
+          dmaOp.erase();
+      });
     }
 
     return true;

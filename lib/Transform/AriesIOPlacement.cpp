@@ -45,21 +45,23 @@ public:
 
 private:
   bool findCorePlace(Operation* use, Value io, bool& inDir, 
-                     ArrayAttr& corePlaceAttr){
+                     int& colInt){
     auto connectOp = dyn_cast<ConnectOp>(use);
     auto src = connectOp.getSrc();
     auto dst = connectOp.getDst();
+    int finalCol = 0;
     CallOp call;
+    // Send data to IO
     if(src!=io){
       auto defineOp = src.getDefiningOp();
       // For NPU, currently the output won't be returned
       if(!defineOp){
         return false;
       }else if(auto buf = dyn_cast<BufferOp>(defineOp)){
-        for(auto use : src.getUsers()){
-          if(!dyn_cast<DmaOp>(use))
+        for(auto useNew : src.getUsers()){
+          if(!dyn_cast<DmaOp>(useNew))
             continue;
-          auto dmaOp = dyn_cast<DmaOp>(use);
+          auto dmaOp = dyn_cast<DmaOp>(useNew);
           auto srcDma = dmaOp.getSrc();
           bool break_flag = false;
           for(auto user : srcDma.getUsers()){
@@ -81,7 +83,7 @@ private:
       }else{
         return false;
       }
-    }else{
+    }else{ // Receive data from IO
       bool break_flag = false;
       for(auto valUse : dst.getUsers()){
         if(auto dmaOp = dyn_cast<DmaOp>(valUse)){
@@ -96,19 +98,47 @@ private:
               break;
             }
           }
-        }
-        if(break_flag)
+          if(break_flag)
+            break;
+        }else if(auto broadcast = dyn_cast<DmaBroadcastOp>(valUse)){
+          auto dsts = broadcast.getDst();
+          auto dstNum = dsts.size();
+          for (auto dstDma : dsts){
+            for(auto user : dstDma.getUsers()){
+              if(!dyn_cast<CallOp>(user)){
+                continue;
+              }else{
+                auto newCall = dyn_cast<CallOp>(user);
+                auto corePlaceAttr = dyn_cast<ArrayAttr>(
+                                     newCall->getAttr("col, row"));
+                auto colAttr = corePlaceAttr[0];
+                auto intAttr = dyn_cast<IntegerAttr>(colAttr);
+                auto colIntTemp = intAttr.getInt();
+                finalCol += colIntTemp;
+                inDir = true;
+                break_flag =true;
+                break;
+              }
+            }
+          }
+          finalCol = std::floor(finalCol/dstNum);
+          if(break_flag)
+            break;
+        }else if(auto callOp = dyn_cast<CallOp>(valUse)){
+          callOp = call;
+          inDir = true;
           break;
-        if(!dyn_cast<CallOp>(valUse))
-          continue;
-        call = dyn_cast<CallOp>(valUse);
-        inDir = true;
-        break;
+        }
       }
     }
-    if(!call)
-      return false;
-    corePlaceAttr = dyn_cast<ArrayAttr>(call->getAttr("col, row"));
+    if(call){ // If the IO is connected to one core
+      auto corePlaceAttr = dyn_cast<ArrayAttr>(call->getAttr("col, row"));
+      auto colAttr = corePlaceAttr[0];
+      auto intAttr = dyn_cast<IntegerAttr>(colAttr);
+      colInt = intAttr.getInt();
+    }else{ // If the IO is connceted to many cores(Broadcast)
+      colInt = finalCol;
+    }
     return true;
   }
 
@@ -220,12 +250,9 @@ private:
         for(auto use : gmio.getUsers()){
           if(!dyn_cast<ConnectOp>(use))
             continue;
-          ArrayAttr corePlaceAttr;
-          if(!findCorePlace(use, gmio, inDir, corePlaceAttr))
+          int colCore;
+          if(!findCorePlace(use, gmio, inDir, colCore))
             return WalkResult::interrupt();
-          auto colAttr = corePlaceAttr[0];
-          auto intAttr = dyn_cast<IntegerAttr>(colAttr);
-          int colCore = intAttr.getInt();
           broadPos.push_back(colCore);
           disToMid += colCore-midLine;
           cnt++;
@@ -290,12 +317,9 @@ private:
         for(auto use : plio.getUsers()){
           if(!dyn_cast<ConnectOp>(use))
             continue;
-          ArrayAttr corePlaceAttr;
-          if(!findCorePlace(use, plio, inDir, corePlaceAttr))
+          int colCore;
+          if(!findCorePlace(use, plio, inDir, colCore))
             return WalkResult::interrupt();
-          auto colAttr = corePlaceAttr[0];
-          auto intAttr = dyn_cast<IntegerAttr>(colAttr);
-          int colCore = intAttr.getInt();
           broadPos.push_back(colCore);
           disToMid += colCore-midLine;
           cnt++;

@@ -36,7 +36,9 @@ LogicalResult loopUnrollFull(AffineForOp forOp,
 }
 
 // Traverse all the surrounding 'affine.for' of op
-void getSurroundingLoops(Operation &op, SmallVector<AffineForOp, 6>& band) {
+// If fromOuterMost is true: band[0] is the outermost loop
+void getSurroundingLoops(Operation &op, SmallVector<AffineForOp, 6>& band,
+                         bool fromOuterMost) {
   auto *currOp = op.getParentOp();
   AffineForOp currAffineForOp;
   while (currOp) {
@@ -44,7 +46,8 @@ void getSurroundingLoops(Operation &op, SmallVector<AffineForOp, 6>& band) {
       band.push_back(currAffineForOp);
     currOp = currOp->getParentOp();
   }
-  std::reverse(band.begin(), band.end());
+  if(fromOuterMost)
+    std::reverse(band.begin(), band.end());
 }
 
 /// Get the common loops of op 'a' and 'b'

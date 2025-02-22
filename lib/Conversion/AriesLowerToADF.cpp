@@ -202,6 +202,15 @@ struct AffineParallelConvert : public OpConversionPattern<AffineParallelOp> {
       // Set the insertion point inside the newly created loop.
       rewriter.setInsertionPointToStart(affineForOp.getBody());
     }
+    // Mark the reduction loops back
+    if(op->hasAttr("redDim")){
+      auto arrayAttr = dyn_cast<ArrayAttr>(op->getAttr("redDim"));
+      for (auto attr : arrayAttr){
+        auto intAttr = dyn_cast<IntegerAttr>(attr);
+        auto intVal = intAttr.getInt();
+        band[intVal]->setAttr("reduction", rewriter.getUnitAttr());
+      }
+    }
 
     //Erase the terminator of the AffineParallelOp
     rewriter.eraseOp(&op.getBody()->back());

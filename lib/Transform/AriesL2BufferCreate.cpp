@@ -36,32 +36,74 @@ public:
   }
 
 private:
-  // Now L2 buffer will be aligned. This pass will transpose any high 
-  // dimensional array block accesses to be aligned in the L2 level. e.g.
-  // x _ _ _
-  // _ x _ _     ---->    x x x x (Each _ or x is a recutangular block)
-  // _ _ x _
-  // _ _ _ x
-  WalkResult dmaProcess(OpBuilder builder, FuncOp func, DmaOp dmaOp,
-                        unsigned& loadIdx, unsigned& storeIdx, unsigned& cnt,
-                        SmallVector<AffineForOp, 6>& band){
+  // This function split one broadcast function to multiple broadcasts.
+  // This is to be align with both Vitis and MLIR-AIE backend
+  void splitBroadCast(OpBuilder builder, DmaBroadcastOp broadcast){
     auto loc = builder.getUnknownLoc();
-    auto src = dmaOp.getSrc();
-    auto dst = dmaOp.getDst();
-    MemRefType type = dyn_cast<MemRefType>(src.getType());
-    SmallVector<Value> offsets = dmaOp.getSrcOffsets();
-    SmallVector<Value> sizes   = dmaOp.getSrcSizes();
-    SmallVector<Value> strides = dmaOp.getSrcStrides();
-    SmallVector<Value> srcOffsets = dmaOp.getSrcOffsets();
-    SmallVector<Value> srcSizes   = dmaOp.getSrcSizes();
-    SmallVector<Value> srcStrides = dmaOp.getSrcStrides();
-    SmallVector<Value> dstOffsets = dmaOp.getDstOffsets();
-    SmallVector<Value> dstSizes   = dmaOp.getDstSizes();
-    SmallVector<Value> dstStrides = dmaOp.getDstStrides();
-    auto srcType = dyn_cast<MemRefType>(src.getType());
+    auto src = broadcast.getSrc();
+    auto dsts = broadcast.getDst();
+    auto srcOffsets = broadcast.getSrcOffsets();
+    auto srcSizes   = broadcast.getSrcSizes();
+    auto srcStrides = broadcast.getSrcStrides();
+    auto dstOffsets = broadcast.getDstOffsets();
+    auto dstSizes   = broadcast.getDstSizes();
+    auto dstStrides = broadcast.getDstStrides();
+    for(auto dst: dsts){
+      auto defineOp = dst.getDefiningOp();
+      builder.setInsertionPointAfter(defineOp);
+      auto newDma = builder.create<DmaBroadcastOp>(loc, 
+                                    src, srcOffsets, srcSizes, srcStrides,
+                                    dst, dstOffsets, dstSizes, dstStrides);
+      if(broadcast->hasAttr("initialize"))
+        newDma->setAttr("initialize", builder.getUnitAttr());
+    }
+    broadcast.erase();
+  }
+
+  bool L2BuffExtract(OpBuilder builder, Operation* op, 
+          unsigned& loadIdx, unsigned& storeIdx, unsigned& cnt, 
+          SmallVector<AffineForOp, 6>& band){
+    auto loc = builder.getUnknownLoc();
+    Value src, dst;
+    MemRefType srcType, dstType;
+    SmallVector<Value, 3> dsts;
+    SmallVector<Value, 3> srcOffsets;
+    SmallVector<Value, 3> srcSizes;
+    SmallVector<Value, 3> srcStrides;
+    SmallVector<Value, 3> dstOffsets;
+    SmallVector<Value, 3> dstSizes;
+    SmallVector<Value, 3> dstStrides;
+    int opType;
+    if(auto broadcast = dyn_cast<DmaBroadcastOp>(op)){
+      srcOffsets = broadcast.getSrcOffsets();
+      srcSizes   = broadcast.getSrcSizes();
+      srcStrides = broadcast.getSrcStrides();
+      dstOffsets = broadcast.getDstOffsets();
+      dstSizes   = broadcast.getDstSizes();
+      dstStrides = broadcast.getDstStrides();
+      src = broadcast.getSrc();
+      dsts = broadcast.getDst();
+      srcType = dyn_cast<MemRefType>(src.getType());
+      dstType = dyn_cast<MemRefType>(dsts[0].getType());
+      opType = 0;
+    }else if(auto dmaOp = dyn_cast<DmaOp>(op)){
+      srcOffsets = dmaOp.getSrcOffsets();
+      srcSizes   = dmaOp.getSrcSizes();
+      srcStrides = dmaOp.getSrcStrides();
+      dstOffsets = dmaOp.getDstOffsets();
+      dstSizes   = dmaOp.getDstSizes();
+      dstStrides = dmaOp.getDstStrides();
+      src = dmaOp.getSrc();
+      dst = dmaOp.getDst();
+      srcType = dyn_cast<MemRefType>(src.getType());
+      dstType = dyn_cast<MemRefType>(dst.getType());
+      opType = 1;
+    }
+    SmallVector<Value, 3> offsets;
+    SmallVector<Value, 3> sizes;
+    SmallVector<Value, 3> strides;
     auto srcSpace = srcType.getMemorySpace();
     unsigned srcSpaInt = 0;
-    auto dstType = dyn_cast<MemRefType>(dst.getType());
     auto dstSpace = dstType.getMemorySpace();
     unsigned dstSpaInt = 0;
     bool load_flag;
@@ -81,8 +123,12 @@ private:
          && srcSpaInt == (int)MemorySpace::L1)
       load_flag = false;
     else
-      return WalkResult::advance();
-    if(!load_flag){
+      return true;
+    if(load_flag){
+      offsets = srcOffsets;
+      sizes   = srcSizes;
+      strides = srcStrides;
+    }else{
       offsets = dstOffsets;
       sizes   = dstSizes;
       strides = dstStrides;
@@ -93,7 +139,7 @@ private:
       auto constantOp = dyn_cast<arith::ConstantOp>(size.getDefiningOp());
       if(!constantOp){
         llvm::errs() << "Involve non-consant size!\n";
-        return WalkResult::interrupt();
+        return false;
       }
       auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
       auto sizeInt = intAttr.getInt();
@@ -116,7 +162,7 @@ private:
       auto defineOp = offset.getDefiningOp();
       if(!defineOp){
         llvm::errs() << "Offset not defined by any operantions!\n";
-        return WalkResult::interrupt();
+        return false;
       }
       if(dyn_cast<arith::ConstantOp>(defineOp)){
         continue;
@@ -128,7 +174,7 @@ private:
           auto loop = getForInductionVarOwner(operand);
           if(!loop){
             llvm::errs() << "ApplyOp has non-inductionVar operands!\n";
-            return WalkResult::interrupt();
+            return false;
           }
           auto it = llvm::find(band, loop);
           if (it != band.end()) {
@@ -143,14 +189,14 @@ private:
             auto tripCount = map.getSingleConstantResult();
             if (!tripCount){
               llvm::errs() << "Involve loops with non-consant trip count!\n";
-              return WalkResult::interrupt();
+              return false;
             }
             totalCount = totalCount * tripCount;
           }
         }
       }else{
         llvm::errs() << "Offset defined by unsupported operations\n";
-        return WalkResult::interrupt();
+        return false;
       }
     }
     auto lastSizeInt = sizesInt[rank-1];
@@ -160,7 +206,7 @@ private:
     auto bufName = "L2_buf" + std::to_string(cnt++);
     auto allocOp 
          = builder.create<BufferOp>(loc, MemRefType::get(bufSizes,
-                                   type.getElementType(), AffineMap(),
+                                    srcType.getElementType(), AffineMap(),
                                    (int)MemorySpace::L2), bufName);
     // Create L2 Stride = 1
     auto indexType = builder.getIndexType();
@@ -171,7 +217,7 @@ private:
     SmallVector<Value> L2Strides, L2StridesL1;
     for(unsigned i=0; i< rank; i++)
       L2Strides.push_back(oneValue);
-    builder.setInsertionPoint(dmaOp);
+    builder.setInsertionPoint(op);
     auto zeroValL1 = builder.create<arith::ConstantOp>(loc,indexType,zeroAttr);
     auto oneValL1 = builder.create<arith::ConstantOp>(loc,indexType,oneAttr);
     for(unsigned i=0; i< rank; i++)
@@ -253,31 +299,53 @@ private:
         oriL2Applys.push_back(zeroValL1);
       }
     }
-    if(load_flag){ // Create L3 -> L2 DmaOp, L2 -> L1 DamOp
+    if(opType == 0){ //DmaBroadcastOp
       builder.setInsertionPoint(newInnerDMAYiled);
       auto oldDma = builder.create<DmaOp>(loc, 
                                     src, srcOffsets, srcSizes, srcStrides,
                                     allocOp, newL2Applys, srcSizes, L2Strides);
-      builder.setInsertionPoint(dmaOp);
-      auto newDma = builder.create<DmaOp>(loc, 
-                                    allocOp, oriL2Applys, srcSizes, L2StridesL1,
-                                    dst, dstOffsets, dstSizes, dstStrides);
+      for(auto dst: dsts){
+        auto defineOp = dst.getDefiningOp();
+        builder.setInsertionPointAfter(defineOp);
+        auto newBroadCast = builder.create<DmaBroadcastOp>(loc, 
+                                  allocOp, oriL2Applys, srcSizes, L2StridesL1,
+                                  dst, dstOffsets, dstSizes, dstStrides);
+        if(op->hasAttr("initialize"))
+          newBroadCast->setAttr("initialize", builder.getUnitAttr());
+      }
       auto loadAttr = builder.getIntegerAttr(indexType, loadIdx++);
       newOuterDMALoop->setAttr("load", loadAttr);
-      if(dmaOp->hasAttr("initialize")){
+      if(op->hasAttr("initialize")){
         oldDma->setAttr("initialize", builder.getUnitAttr());
-        newDma->setAttr("initialize", builder.getUnitAttr());
         newOuterDMALoop->setAttr("initialize", builder.getUnitAttr());
       }
-    }else{ // Create L1 -> L2 DmaOp, L2 -> L3 DamOp
-      builder.setInsertionPoint(newInnerDMAYiled);
-      builder.create<DmaOp>(loc, allocOp, newL2Applys, dstSizes, L2Strides,
-                                 dst, dstOffsets, dstSizes, dstStrides);
-      builder.setInsertionPoint(dmaOp);
-      builder.create<DmaOp>(loc, src, srcOffsets, srcSizes, srcStrides,
-                                 allocOp, oriL2Applys, dstSizes, L2StridesL1);
-      auto storeAttr = builder.getIntegerAttr(indexType, storeIdx++);
-      newOuterDMALoop->setAttr("store", storeAttr);
+    }else if(opType == 1){ //DmaOp
+      if(load_flag){ // Create L3 -> L2 DmaOp, L2 -> L1 DamOp
+        builder.setInsertionPoint(newInnerDMAYiled);
+        auto oldDma = builder.create<DmaOp>(loc, 
+                                    src, srcOffsets, srcSizes, srcStrides,
+                                    allocOp, newL2Applys, srcSizes, L2Strides);
+        builder.setInsertionPoint(op);
+        auto newDma = builder.create<DmaOp>(loc, 
+                                    allocOp, oriL2Applys, srcSizes, L2StridesL1,
+                                    dst, dstOffsets, dstSizes, dstStrides);
+        auto loadAttr = builder.getIntegerAttr(indexType, loadIdx++);
+        newOuterDMALoop->setAttr("load", loadAttr);
+        if(op->hasAttr("initialize")){
+          oldDma->setAttr("initialize", builder.getUnitAttr());
+          newDma->setAttr("initialize", builder.getUnitAttr());
+          newOuterDMALoop->setAttr("initialize", builder.getUnitAttr());
+        }
+      }else{ // Create L1 -> L2 DmaOp, L2 -> L3 DamOp
+        builder.setInsertionPoint(newInnerDMAYiled);
+        builder.create<DmaOp>(loc, allocOp, newL2Applys, dstSizes, L2Strides,
+                                   dst, dstOffsets, dstSizes, dstStrides);
+        builder.setInsertionPoint(op);
+        builder.create<DmaOp>(loc, src, srcOffsets, srcSizes, srcStrides,
+                                   allocOp, oriL2Applys, dstSizes, L2StridesL1);
+        auto storeAttr = builder.getIntegerAttr(indexType, storeIdx++);
+        newOuterDMALoop->setAttr("store", storeAttr);
+      }
     }
     // Replace the loop variant in newInnerDMALoop
     for (unsigned i = 0; i < loopIndices.size(); i++) {
@@ -296,9 +364,36 @@ private:
           return newInnerDMALoop->isProperAncestor(use.getOwner());
       });
     }
-    return WalkResult::advance();
+    return true;
   }
 
+  // Now L2 buffer will be aligned. This pass will transpose any high 
+  // dimensional array block accesses to be aligned in the L2 level. e.g.
+  // x _ _ _
+  // _ x _ _     ---->    x x x x (Each _ or x is a recutangular block)
+  // _ _ x _
+  // _ _ _ x
+  bool dmaProcess(OpBuilder builder, DmaOp dmaOp,
+                  unsigned& loadIdx, unsigned& storeIdx, unsigned& cnt,
+                  SmallVector<AffineForOp, 6>& band){
+    
+    if(!L2BuffExtract(builder, dmaOp, loadIdx, storeIdx, cnt, band))
+      return false;
+    
+    return true;
+  }
+
+  // DMABroadCast shares the same logic to extract L2 buffer and create 
+  // L2 -> L1 data movement via IOPush/IOPop
+  // One additional step is to split the destination of broadcast while keep the
+  // Operation still broadcast. 
+  bool dmaBroadCastProcess(OpBuilder builder, DmaBroadcastOp broadcast,
+                           unsigned& loadIdx, unsigned& storeIdx, unsigned& cnt,
+                           SmallVector<AffineForOp, 6>& band){
+    if(!L2BuffExtract(builder, broadcast, loadIdx, storeIdx, cnt, band))
+      return false;
+    return true;
+  }
 
   // This pass infers the L2 buffer from the adf.dma op and the corresponding
   // array partitioning loops
@@ -334,11 +429,18 @@ private:
       unsigned loadIdx = 0;
       unsigned storeIdx = 0;
       unsigned cnt = 0;
-      auto flag = arrayForOp.walk([&](DmaOp dmaOp){
-        auto result = dmaProcess(builder, func, dmaOp, 
-                                 loadIdx, storeIdx, cnt, band);
-        dmaOp.erase();
-        return result;
+      auto flag = arrayForOp.walk([&](Operation* op){
+        if(auto dmaOp = dyn_cast<DmaOp>(op)){
+          if(!dmaProcess(builder, dmaOp, loadIdx, storeIdx, cnt, band))
+            return WalkResult::interrupt();
+          dmaOp.erase();
+        }else if(auto broadcast = dyn_cast<DmaBroadcastOp>(op)){
+          if(!dmaBroadCastProcess(builder, broadcast, loadIdx, storeIdx, 
+                                  cnt, band))
+            return WalkResult::interrupt();
+          broadcast.erase();
+        }
+        return WalkResult::advance();
       });
       if (flag == WalkResult::interrupt()) 
         return false;

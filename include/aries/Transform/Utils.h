@@ -30,7 +30,8 @@ OpType getFirstOpOfType(Region &region) {
   return nullptr;
 }
 
-void getSurroundingLoops(Operation &a,  SmallVector<AffineForOp, 6>& band);
+void getSurroundingLoops(Operation &a,  SmallVector<AffineForOp, 6>& band, 
+                         bool fromOuterMost = true);
 
 bool getCommonSurroundingLoops(Operation &a, Operation &b, 
                                SmallVector<AffineForOp, 6>& commonLoops);
