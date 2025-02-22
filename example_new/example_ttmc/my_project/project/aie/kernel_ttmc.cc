@@ -8,11 +8,11 @@
 
 using namespace adf;
 
-const int I={{paraList[0]}};
-const int J={{paraList[1]}};
-const int K={{paraList[2]}};
-const int L={{paraList[3]}};
-const int M={{paraList[4]}};
+const int I=2;
+const int J=16;
+const int K=16;
+const int L=16;
+const int M=32;
 const int A_SIZE=I*L*M;
 const int B_SIZE=L*J;
 const int C_SIZE=M*K;
@@ -44,7 +44,7 @@ const int OUT_jump2=-8;
 // Assumes all the operands are row-major
 // The basic block is 2*8*8 (i, k, m)
 // D(i, j, k)+ = A(i, l, m) * B(l, j) * C(m, k)
-void {{dst_name}}(input_buffer<float, extents<A_SIZE>>&  in0, input_buffer<float, extents<B_SIZE>>&  in1, input_buffer<float, extents<C_SIZE>>&  in2, input_buffer<float, extents<D_SIZE>>&  in3, output_buffer<float, extents<D_SIZE>>&  out0){
+void kernel_ttmc(input_buffer<float, extents<A_SIZE>>&  in0, input_buffer<float, extents<B_SIZE>>&  in1, input_buffer<float, extents<C_SIZE>>&  in2, input_buffer<float, extents<D_SIZE>>&  in3, output_buffer<float, extents<D_SIZE>>&  out0){
   float *  A = (float *)in0.data();
   float *  B = (float *)in1.data();
   float *  C = (float *)in2.data();

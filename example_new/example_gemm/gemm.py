@@ -7,8 +7,8 @@ from newfrontend import *
 
 @task_kernel(external_path="kernel_mm/aie_fp32_v0", para = [32,32,32])
 def kernel_gemm(TileA: float32[32, 32], 
-            TileB: float32[32, 32], 
-            TileC: float32[32, 32]):
+                TileB: float32[32, 32], 
+                TileC: float32[32, 32]):
     for i0 in range(0, 32):
         for j0 in range(0, 32):
             for k0 in range(0, 32):
@@ -16,7 +16,7 @@ def kernel_gemm(TileA: float32[32, 32],
 
 @task_tile(False) # Not run it on CPU
 def gemm(A: float32[2816, 8192], B: float32[8192, 3072], C: float32[2816, 3072], **kwargs):
-    i, j, k = aries.tile_ranks(**kwargs) # Grid indices (0, 0, 0) to (0, 1, 1)
+    i, j, k = aries.tile_ranks(**kwargs)
     TI, TJ, TK = aries.tile_sizes(**kwargs)
 
     # Compute tile slices for multiple dimensions

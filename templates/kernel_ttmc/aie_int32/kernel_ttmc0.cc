@@ -8,11 +8,11 @@
 
 using namespace adf;
 
-const int I=2;
-const int J=16;
-const int K=16;
-const int L=16;
-const int M=32;
+const int I={{paraList[0]}};
+const int J={{paraList[1]}};
+const int K={{paraList[2]}};
+const int L={{paraList[3]}};
+const int M={{paraList[4]}};
 const int A_SIZE=I*L*M;
 const int B_SIZE=L*J;
 const int C_SIZE=M*K;
@@ -44,7 +44,7 @@ const int OUT_jump2=-8;
 // Assumes all the operands are row-major
 // The basic block is 2*8*8 (i, k, m)
 // D(i, j, k)+ = A(i, l, m) * B(l, j) * C(m, k)
-void kernel_ttmc0(input_buffer<int32_t, extents<A_SIZE>>&  in0, input_buffer<int32_t, extents<B_SIZE>>&  in1, input_buffer<int32_t, extents<C_SIZE>>&  in2, output_buffer<int32_t, extents<D_SIZE>>&  out0){
+void {{dst_name}}(input_buffer<int32_t, extents<A_SIZE>>&  in0, input_buffer<int32_t, extents<B_SIZE>>&  in1, input_buffer<int32_t, extents<C_SIZE>>&  in2, output_buffer<int32_t, extents<D_SIZE>>&  out0){
   int32_t *  A = (int32_t *)in0.data();
   int32_t *  B = (int32_t *)in1.data();
   int32_t *  C = (int32_t *)in2.data();

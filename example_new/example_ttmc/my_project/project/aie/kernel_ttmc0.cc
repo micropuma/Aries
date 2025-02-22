@@ -8,11 +8,11 @@
 
 using namespace adf;
 
-const int I={{paraList[0]}};
-const int J={{paraList[1]}};
-const int K={{paraList[2]}};
-const int L={{paraList[3]}};
-const int M={{paraList[4]}};
+const int I=2;
+const int J=16;
+const int K=16;
+const int L=16;
+const int M=32;
 const int A_SIZE=I*L*M;
 const int B_SIZE=L*J;
 const int C_SIZE=M*K;
@@ -44,11 +44,10 @@ const int OUT_jump2=-8;
 // Assumes all the operands are row-major
 // The basic block is 2*8*8 (i, k, m)
 // D(i, j, k)+ = A(i, l, m) * B(l, j) * C(m, k)
-void {{dst_name}}(input_buffer<float, extents<A_SIZE>>&  in0, input_buffer<float, extents<B_SIZE>>&  in1, input_buffer<float, extents<C_SIZE>>&  in2, input_buffer<float, extents<D_SIZE>>&  in3, output_buffer<float, extents<D_SIZE>>&  out0){
+void kernel_ttmc0(input_buffer<float, extents<A_SIZE>>&  in0, input_buffer<float, extents<B_SIZE>>&  in1, input_buffer<float, extents<C_SIZE>>&  in2, output_buffer<float, extents<D_SIZE>>&  out0){
   float *  A = (float *)in0.data();
   float *  B = (float *)in1.data();
   float *  C = (float *)in2.data();
-  float *  ACC_IN = (float *)in3.data();
   float *  D_OUT = (float *)out0.data();
 
   aie::vector<float, 16> a_v16 = null_v16float();
@@ -71,10 +70,8 @@ void {{dst_name}}(input_buffer<float, extents<A_SIZE>>&  in0, input_buffer<float
         if(j == judge_j && k==judge_k){
           OUT_jump = OUT_jump2;
         }
-        aie::vector<float,8> acc2 = aie::load_v<8>(ACC_IN);
-        ACC_IN += OUT_jump0;
-			  aie::vector<float,8> acc3 = aie::load_v<8>(ACC_IN);
-        ACC_IN -= OUT_jump;
+        aie::vector<float,8> acc2 = null_v8float();
+       	aie::vector<float,8> acc3 = null_v8float();
         for (unsigned int l=0;l<boundary_l;l++)
         chess_prepare_for_pipelining
 		    chess_loop_range(boundary_l,boundary_l)

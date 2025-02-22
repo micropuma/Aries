@@ -8,10 +8,10 @@
 
 using namespace adf;
 
-const int I={{paraList[0]}};
-const int J={{paraList[1]}};
-const int K={{paraList[2]}};
-const int L={{paraList[3]}};
+const int I=2;
+const int J=32;
+const int K=16;
+const int L=32;
 const int A_SIZE=I*K*L;
 const int B_SIZE=K*J;
 const int C_SIZE=L*J;
@@ -37,7 +37,7 @@ const int OUT_jump1=-8;
 // Assumes all the operands are row-major
 // The basic block is 2*8*8 (i, j, l)
 // D(i, j)+ = A(i, k, l) * B(k, j) * C(l, j)
-void {{dst_name}}(input_buffer<float, extents<A_SIZE>>&  in0, input_buffer<float, extents<B_SIZE>>&  in1, input_buffer<float, extents<C_SIZE>>&  in2, input_buffer<float, extents<D_SIZE>>&  in3, output_buffer<float, extents<D_SIZE>>&  out0){
+void kernel_mttkrp(input_buffer<float, extents<A_SIZE>>&  in0, input_buffer<float, extents<B_SIZE>>&  in1, input_buffer<float, extents<C_SIZE>>&  in2, input_buffer<float, extents<D_SIZE>>&  in3, output_buffer<float, extents<D_SIZE>>&  out0){
   float *  A = (float *)in0.data();
   float *  B = (float *)in1.data();
   float *  C = (float *)in2.data();
