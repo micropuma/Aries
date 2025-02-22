@@ -47,22 +47,24 @@ class TaskTileWrapper:
                                 self.instanceIdx, False, call_args, call_kwargs)
         return instance
 
-def task_tile(run_flag):  
+def task_tile(run_flag=True):  
     """Decorator to wrap the function for tiles."""
     def decorator(func: Callable):
         return TaskTileWrapper(func, run_flag)
     return decorator
 
 class TaskKernelWrapper:
-    def __init__(self, func: Callable):
+    def __init__(self, func: Callable, external_kernel = None, para = []):
         self.func = func
+        self.externKrnl = external_kernel
+        self.para = para
     def __call__(self, *call_args, **call_kwargs):
         self.func(*call_args, **call_kwargs)
 
-def task_kernel():  
+def task_kernel(*, external_path=None, para = []):  
     """Decorator to wrap the function for single AIE."""
     def decorator(func: Callable):
-        return TaskKernelWrapper(func)
+        return TaskKernelWrapper(func, external_path, para)
     return decorator
 
 class TaskTopWrapper:

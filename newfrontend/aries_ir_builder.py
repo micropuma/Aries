@@ -4,7 +4,7 @@ import inspect
 import sympy as sp
 import subprocess
 from pathlib import Path
-from .gen_make import *
+from .gen_template import *
 from .aries_decorators import TaskTileWrapper, TaskKernelWrapper, TaskTopWrapper
 
 # =========== Code Transformation and IR Builder ===========
@@ -743,19 +743,77 @@ class TilePreprocess(ast.NodeTransformer):
         node.right = self.visit(node.right)
         return node
 
+# =======  Preprocess for task_kernel ===========
+# This is a hurestic function that count the number of input and output args
+# of the sinlge kernel, and will be used to determine the placement algo
+class preKernel(ast.NodeVisitor):
+    def __init__(self):
+      self.cntIn = 0
+      self.cntOut = 0
+      self.memref = []
+      self.outmem = []
+      self.externPath = None
+      self.paraList = []
+      self.funcName = ""
+      
+    def visit_FunctionDef(self, node):
+        self.funcName = node.name
+        for arg in node.args.args:
+            if arg.annotation:
+                ty = arg.annotation
+                if isinstance(ty, ast.Subscript):
+                    if arg.arg not in self.memref:
+                        self.memref.append(arg.arg)
+                        self.cntIn += 1
+        # Get the external_path of the kernel
+        if len(node.decorator_list) != 0:
+            decorator = node.decorator_list[0]
+            for i in range(len(decorator.keywords)):
+                keyword = decorator.keywords[i]
+                if keyword.arg == 'external_path':
+                    self.externPath = keyword.value.value
+                elif keyword.arg == 'para':
+                    self.paraList = [elt.value for elt in keyword.value.elts]
+        self.generic_visit(node)
+    
+    def visit_Assign(self, node):
+        assert len(node.targets) == 1
+        target_node = node.targets[0]
+        if isinstance(target_node, ast.Subscript):
+            memref = target_node.value.id
+            if memref not in self.outmem:
+                self.outmem.append(memref)
+                self.cntIn -= 1
+                self.cntOut += 1
+    
+    def visit_AugAssign(self, node):
+        target_node = node.target
+        if isinstance(target_node, ast.Subscript):
+            memref = target_node.value.id
+            if memref not in self.outmem:
+                self.outmem.append(memref)
+                self.cntIn -= 1
+                self.cntOut += 1
+
 # =========== Schedule ===========
 class Schedule:
     def __init__(self, *tasks):
         self.tasks = tasks
-        self.flags = ""
+        self.subName = "project"
         self.mlir_func_code = []
         self.mlir_map_code = [] # AffineMap should be defined outside of Module
         self.map_cnt = 0
         self.paraSize = {} # paraSize[task] = factor[]
         self.l2Size = {} # l2Size[task] = factor[]
         self.taskIdxMap = {} #Saves the reduction loops ids of a given task taskIdxMap[task] = ids
+        self.placement = [] # ColNum, RowNum, ColOffset, RowOffset, ColGap, FirstCol, NumShim, MidLine, ChalIn, ChalOut
+        self.placeAlgo = [] # CoreAlgo, EnableIOCons
+        self.linkFile = 0
+        self.linkPath = ""
+        self.paraList = []
+        self.funName = ""
+        self.device = ""
         
-    
     # A helper function to collect funcs from the given module
     def collect_func(self, module):
         funcs= []
@@ -773,6 +831,20 @@ class Schedule:
                     raise TypeError("Can only has one TaskTopWrapper")
         return funcs
     
+    def link_kernel_info(self, parsed_ast):
+        instance = preKernel()
+        instance.visit(parsed_ast)
+        if instance.cntIn <= 2:
+            self.placeAlgo = [1, "false"]
+        else:
+            self.placeAlgo = [2, "true"]
+        if instance.externPath != None:
+            self.linkFile = 1
+            self.linkPath = instance.externPath
+        if len(instance.paraList) != 0:
+            self.paraList = instance.paraList
+        self.funName = instance.funcName
+        
     def task_tile_emit(self, func_name, parsed_ast):
         task = None
         # TODOs: Now assumes tasks has unique funcs 
@@ -804,6 +876,7 @@ class Schedule:
     
     def task_kernel_emit(self, parsed_ast):
         # print("Parsed AIE Kernel AST", ast.dump(parsed_ast, indent=4))
+        self.link_kernel_info(parsed_ast)
         func_code, map_code, self.map_cnt = KernelMLIRGenerator(None, self.map_cnt).generate(parsed_ast)
         self.mlir_func_code.append(func_code)
         self.mlir_map_code.append(map_code)
@@ -823,7 +896,7 @@ class Schedule:
             parsed_ast = ast.parse(source_code)
             decorator_id = None
             func_name = None
-            # Identify the decorators and remove the decorator_list
+            # Identify the decorators
             for node in ast.walk(parsed_ast):
                 if isinstance(node, ast.FunctionDef):
                     # Assume there's only one decorator for each func
@@ -859,7 +932,12 @@ class Schedule:
         func = task.func.__name__
         paraSize = self.paraSize[task]
         l2Size = self.l2Size[task]
-        gen_make_aries(prj_dir, temp_dir, func, paraSize, l2Size)
+        gen_make_aries(prj_dir, temp_dir, self.subName, func, paraSize, l2Size, self.placement, self.placeAlgo, self.linkFile)
+        return
+    
+    def genKernel(self, prj_dir, temp_dir):
+        if self.linkFile!=0:
+          gen_kernel(prj_dir, temp_dir, self.linkPath, self.paraList, self.funName)
         return
     
     def parallel(self, task, factor=[]):
@@ -874,8 +952,30 @@ class Schedule:
         self.taskIdxMap[task] = idx
         return
     
+    def to(self, device):
+        if device == "VCK190" or device == "vck190":
+          self.device = "vck190"
+          self.placement= [50, 8, 0, 0, 0, 6, 39, 24, 3, 3]
+    
+    def folder_create(self, sub_dir):
+        if Path(sub_dir).exists():
+            print(f"Directory '{sub_dir}' already exists, skipping creation.")
+        else:
+            Path(sub_dir).mkdir(parents=True)
+            print(f"Created directory: {sub_dir}")
+        if self.device == "vck190":
+          for subdir in ["aie", "kernel", "host"]:
+              subdir_path = Path(sub_dir, subdir)
+              if subdir_path.exists():
+                  print(f"Directory '{subdir_path}' already exists, skipping creation.")
+              else:
+                  subdir_path.mkdir(parents=True)
+                  print(f"Created directory: {subdir_path}")
+    
     def build(self, module, prj_dir="./my_project", temp_dir="./templates"):
-        subprocess.run(['mkdir', '-p' , f'{prj_dir}'])
         prj_dir = Path(prj_dir)
+        sub_dir = Path(prj_dir) / self.subName
+        self.folder_create(sub_dir)
         self.code_emit(module, prj_dir)
-        self.genAriesMake(prj_dir, temp_dir)   
+        self.genAriesMake(prj_dir, temp_dir)
+        self.genKernel(sub_dir, temp_dir)

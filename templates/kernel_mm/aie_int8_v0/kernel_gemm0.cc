@@ -14,9 +14,9 @@
 #include <adf/io_buffer/io_buffer.h>
 using namespace adf;
 
-const int h1=32; // i
-const int w2=64; // j
-const int w1=64; // k
+const int h1={{paraList[0]}}; //i
+const int w2={{paraList[1]}}; //j
+const int w1={{paraList[2]}}; //k
 const int A_SIZE=h1*w1;
 const int B_SIZE=w1*w2;
 const int C_SIZE=h1*w2;
@@ -37,7 +37,7 @@ const int out_jump2= (w2*h1) - 32;
 // lhs[w1/8][h1][8] * lhs[w2/8][w1][8] = out[w2/8][h1][8]
 // The basic block is 4*8*16 (i, j, k)
 // The SIDM parallelism is 2*8*8 (i, j, k)
-void kernel_gemm0(input_buffer<int8_t, adf::extents<A_SIZE>>& __restrict in0, input_buffer<int8_t, adf::extents<B_SIZE>>& __restrict in1, output_buffer<int8_t, adf::extents<C_SIZE>>& __restrict out0) {
+void {{dst_name}}(input_buffer<int8_t, adf::extents<A_SIZE>>& __restrict in0, input_buffer<int8_t, adf::extents<B_SIZE>>& __restrict in1, output_buffer<int8_t, adf::extents<C_SIZE>>& __restrict out0) {
   int8_t * __restrict lhs = (int8_t *)in0.data();
   int8_t * __restrict rhs = (int8_t *)in1.data();
   int8_t * __restrict out = (int8_t *)out0.data();

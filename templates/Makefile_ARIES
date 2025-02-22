@@ -9,19 +9,19 @@ TEMPLATE_PATH = {{template_dir}}
 
 PLIOWidth = 128
 AXIWidth = 512
-ColNum = 50
-RowNum = 8
-ColOffset = 0 
-RowOffset = 0
-ColGap = 0
-CoreAlgo = 1
-FirstCol = 6
-NumShim = 39
-MidLine = 24
-ChalIn = 3
-ChalOut = 3
-EnableIOCons = "false"
-Link_file = 0
+ColNum = {{placement[0]}}
+RowNum = {{placement[1]}}
+ColOffset = {{placement[2]}} 
+RowOffset = {{placement[3]}}
+ColGap = {{placement[4]}}
+FirstCol = {{placement[5]}}
+NumShim = {{placement[6]}}
+MidLine = {{placement[7]}}
+ChalIn = {{placement[8]}}
+ChalOut = {{placement[9]}}
+CoreAlgo = {{placeAlgo[0]}}
+EnableIOCons = "{{placeAlgo[1]}}"
+Link_file = {{linkFile}}
 {% for i in range(dim) -%}
 {% set paraSize = parallel[i] -%}
 {% set l2Size = l2buffer[i] -%}
@@ -46,15 +46,10 @@ else
 	IOType=GMIO
 endif
 
-all: fileCreate copyFile pass translate copyplhost printcommand
+all: copyFile pass translate copyplhost printcommand
 
 printcommand:
 	@echo "PLIOWidth=${PLIOWidth}, AXIWidth=${AXIWidth}, ColNum=${ColNum}, RowNum=${RowNum}, ColOffset=${ColOffset}, RowOffset=${RowOffset}, ColGap=${ColGap}, CoreAlgo=${CoreAlgo}, FirstCol=${FirstCol}, NumShim=${NumShim}, MidLine=${MidLine}, ChalIn=${ChalIn}, ChalOut=${ChalOut}, EnableIOCons=${EnableIOCons}, Link_file=${Link_file}, l1-tile-sizes=${L1_Tiling}, l2-tile-sizes=${L2_Tiling}, l3-tile-sizes=${L3_Tiling}, buf_sel=${buf_sel}, EN_PL=${EN_PL}, EN_AIE2=${EN_AIE2}, EN_SERIAL=${EN_SERIAL}, IOType=${IOType}" >${PROJECT_PATH}/command
-
-fileCreate:
-	mkdir -p ${PROJECT_AIE_PATH}
-	mkdir -p ${PROJECT_PL_PATH}
-	mkdir -p ${PROJECT_Host_PATH}
 
 copyFile:
 	cp -r ${TEMPLATE_PATH}/Makefile_VCK190 ${PROJECT_PATH}/Makefile
@@ -71,12 +66,17 @@ ARIES_OPTIONS+= buf-sels=${buf_sel}
 ARIES_OPTIONS+= axi-width=${AXIWidth}
 ARIES_OPTIONS+= en-serial=${EN_SERIAL}
 
-pass: fileCreate ${PROJECT_PATH}/${FUNC}.adf.mlir
+pass: ${PROJECT_PATH}/${FUNC}.adf.mlir
 ${PROJECT_PATH}/${FUNC}.adf.mlir: ${MLIR}.mlir
 	aries-opt -o $@ $< \
 			-aries-pipeline="${ARIES_OPTIONS}"
 
-translate: file_split kernel_file_split kernel_link clean_kernel_vec
+ifeq ($(Link_file),1)
+  translate: file_split
+else
+  translate: file_split kernel_file_split clean_kernel_vec
+endif
+
 file_split: tempfile
 	aries-opt <${MLIR}.mlir \
 		-aries-file-split="inputfile-name=temp.cpp path-name=${PROJECT_AIE_PATH}/" \
@@ -121,11 +121,6 @@ kernel_cc: ${PROJECT_AIE_PATH}/temp.cc
 ${PROJECT_AIE_PATH}/temp.cc: ${PROJECT_PATH}/auto_${KERNEL_NAME}_aie.mlir
 	aries-translate -o $@ $< \
 		-emit-kenrel-func
-
-kernel_link:
-ifeq ($(Link_file),1)
-{{"\t\t"}}cp -r ${TEMPLATE_PATH}/kernel_mm/aie_fp32_v1/kernel_gemm* ${PROJECT_AIE_PATH}
-endif
 
 clean_kernel_vec:
 	rm -r ${PROJECT_PATH}/${KERNEL_NAME}_vector.mlir ${PROJECT_PATH}/${KERNEL_NAME}_unroll.mlir ${PROJECT_PATH}/${KERNEL_NAME}.mlir

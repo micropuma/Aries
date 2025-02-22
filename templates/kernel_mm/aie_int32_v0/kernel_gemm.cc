@@ -14,9 +14,9 @@
 #include <adf/io_buffer/io_buffer.h>
 using namespace adf;
 
-const int h1=32;
-const int w1=32;
-const int w2=32;
+const int h1={{paraList[0]}}; //i
+const int w2={{paraList[1]}}; //j
+const int w1={{paraList[2]}}; //k
 const int A_SIZE=h1*w1;
 const int B_SIZE=w1*w2;
 const int C_SIZE=h1*w2;
@@ -34,7 +34,7 @@ const int out_jump1=-8;
 
 // Assumes all the operands are row-major
 // The basic block is 2*8*8 (i, j, k)
-void kernel_gemm(input_buffer<int32_t, adf::extents<A_SIZE>>& __restrict in0, input_buffer<int32_t, adf::extents<B_SIZE>>& __restrict in1, input_buffer<int32_t, adf::extents<C_SIZE>>& __restrict in2, output_buffer<int32_t, adf::extents<C_SIZE>>& __restrict out0) {
+void {{dst_name}}(input_buffer<int32_t, adf::extents<A_SIZE>>& __restrict in0, input_buffer<int32_t, adf::extents<B_SIZE>>& __restrict in1, input_buffer<int32_t, adf::extents<C_SIZE>>& __restrict in2, output_buffer<int32_t, adf::extents<C_SIZE>>& __restrict out0) {
   int32_t * __restrict lhs = (int32_t *)in0.data();
   int32_t * __restrict rhs = (int32_t *)in1.data();
   int32_t * __restrict accin = (int32_t *)in2.data();

@@ -14,9 +14,9 @@
 #include <adf/io_buffer/io_buffer.h>
 using namespace adf;
 
-const int h1=32; // i
-const int w2=64; // j
-const int w1=32; // k
+const int h1={{paraList[0]}}; //i
+const int w2={{paraList[1]}}; //j
+const int w1={{paraList[2]}}; //k
 const int A_SIZE=h1*w1;
 const int B_SIZE=w1*w2;
 const int C_SIZE=h1*w2;
@@ -36,7 +36,7 @@ const int out_jump1=-16;
 
 // Assumes all the operands are row-major
 // The basic block is 2*16*16 (i, j, k)
-void kernel_gemm0(input_buffer<int16_t, adf::extents<A_SIZE>>& __restrict in0, input_buffer<int16_t, adf::extents<B_SIZE>>& __restrict in1, output_buffer<int16_t, adf::extents<C_SIZE>>& __restrict out0) {
+void {{dst_name}}(input_buffer<int16_t, adf::extents<A_SIZE>>& __restrict in0, input_buffer<int16_t, adf::extents<B_SIZE>>& __restrict in1, output_buffer<int16_t, adf::extents<C_SIZE>>& __restrict out0) {
   int16_t * __restrict lhs = (int16_t *)in0.data();
   int16_t * __restrict rhs = (int16_t *)in1.data();
   int16_t * __restrict out = (int16_t *)out0.data();
