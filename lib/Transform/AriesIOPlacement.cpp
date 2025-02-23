@@ -125,7 +125,7 @@ private:
           if(break_flag)
             break;
         }else if(auto callOp = dyn_cast<CallOp>(valUse)){
-          callOp = call;
+          call = callOp;
           inDir = true;
           break;
         }
