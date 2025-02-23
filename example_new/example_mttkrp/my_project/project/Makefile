@@ -4,22 +4,22 @@ TARGET   = hw
 MODE	 = linux
 HOST_ARCH = aarch64
 EN_PL = 1
-PLATFORM_REPO_PATHS = /tools/Xilinx/Vitis/2023.1/base_platforms/
-PLATFORM = ${PLATFORM_REPO_PATHS}/xilinx_vck190_base_202310_1/xilinx_vck190_base_202310_1.xpfm
+PLATFORM_REPO_PATHS = /tools/Xilinx/Vitis/2023.2/base_platforms/
+PLATFORM = ${PLATFORM_REPO_PATHS}/xilinx_vck190_base_202320_1/xilinx_vck190_base_202320_1.xpfm
 XCLBIN   = vck190_aie_base_graph_${TARGET}.xclbin
 XSA	 = vck190_aie_base_graph_${TARGET}.xsa
 XPFM	 = vck190_xpfm
 HOST_EXE = hostexe
 HOST_SRCS := ./host/host.cpp
-SYSROOT_PATH = /opt/petalinux/2023.1
+SYSROOT_PATH = /opt/petalinux/2023.2
 SYSROOT = ${SYSROOT_PATH}/sysroots/cortexa72-cortexa53-xilinx-linux
 SDKTARGETSYSROOT = ${SYSROOT}
 EDGE_COMMON_SW_PATH = ./
-EDGE_COMMON_SW= ${EDGE_COMMON_SW_PATH}/xilinx-versal-common-v2023.1
+EDGE_COMMON_SW= ${EDGE_COMMON_SW_PATH}/xilinx-versal-common-v2023.2
 ROOTFS=${EDGE_COMMON_SW}/rootfs.ext4
 IMAGE=${EDGE_COMMON_SW}/Image
-TEMP_DIR := ./_x.$(TARGET).xilinx_vck190_base_202310_1
-BUILD_DIR := ./build_dir.$(TARGET).xilinx_vck190_base_202310_1
+TEMP_DIR := ./_x.$(TARGET).xilinx_vck190_base_202320_1
+BUILD_DIR := ./build_dir.$(TARGET).xilinx_vck190_base_202320_1
 KERNEL_XO :=$(TEMP_DIR)/top.xo
 GRAPH   := aie/adf_graph.cpp
 LIBADF  = libadf.a
@@ -92,19 +92,19 @@ __check_defined = \
 		$(error Undefined $1$(if $2, ($2))))
 
 guard-PLATFORM_REPO_PATHS:
-	$(call check_defined, PLATFORM_REPO_PATHS, Set your where you downloaded xilinx_vck190_base_202310_1)
+	$(call check_defined, PLATFORM_REPO_PATHS, Set your where you downloaded xilinx_vck190_base_202320_1)
 
 guard-ROOTFS:
-	$(call check_defined, ROOTFS, Set to: xilinx-versal-common-v2023.1/rootfs.ext4)
+	$(call check_defined, ROOTFS, Set to: xilinx-versal-common-v2023.2/rootfs.ext4)
 
 guard-IMAGE:
-	$(call check_defined, IMAGE, Set to: xilinx-versal-common-v2023.1/Image)
+	$(call check_defined, IMAGE, Set to: xilinx-versal-common-v2023.2/Image)
 
 guard-CXX:
-	$(call check_defined, CXX, Run: xilinx-versal-common-v2023.1/environment-setup-cortexa72-cortexa53-xilinx-linux)
+	$(call check_defined, CXX, Run: xilinx-versal-common-v2023.2/environment-setup-cortexa72-cortexa53-xilinx-linux)
 
 guard-SDKTARGETSYSROOT:
-	$(call check_defined, SDKTARGETSYSROOT, Run: xilinx-versal-common-v2023.1/environment-setup-cortexa72-cortexa53-xilinx-linux)
+	$(call check_defined, SDKTARGETSYSROOT, Run: xilinx-versal-common-v2023.2/environment-setup-cortexa72-cortexa53-xilinx-linux)
 
 ###
 
