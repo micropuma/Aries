@@ -1,5 +1,7 @@
+PRO_PATH=$PWD
 LLVM_DIR=`realpath ${1:-"$PWD/externals/llvm-project"}`
 AIE_DIR=`realpath ${2:-"$PWD/externals/mlir-aie"}`
+CMAKE=`realpath ${3:-"$PWD/aries/bin/cmake"}`
 CMAKEMODULES_DIR=`realpath ${3:-"$PWD/externals/mlir-aie/cmake/modulesXilinx"}`
 
 BUILD_DIR=build
@@ -11,7 +13,7 @@ mkdir -p $AIE_DIR/$BUILD_DIR
 mkdir -p $AIE_DIR/$INSTALL_DIR
 cd $AIE_DIR/$BUILD_DIR
 
-/usr/local/bin/cmake -GNinja \
+$CMAKE -GNinja \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DLLVM_USE_LINKER=lld \
@@ -33,3 +35,5 @@ cd $AIE_DIR/$BUILD_DIR
 
 ninja |& tee ninja.log
 ninja install |& tee ninja-install.log
+
+cd ${PRO_PATH}

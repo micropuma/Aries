@@ -1,10 +1,11 @@
 PRO_PATH=$PWD
 LLVM_DIR=`realpath ${1:-"$PWD/externals/llvm-project"}`
 AIE_DIR=`realpath ${2:-"$PWD/externals/mlir-aie"}`
+CMAKE=`realpath ${3:-"$PWD/aries/bin/cmake"}`
 
 mkdir -p ${PRO_PATH}/build && cd ${PRO_PATH}/build
 
-/usr/local/bin/cmake ../ \
+$CMAKE ../ \
     -GNinja \
     -DLLVM_DIR=$LLVM_DIR/build/lib/cmake/llvm \
     -DMLIR_DIR=$LLVM_DIR/build/lib/cmake/mlir \

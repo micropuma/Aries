@@ -1,4 +1,6 @@
+cd ${PRO_PATH}
 LLVM_DIR=`realpath ${1:-"$PWD/externals/llvm-project"}`
+CMAKE=`realpath ${2:-"$PWD/aries/bin/cmake"}`
 BUILD_DIR=build
 INSTALL_DIR=install
 
@@ -36,7 +38,9 @@ CMAKE_CONFIGS="\
     -DCMAKE_EXPORT_COMPILE_COMMANDS=1"
 
 
-cmake $CMAKE_CONFIGS ../llvm 2>&1 | tee cmake.log
+$CMAKE $CMAKE_CONFIGS ../llvm 2>&1 | tee cmake.log
 ninja 2>&1 | tee ninja.log
 ninja install 2>&1 | tee ninja-install.log
 )
+
+cd ${PRO_PATH}
