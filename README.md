@@ -2,8 +2,7 @@
 
 Principal Investigators: 
 
-Prof. Peipei Zhou (Brown University), https://peipeizhou-eecs.github.io/
-Prof. Zhiru Zhang (Cornell University), https://zhang.ece.cornell.edu/
+Prof. Peipei Zhou (Brown University), https://peipeizhou-eecs.github.io/, Prof. Zhiru Zhang (Cornell University), https://zhang.ece.cornell.edu/
 
 Ph.D. Students: Jinming Zhuang (Student Lead), Shaojie Xiang (Student Lead), Hongzheng Chen, Niansong Zhang, Zhuoping Yang, Tony Mao
 
