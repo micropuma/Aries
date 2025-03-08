@@ -16,6 +16,6 @@ $CMAKE ../ \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++
 
-ninja |& tee ninja.log
+ninja -j $(nproc) |& tee ninja.log
 
 cd ${PRO_PATH}

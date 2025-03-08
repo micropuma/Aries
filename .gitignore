@@ -7,4 +7,5 @@ install
 *pyc
 Aries
 .vscode
-sandbox/
+aries/
+externals/

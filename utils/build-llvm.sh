@@ -15,7 +15,7 @@ set -o pipefail
 set -e
 
 CMAKE_CONFIGS="\
-    -GNinja \
+    -G Ninja \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DLLVM_USE_LINKER=lld \
@@ -39,7 +39,7 @@ CMAKE_CONFIGS="\
 
 
 $CMAKE $CMAKE_CONFIGS ../llvm 2>&1 | tee cmake.log
-ninja 2>&1 | tee ninja.log
+ninja -j $(nproc) 2>&1 | tee ninja.log
 ninja install 2>&1 | tee ninja-install.log
 )
 

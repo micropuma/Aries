@@ -13,7 +13,7 @@ mkdir -p $AIE_DIR/$BUILD_DIR
 mkdir -p $AIE_DIR/$INSTALL_DIR
 cd $AIE_DIR/$BUILD_DIR
 
-$CMAKE -GNinja \
+$CMAKE -G Ninja \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DLLVM_USE_LINKER=lld \
