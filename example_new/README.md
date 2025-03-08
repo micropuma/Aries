@@ -29,5 +29,5 @@ make all
 ### Compile the generated project (Around 5 hours)
 ```sh
 cd project
-make package EDGE_COMMON_SW_PATH=${PATH_Include_xilinx-versal-common-v2023.2}
+make package EDGE_COMMON_SW_PATH=${AIEPATH}
 ```
