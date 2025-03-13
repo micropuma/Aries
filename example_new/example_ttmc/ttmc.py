@@ -18,6 +18,7 @@ def kernel_ttmc(TileA: float32[2, 16, 32],
                       for m0 in range(0, 32):
                         TileD[i0, j0, k0] += TileA[i0, l0, m0] * TileB[l0, j0] * TileC[m0, k0]
 
+# 生成instance
 @task_tile(False) # Not run it on CPU
 def ttmc(A: float32[4, 1024, 4096], B: float32[1024, 512], 
          C: float32[4096, 768],    D: float32[4, 512, 768], **kwargs):
@@ -25,12 +26,14 @@ def ttmc(A: float32[4, 1024, 4096], B: float32[1024, 512],
     TI, TJ, TK, TL, TM = aries.tile_sizes(**kwargs)
 
     # Compute tile slices for multiple dimensions
+    # 根据tile的index和size计算出对应的range
     ti = aries.arange(i*TI, (i+1)*TI)  # I tile range
     tj = aries.arange(j*TJ, (j+1)*TJ)  # J tile range
     tk = aries.arange(k*TK, (k+1)*TK)  # K tile range
     tl = aries.arange(l*TL, (l+1)*TL)  # L tile range
     tm = aries.arange(m*TM, (m+1)*TM)  # M tile range
     
+    # Allocate L1 buffers
     L1_A = aries.buffer((TI, TL, TM), "float32")
     L1_B = aries.buffer((TL, TJ), "float32")
     L1_C = aries.buffer((TM, TK), "float32")
@@ -43,6 +46,8 @@ def ttmc(A: float32[4, 1024, 4096], B: float32[1024, 512],
     kernel_ttmc(L1_A, L1_B, L1_C, L1_D)
     aries.store(L1_D, D, (ti, tj, tk))
 
+# 类似Cuda中的host code，需要做grid和size维度映射，
+# 以及launch kernel
 @task_top()
 def top(A: float32[4, 1024, 4096], B: float32[1024, 512], 
         C: float32[4096, 768],     D: float32[4, 512, 768]):
