@@ -124,6 +124,9 @@ void getNestedLoops(
   for (unsigned i = 0; i < std::numeric_limits<unsigned>::max(); ++i) {
     nestedLoops.push_back(root);
     AffineForOp loop;
+    // 计算root中的affine.for Op的数量
+    // root下只能一个affine.for嵌套
+    // 并存储在loop中
     auto loopNum = getLoopNum(root, loop);
     if(loopNum != 1)
       return;
@@ -134,7 +137,9 @@ void getNestedLoops(
 // Get all the affine.for loops within a region and return them in the band
 void getNestedLoopBand(Region &region, SmallVector<AffineForOp, 6> &band, 
                        bool reverse) {
+  // 递归找寻region中的第一个affine.for Op
   auto forOp = getFirstOpOfType<AffineForOp>(region);
+  // 从该affine.for Op开始， 
   getNestedLoops(band, forOp);
   if (reverse)
     std::reverse(band.begin(), band.end());

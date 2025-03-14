@@ -33,6 +33,7 @@ def GMIOType : ADF_Type<"GMIO", "gmio"> {
 //   let assemblyFormat = "`<` $width `>`";
 // }
 
+// graph io的交互包括aie tile之间的交互
 def GraphIOType : AnyTypeOf<[PLIOType, GMIOType, PortType]>;
 
 def StreamType : ADF_Type<"Stream", "stream"> {

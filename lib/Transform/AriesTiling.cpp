@@ -20,6 +20,8 @@ namespace {
 struct AriesTiling : public AriesTilingBase<AriesTiling> {
 public:
   AriesTiling() = default;
+
+  // 用数据结构存储tiling相关的参数
   AriesTiling(const AriesOptions &opts) {
     TileFuncName = opts.OptTileFuncName;
     L1TileSizes=opts.OptL1TileSize;
@@ -28,9 +30,12 @@ public:
     EnableNewTiling = opts.OptEnableNewTiling;
   }
   
+  // 将loop tiling成L1，L2，L3三层缓存结构 
   void runOnOperation() override {
       auto mod = dyn_cast<ModuleOp>(getOperation());
       unsigned defaultTileSizes = 32;
+
+      // 根据option，选择调用哪个loop tiling方法
       if(!EnableNewTiling){
         if(!applyLoopTiling(mod, defaultTileSizes))
           return signalPassFailure();
@@ -42,7 +47,9 @@ public:
 
 private:
   // Clone the original functions for host emission
+  // 拆分host和kernel func，并clone 出新的func。
   void preprocess(ModuleOp mod, OpBuilder builder, FuncOp topFunc){
+    // 将topFunc拆分成top_host和origin_func
     auto topName = topFunc.getName();
     auto hostFunc = dyn_cast<FuncOp>(topFunc->clone());
     auto hostName = topName.str() + "_host";
@@ -52,10 +59,13 @@ private:
     hostFunc->removeAttr("top_func");
     hostFunc.setName(hostName);
     builder.setInsertionPointAfter(topFunc);
+  
+    // 需要修改host func的逻辑
     builder.insert(hostFunc);
     builder.setInsertionPoint(hostFunc);
     SmallVector<std::string, 4> strList;
     for(auto caller: hostFunc.getOps<CallOp>()){
+      // 获取host调用的func
       auto func = mod.lookupSymbol<FuncOp>(caller.getCallee());
       auto funcName = func.getName();
       auto newAttr = builder.getStringAttr(funcName.str());
@@ -66,9 +76,12 @@ private:
         caller.setCallee(newName);
         caller->setAttr("origin_func", newAttr);
       }else{// Clone the callee func
+        // clone一个func
         auto newFunc = dyn_cast<FuncOp>(func->clone());
         newFunc->setAttr("origin_func", newAttr);
         newFunc.setName(newName);
+
+        // 让caller调用clone出来的new func
         caller.setCallee(newName);
         caller->setAttr("origin_func", newAttr);
         builder.insert(newFunc);
@@ -78,6 +91,7 @@ private:
   }
 
   // Annotate the output arguments
+  // 识别出输出参数
   void outAnnotate(OpBuilder builder, FuncOp topFunc, FuncOp func){
     SmallVector<Attribute, 4> attrs;
     SmallVector<int64_t, 4> ids;
@@ -85,6 +99,9 @@ private:
       auto dst = op.getMemRef();
       unsigned index = 0;
       for(auto arg : func.getArguments()){
+        // 记录funcOp中的affine store操作，操作的目的地是funcOp的参数
+        // 这个函数用于处理数据流管理。
+        // 显示存储第几个args有输入输出store修改数据流
         if(arg == dst){
           auto it = llvm::find(ids, index);
           if(it == ids.end()){
@@ -95,15 +112,21 @@ private:
         index++;
       }
     });
+
     // Record the output arguments at the top
+    // 在func的arg处，显示标记tag，标记输出参数
     for (auto call: topFunc.getOps<CallOp>()){
       if(call.getCallee() != func.getName())
         continue;
+
+      // 找到调用2点
       for(auto id: ids){
         unsigned idx = 0;
         auto dst = call.getOperand(id);
         auto defineOp = dst.getDefiningOp();
         Value operand;
+
+        // 获取传给func的memref的define point
         //TODO::Handle more defining operations
         if(!defineOp){
           operand= dst;
@@ -111,6 +134,7 @@ private:
           operand = castOp.getSource();
         }
         for(auto arg : topFunc.getArguments()){
+          // 如果该memref的define point来源是topFunc的arg，则需要显示存储。
           if(arg == operand){
             auto intAttr = builder.getI32IntegerAttr(idx);
             if(!llvm::is_contained(attrs, intAttr)){
@@ -122,6 +146,8 @@ private:
         }
       }
     }
+
+    // 将输出参数的标记存储在topFunc的outArgs属性中
     auto outAttrs = builder.getArrayAttr(attrs);
     topFunc->setAttr("outArgs",outAttrs);
   }
@@ -129,11 +155,13 @@ private:
   // For memory with dynamic size, only reserve the celldiv at the outermost
   // band. Eliminate all the min function if one of the operand is an argument.
   // TODO: Handle cases that need padding
+  // 主要功能是优化tiling后的上界，主要处理min函数之类的复合上界
   bool postprocess(FuncOp func, SmallVector<AffineForOp,6> pointBand){
     for (auto loop : pointBand){
       auto ubMap = loop.getUpperBoundMap();
       // Check if the upperbound of the loop is determined by min
       auto numRes = ubMap.getNumResults();
+      // 仅仅处理双表达式的形式
       if(numRes != 2)
         continue;
       auto uboperands = loop.getUpperBoundOperands();
@@ -173,13 +201,16 @@ private:
     return true;
   }
 
+  // 对于函数做tiling优化，普通tiling方法
   bool applyLoopTiling(ModuleOp mod, unsigned defaultTileSizes){
     auto builder = OpBuilder(mod);
     auto loc = builder.getUnknownLoc();
     FuncOp topFunc, func;
+
     if(!topFind(mod, topFunc, "top_func"))
       return true;
     for(auto tileFunc: mod.getOps<FuncOp>()){
+      // 找寻指定的tiling funcName
       if(tileFunc.getName() == TileFuncName){
         func = tileFunc;
         break;
@@ -187,15 +218,25 @@ private:
     }
     if(!func)
       return true;
+
+    // func(arg1, arg2)，如果arg1在func内部被affinestore修改，则存储潜在流管理memref
+    // topFunc(arg1)调用func(arg1)，则arg1需要打上tag
     outAnnotate(builder, topFunc, func);
+    // 分离host和func
     preprocess(mod, builder, topFunc);
     // Tile the functions specified in the command line.
+    // 做tiling优化
+    // =================================================================== L1 tiling ===============================================================
     func->setAttr("adf.func", builder.getUnitAttr());
     SmallVector<AffineForOp, 6> band;
+    // 获取嵌套的循环
+    // 一定是perfect loop，否则band为null
     getNestedLoopBand(func.getBody(), band);
+    // for 循环维度
     auto bandSize = band.size();
     SmallVector<unsigned ,6> redIndeices;
     for(unsigned i=0; i < bandSize; i++){
+      // 在redIndeices中记录reduction loop的index
       auto loop = band[i];
       if(loop->hasAttr("reduction")){
         redIndeices.push_back(i);
@@ -213,18 +254,24 @@ private:
     SmallVector<AffineForOp,6> L1tileBand;
     SmallVector<AffineForOp,6> L2tileBand;
     SmallVector<AffineForOp,6> L3tileBand;
+
+    // L1 tiling必须是perfect loop tiling
     if (failed(tilePerfectlyNested(band, L1tileSizes, &L1tileBand)))
       return false;
+    // 优化tiling后的上界
     if(!postprocess(func, L1tileBand))
       return false;
     // L2 tiling if specified
+    // =================================================================== L2 tiling ===============================================================
     if(L2TileSizes.size()){
+      // L2TileSizes是1,2,3,4，如果band比这个小，则只使用前面几项
       for (unsigned i = 0; i <std::min(bandSize,L2TileSizes.size());++i)
         L2tileSizes[i] = L2TileSizes[i];
       
       SmallVector<AffineForOp, 6> blockL1tileBand(
         L1tileBand.begin(), L1tileBand.begin() + bandSize);
       
+      // 对L1 tile过的band做L2 tiling
       if (failed(tilePerfectlyNested(
                             blockL1tileBand, L2tileSizes, &L2tileBand)))
         return false;
@@ -240,14 +287,19 @@ private:
           L3tileSizes[i] = L3TileSizes[i];
         SmallVector<AffineForOp, 6> blocktileBandL2(
           L2tileBand.begin(), L2tileBand.begin() + bandSize);
+        // L3tileBand中是tile后的循环 
         if (failed(tilePerfectlyNested(
                               blocktileBandL2, L3tileSizes, &L3tileBand)))
             return false;
         if(!postprocess(func, L3tileBand))
           return false;
+
+        // L3tiling的最内层循环做array_partition tag
         L3tileBand[bandSize-1]->setAttr(
                               "Array_Partition", builder.getUnitAttr());
         // Mark L3 reduction loops
+        // L3的外层循环和内层循环都要打规约tag
+        // 外层是块规约，内层是普通规约
         for(auto idx : redIndeices){
           L3tileBand[idx]->setAttr("reduction", builder.getUnitAttr());
           L3tileBand[idx + bandSize]->setAttr(
@@ -271,6 +323,7 @@ private:
     
     // Replace the affine.for Ops to affine.parallel Ops according to
     // the level of tiling
+    // 将affine.for Ops并行化
     auto outerBlockLoop = L1tileBand[0];
     if(L2TileSizes.size()){
       outerBlockLoop = L2tileBand[bandSize];
@@ -320,12 +373,14 @@ private:
     }
 
     PassManager pm(&getContext());
+    // 标准善后passes
     pm.addPass(createCanonicalizerPass());
     pm.addPass(createCSEPass());
     if (failed(pm.run(func)))
       return false;
 
     // Merge the nested parallelOps to a single parallelOp
+    // 尽量将嵌套的parallelOp合并成一个
     SmallVector<AffineMap, 6> lbMaps;
     SmallVector<AffineMap, 6> ubMaps;
     SmallVector<Value, 6> lbs;
@@ -419,7 +474,7 @@ private:
         }else if(auto castOp = dyn_cast<memref::CastOp>(defineOp)){
           operand = castOp.getSource();
         }
-        for(auto arg : topFunc.getArguments()){
+        for(auto arg : topFunc.getArguments())
           if(arg == operand){
             auto intAttr = builder.getI32IntegerAttr(idx);
             if(!llvm::is_contained(attrs, intAttr)){
@@ -590,6 +645,7 @@ private:
 namespace mlir {
 namespace aries {
 
+// 两种AriesTiling的构造函数
 std::unique_ptr<Pass> createAriesTilingPass() {
   return std::make_unique<AriesTiling>();
 }

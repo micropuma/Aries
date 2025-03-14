@@ -3,6 +3,9 @@
 
 include "mlir/Pass/PassBase.td"
 
+// 在新的example中，这个似乎被弃用了。
+
+// 将front-end IRs转换为adf dialect
 def AriesLowerToADF : Pass<"aries-lower-to-adf"> {
   let summary = "Lower to adf dialect";
 
@@ -16,6 +19,7 @@ def AriesLowerToADF : Pass<"aries-lower-to-adf"> {
   let constructor = "mlir::aries::adf::createAriesLowerToADFPass()";
 }
 
+// 将ADF dialect变成aiex和aievec
 def ADFConvertToAIE : Pass<"adf-convert-to-aie"> {
   let summary = "Convert ADF dialect to AIE and AIEx dialects";
   let description = [{

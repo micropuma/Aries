@@ -18,6 +18,7 @@ namespace aries {
 LogicalResult loopUnrollFull(AffineForOp forOp, 
               function_ref<void(unsigned, Operation *, OpBuilder)> annotateFn);
 
+// 递归找寻一个region中的第一个OpType类型的操作
 template <typename OpType>
 OpType getFirstOpOfType(Region &region) {
   for (Operation &op : region.getOps()){

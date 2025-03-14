@@ -20,6 +20,10 @@ class TaskTileWrapper:
         self.instanceIdx = 0
         self.run = run
 
+    # 通过[]语法定义dim size
+    # 调用如下：
+    # ttmc_task = ttmc[grid, size](A, B, C, D) 
+    # grid为[]的args[0], size为[]的args[1]
     def __getitem__(self, args: Tuple[Any, ...]):
         assert len(args) >=2
         self.grid_dims = args[0]  # Grid dimensions (e.g., (4, 4) for 2D tiling)
@@ -28,11 +32,13 @@ class TaskTileWrapper:
             self.instanceIdx = args[2] # Mark the number of instance
         return self
 
+    # *call_args是元组，**call_kwargs是字典
     def __call__(self, *call_args, **call_kwargs):
         if not self.grid_dims or not self.tile_sizes:
             raise ValueError(
                 "Grid dimensions and tile sizes must be specified")
         
+        # 单个维度的grid_dims，转换为tuple
         if isinstance(self.grid_dims, int):
             self.grid_dims = (self.grid_dims,)
         
@@ -43,13 +49,23 @@ class TaskTileWrapper:
             for idx in tile_indices:
                 call_kwargs['IVs'] = idx  # Add tuple of indices
                 self.func(*call_args, **call_kwargs)
+
+        # 解析出参数，并生成TaskInstance
         instance = TaskInstance(self.func, self.grid_dims, self.tile_sizes, 
                                 self.instanceIdx, False, call_args, call_kwargs)
         return instance
 
+# 如下使用：
+# @task_tile(False) # Not run it on CPU
+# def ttmc(A: float32[4, 1024, 4096], B: float32[1024, 512], 
+#          C: float32[4096, 768],    D: float32[4, 512, 768], **kwargs):
+# 上述是函数原型
+# ttmc_task = ttmc[grid, size](A, B, C, D)
+# 上述是调用
 def task_tile(run_flag=True):  
     """Decorator to wrap the function for tiles."""
     def decorator(func: Callable):
+        # TaskTileWrapper根据用户的配置，生成多个TaskInstance
         return TaskTileWrapper(func, run_flag)
     return decorator
 

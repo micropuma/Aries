@@ -23,6 +23,8 @@ def Stream:    I32EnumAttrCase<"Stream", 1>;
 def Cascade:   I32EnumAttrCase<"Cascade", 2>;
 def Scalar:   I32EnumAttrCase<"Scalar", 3>;
 
+// 指代不同的内存空间
+// mlir-air设定为L1，L2，L3空间
 def L1:  I32EnumAttrCase<"L1", 2>; //Compatible with MLIR-AIR
 def L2:  I32EnumAttrCase<"L2", 1>;
 def L3:  I32EnumAttrCase<"L3", 0>;
@@ -45,11 +47,15 @@ def PortBurst: I32EnumAttr<"PortBurst", "Burst length GMIO port in bytes",
   let cppNamespace = "::mlir::aries::adf";
 }
 
+// PLIO:FPGA
+// GMIO:Global Memory
+// PORT:AIE核间通信
 def GraphIOName: I32EnumAttr<"GraphIOName", "Names of graph input/output",
   [PLIO, GMIO, PORT]> {
   let cppNamespace = "::mlir::aries::adf";
 }
 
+// 四种kernel input/output的方式
 def KernelIOName: I32EnumAttr<"KernelIOName", "Names of kernel input/output",
   [Buffer, Stream, Cascade, Scalar]> {
   let cppNamespace = "::mlir::aries::adf";

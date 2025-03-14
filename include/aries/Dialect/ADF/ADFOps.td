@@ -8,6 +8,8 @@ include "ADFTypes.td"
 class ADF_Op<string mnemonic, list<Trait> traits = []> :
     Op<ADF_Dialect, mnemonic, traits>;
 
+// adf的port入口参数是plio或是gmio
+// 即和fpga交互或是和ddr交互
 def GraphOp : ADF_Op<"graph", [Pure]> {
   let summary = "An operation presenting an ADF graph";
   let description = [{
@@ -45,6 +47,7 @@ def GraphReturnOp : ADF_Op<"return", [HasParent<"GraphOp">, Pure, Terminator]>{
   let assemblyFormat = "attr-dict ($output_ports^ `:` type($output_ports))?";
 }
 
+// 一个cell对应AIE tile计算内容，cell相当于function call，调用aievec dialect
 def CellOp : ADF_Op<"cell", [SingleBlock]> {
   let summary = "An operation identify the adf cell region";
   let arguments = (ins FlatSymbolRefAttr:$cell_name);
@@ -74,6 +77,7 @@ def LaunchCellOp : ADF_Op<"cell.launch", [SingleBlock]> {
     }];
 }
 
+// 同步机制
 def WaitLaunchCellOp : ADF_Op<"cell.launch.wait", []>{
   let summary = "An operation that wait for the adf.cell";
   let assemblyFormat = [{
@@ -87,6 +91,7 @@ def EndLaunchCellOp : ADF_Op<"cell.launch.end", [HasParent<"LaunchCellOp">,
   let assemblyFormat = "attr-dict";
 }
 
+// aie和fpga的交互
 def LaunchPLOp : ADF_Op<"pl.launch", [SingleBlock]> {
   let summary = "An operation to identify the PL part";
   let description = [{
@@ -140,6 +145,7 @@ def KernelOp : ADF_Op<"kernel", [Pure]> {
 // -------------
 
 //This may replace the seperated operations above PORTOp, PLIOOp, GMIOOp
+// 和DDR或是FPGA的交互port
 def CreateGraphIOOp : ADF_Op<"graph.io", []> {
   let summary = "graph input/output creation";
   let description = [{
@@ -247,6 +253,7 @@ def CascadeOp : ADF_Op<"cascade.create", []> {
 }
 
 //This may replace the seperated operations above BufferOp, StreamOp, CascadeOp
+// aie tile之间的交换，可能是buffer，stream，cascade，取决于aie tile的位置
 def CreateKernelIOOp : ADF_Op<"kernel.io", []> {
   let summary = "kernel input/output creation";
   let description = [{
@@ -268,6 +275,7 @@ def CreateKernelIOOp : ADF_Op<"kernel.io", []> {
 // Operations for connecting the ADF Graph
 // -------------
 
+// AttrSizedOperandSegments: 指定每个可变操作数的大小，从而明确每个操作数对应的动态值数量。
 def DmaOp: ADF_Op<"dma", [AttrSizedOperandSegments]> {
   let summary = "This is a dma operator that copy data between memrefs";
   let description = [{
@@ -283,6 +291,8 @@ def DmaOp: ADF_Op<"dma", [AttrSizedOperandSegments]> {
         Variadic<Index>:$dst_sizes,
         Variadic<Index>:$dst_strides
   );
+
+  // 经典的dma操stridefset，size和stride
   let assemblyFormat = [{
     `(` $src `[` ($src_offsets^)? `]``[` ($src_sizes^)? `]``[` ($src_strides^)? `]` `,`
         $dst `[` ($dst_offsets^)? `]``[` ($dst_sizes^)? `]``[` ($dst_strides^)? `]` `)`  attr-dict `:`
@@ -331,6 +341,7 @@ def ConnectOp : ADF_Op<"connect", []> {
 
 }
 
+// external memory和graph io之间的交互
 def IOPushOp: ADF_Op<"io.push", [AttrSizedOperandSegments]> {
   let summary = "Push the externel memory to a graph io";
   let description = [{

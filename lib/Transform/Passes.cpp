@@ -12,6 +12,7 @@ namespace {
 #include "aries/Transform/Passes.h.inc"
 } // namespace
 
+// backbone of the pass pipeline
 void mlir::aries::registerAriesPassPipeline() {
   PassPipelineRegistration<AriesOptions>(
   "aries-pipeline", "Compile to AIE array",
@@ -20,6 +21,7 @@ void mlir::aries::registerAriesPassPipeline() {
     // Perform multi-level tiling
     pm.addPass(createAriesTilingPass(opts));
 
+    // 默认test case没有开启新的tiling
     if(!opts.OptEnableNewTiling){
       // Extract the single kernel design
       pm.addPass(createAriesFuncExtractPass());
