@@ -7,5 +7,6 @@ install
 *pyc
 Aries
 .vscode
-aries/
+example_new/
+.cache/
 externals/
