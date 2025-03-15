@@ -21,7 +21,8 @@ void mlir::aries::registerAriesPassPipeline() {
     // Perform multi-level tiling
     pm.addPass(createAriesTilingPass(opts));
 
-    // 默认test case没有开启新的tiling
+    // 所有的test case都开启了new tiling选项
+    // 开启new tiling，是指支持ADF graph的ir表示
     if(!opts.OptEnableNewTiling){
       // Extract the single kernel design
       pm.addPass(createAriesFuncExtractPass());
@@ -35,10 +36,14 @@ void mlir::aries::registerAriesPassPipeline() {
     }
     
     // Perform global optimizations
+    // 找寻loop variable dma依赖
     pm.addPass(createAriesDependencyExtractPass());
+    // 针对adf.func做函数的loop unroll
     pm.addPass(createAriesFuncUnrollPass());
+    // 优化冗余的dma操作
     pm.addPass(createAriesLocalDataForwardPass());
     
+    // Aries工作的一大亮点：支持fpga的pl端
     if(opts.OptEnablePL){
       pm.addPass(createAriesKernelInterfaceCreatePass());
     }else{
@@ -47,6 +52,7 @@ void mlir::aries::registerAriesPassPipeline() {
     }
     
     // Perform local optimizations
+    // 做一些局部优化
     pm.addPass(createAriesDMAToIOPass(opts));
     pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(createAriesADFCellCreatePass(opts));

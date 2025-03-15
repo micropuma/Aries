@@ -22,6 +22,7 @@ DMAForward(MLIRContext *context)
   LogicalResult matchAndRewrite(
     DmaOp op, PatternRewriter &rewriter) const override {
 
+    // 获取src和dst的信息
     auto ConSrc = op.getSrc();
     SmallVector<Value> src_offsets=op.getSrcOffsets();
     SmallVector<Value> src_sizes  =op.getSrcSizes();
@@ -36,6 +37,7 @@ DMAForward(MLIRContext *context)
       return success();
     }
 
+    // 查询dma operation是否有read或是write属性
     if(auto readAttr = op->getAttr("read")){
       auto intRAttr = dyn_cast<IntegerAttr>(readAttr);
       if(!intRAttr)
@@ -55,12 +57,17 @@ DMAForward(MLIRContext *context)
              && src_strides == Wdst_strides){
             auto intWAttr = dyn_cast<IntegerAttr>(writeAttr);
             auto WIndex = intWAttr.getInt();
+
+            // 如果write的index是read的index-1
+            // 即先读后写，可以进行优化
             if(WIndex == RIndex -1){
               auto src = dmaop.getSrc();
               SmallVector<Value> Rsrc_offsets=dmaop.getSrcOffsets();
               SmallVector<Value> Rsrc_sizes  =dmaop.getSrcSizes();
               SmallVector<Value> Rsrc_strides=dmaop.getSrcStrides();
               rewriter.setInsertionPointAfter(op);
+
+              // 即将read 后 write变成一个dma read
               rewriter.replaceOpWithNewOp<DmaOp>
               (op,src,    Rsrc_offsets, Rsrc_sizes, Rsrc_strides, 
                   ConDst, dst_offsets,  dst_sizes,  dst_strides);
@@ -98,6 +105,9 @@ DMAForward(MLIRContext *context)
               (op, ConSrc,src_offsets, src_sizes,  src_strides,
                    dst,   Rdst_offsets,Rdst_sizes, Rdst_strides);
               dmaop->removeAttr("read");
+
+              // finish可以支持 L2或L3到L2或L3的数据传输
+              // 将read 后 Write优化掉
               dmaop->setAttr("finish",rewriter.getUnitAttr());
               return success();
             }
@@ -122,6 +132,7 @@ public:
 
 private:
 
+  // 核心函数，遍历所有的adf.func
   bool LocalDataForward (ModuleOp mod) {
     // Tranverse all the adf.func
     for (auto func : mod.getOps<FuncOp>()) {
@@ -134,10 +145,13 @@ private:
       if (failed(pm.run(func))) {
         return false;
       }
+
+      // 进行模式匹配pattern rewrite
       RewritePatternSet patterns(context);
       patterns.add<DMAForward>(patterns.getContext());
       (void)applyPatternsGreedily(mod, std::move(patterns));
 
+      // 处理带有initialize属性的dma操作，后处理
       func.walk([&](DmaOp dmaOp){
         if(dmaOp->hasAttr("initialize"))
           dmaOp.erase();
@@ -155,6 +169,13 @@ private:
 namespace mlir {
 namespace aries {
 
+// 优化如下case：
+// 原始操作
+// DmaWrite A → B
+// DmaRead B → C
+// 优化后
+// DmaWrite A → C  // 直接写入最终目标
+// 其核心功能是优化DMA（直接内存访问）操作的数据移动过程。
 std::unique_ptr<Pass> createAriesLocalDataForwardPass() {
   return std::make_unique<AriesLocalDataForward>();
 }

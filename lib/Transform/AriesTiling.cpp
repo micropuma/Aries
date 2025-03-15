@@ -624,6 +624,7 @@ private:
       return false;
 
     // Create adf.cell and move inner bands to it
+    // 相比于普通tiling，最大区别是L3不做tiling，而是将L3变成adf.cell计算单元
     auto parallelLoop = L1tileBand[bandSize];
     builder.setInsertionPoint(parallelLoop);
     auto cellName = "cell" + std::to_string(0);
@@ -633,14 +634,14 @@ private:
     auto endCellOp = builder.create<EndCellOp>(cellOp->getLoc());
     // Move the entire block of outerPointLoop before the returnOp
     builder.setInsertionPointToEnd(destBlock);
+    
+    // 将原本L3的parallel loop移动到cellOp中
     parallelLoop->moveBefore(endCellOp);
     return true;
   }
 
 };
 } // namespace
-
-
 
 namespace mlir {
 namespace aries {
