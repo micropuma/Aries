@@ -176,6 +176,7 @@ namespace aries {
 // 优化后
 // DmaWrite A → C  // 直接写入最终目标
 // 其核心功能是优化DMA（直接内存访问）操作的数据移动过程。
+// 核心功能：本地缓冲区数据直传
 std::unique_ptr<Pass> createAriesLocalDataForwardPass() {
   return std::make_unique<AriesLocalDataForward>();
 }

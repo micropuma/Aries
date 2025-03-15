@@ -165,6 +165,7 @@ def CreateGraphIOOp : ADF_Op<"graph.io", []> {
   let hasCanonicalizer = 1;
 }
 
+// 一个代码示例：adf.config.plio(%plioA0,128b){"col,chl"=[30,4]}
 def ConfigPLIOOp : ADF_Op<"config.plio", []> {
   let summary = "Set PLIO width and frequency";
   let description = [{

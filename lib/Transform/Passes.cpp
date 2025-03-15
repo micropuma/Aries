@@ -27,6 +27,8 @@ void mlir::aries::registerAriesPassPipeline() {
       // Extract the single kernel design
       pm.addPass(createAriesFuncExtractPass());
       pm.addPass(createAriesLoopSimplifyPass());
+
+      // 下面的关于内存的优化十分经典
       pm.addPass(createAriesMemSubviewPass());
       pm.addPass(createAriesMemHoistPass());
       pm.addPass(createAriesMemCopyPass());
@@ -35,8 +37,9 @@ void mlir::aries::registerAriesPassPipeline() {
       pm.addPass(mlir::createCanonicalizerPass());
     }
     
+    // 主要是优化dma数据传输操作
     // Perform global optimizations
-    // 找寻loop variable dma依赖
+    // 找寻loop variable dma依赖，方便后续并行化显示发现不可并行点
     pm.addPass(createAriesDependencyExtractPass());
     // 针对adf.func做函数的loop unroll
     pm.addPass(createAriesFuncUnrollPass());

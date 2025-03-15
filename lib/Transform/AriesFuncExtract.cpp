@@ -23,11 +23,13 @@ public:
   }
 
 private:
+  // 将L3循环体提取为独立函数
   bool FuncExtract(ModuleOp mod) {
     auto builder = OpBuilder(mod);
     
     // Extract the affineParallelOp inside adf.func
     for (auto func : mod.getOps<FuncOp>()) {
+      // 只处理adf.func
       if(!func->hasAttr("adf.func"))
         continue;
       // Find the affineParallelOp
@@ -44,6 +46,8 @@ private:
         func->emitOpError("The number of point loop is less than 1\n");
         return false;
       }
+
+      // 如果parallelOp的层数大于1，提取最外层循环
       CallFuncCreation(builder, func, band, parallelOp);
     } 
     return true;
@@ -54,6 +58,7 @@ private:
                         AffineParallelOp parallelOp){
     // The Arguments in the specified block is not a live-in variable
     SmallVector<Value, 6> liveins(parallelOp.getBody()->getArguments());
+    // todo：详细学一下mlir的liveness分析
     auto liveness = Liveness(parallelOp);
     for (auto livein: liveness.getLiveIn(parallelOp.getBody()))
       if (!parallelOp->isProperAncestor(livein.getParentBlock()->getParentOp()))
@@ -112,6 +117,7 @@ private:
 namespace mlir {
 namespace aries {
 
+// 提取循环体为独立函数
 std::unique_ptr<Pass> createAriesFuncExtractPass() {
   return std::make_unique<AriesFuncExtract>();
 }
