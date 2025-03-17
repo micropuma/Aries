@@ -57,10 +57,15 @@ private:
                         SmallVector<AffineForOp, 6> band, 
                         AffineParallelOp parallelOp){
     // The Arguments in the specified block is not a live-in variable
+    // 确保新函数参数包含所有外部依赖变量（如循环边界、输入数据指针等）。
     SmallVector<Value, 6> liveins(parallelOp.getBody()->getArguments());
     // todo：详细学一下mlir的liveness分析
     auto liveness = Liveness(parallelOp);
+    // getLiveIn获取parallelOp中使用的所有live-in变量
     for (auto livein: liveness.getLiveIn(parallelOp.getBody()))
+      // 即parallelOp不是livein的直接祖先
+      // 即livein定义在parallelOp之外，过滤定义在循环内部的变量
+      // 收集这种livein变量
       if (!parallelOp->isProperAncestor(livein.getParentBlock()->getParentOp()))
         liveins.push_back(livein);
     
@@ -68,10 +73,12 @@ private:
     SmallVector<Value, 6> inputs;
     for(auto arg : topFunc.getArguments()){
       auto it = llvm::find(liveins,arg);
+      // 将topFunc中的参数，如果在liveins中，加入inputs
       if(it != liveins.end())
         inputs.push_back(arg);
     }
     for(auto livein : liveins){
+      // 如果livein不在inputs中，加入inputs
       auto it = llvm::find(inputs, livein);
       if(it == inputs.end())
         inputs.push_back(livein);
@@ -81,6 +88,7 @@ private:
     // Define the KNL function with the detected inputs as arguments
     auto symbol = topFunc.getSymName();
     auto funcName = "kernel_" + symbol.str();
+    // 将所有的livein变量作为参数，返回值为空
     auto funcType = builder.getFunctionType(ValueRange(inputs), TypeRange({}));
     auto newfunc = builder.create<FuncOp>(
                                   builder.getUnknownLoc(), funcName, funcType);
@@ -95,9 +103,11 @@ private:
     builder.create<CallOp>(outerPointLoop.getLoc(), newfunc, inputs);
 
     // Move the entire block of outerPointLoop before the returnOp
+    // 将外层循环体移动到returnOp之前
     builder.setInsertionPointToEnd(destBlock);
     outerPointLoop->moveBefore(returnOp);
 
+    // 替换参数引用
     // Update the references in the newfunc after move
     auto argNum = destBlock->getNumArguments();
     for (unsigned i = 0; i < argNum; ++i) {

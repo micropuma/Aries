@@ -170,6 +170,7 @@ private:
     arg.setType(newMemRefType);
   }
 
+  // 通过port type和port width来确定port的类型
   LogicalResult LowerDMAToIO(OpBuilder builder, ModuleOp mod, FuncOp func, 
                              std::string portType, 
                              int64_t portWidth, int64_t pliofreq, 
@@ -498,8 +499,10 @@ private:
         continue;
       auto attrGMIO = builder.getBoolAttr(false);
       auto attrPLIO = builder.getBoolAttr(false);
+      // 判断是和fpga交互还是和pl交互
       if(PortType=="GMIO" || PortType=="gmio"){
         attrGMIO = builder.getBoolAttr(true);
+        // 给function打上tag
         func->setAttr("gmio",attrGMIO);
         if (failed(LowerDMAToIO(builder, mod, func, PortType, PortWidth, 
                                 PLIOFreq, PortBurst, GMIOBW)))

@@ -25,6 +25,7 @@ struct AriesMemSubview : public AriesMemSubviewBase<AriesMemSubview> {
 public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
+    // create memref.subview for affine.load and store ops
     if (failed(MemSubview(mod)))
       signalPassFailure();
   }
@@ -36,6 +37,7 @@ private:
   // 2) Dims and Constant determine the size of the subview
   // 3) Symbols determine the offset of the subview 
   // 4) TODO: Handle Locals
+  // 十分明确，将affine.store和affine.load变成显示的memref.subview
   LogicalResult MemSubview(ModuleOp mod){
     auto builder = OpBuilder(mod);
     auto context = mod.getContext();
@@ -47,6 +49,8 @@ private:
       auto flag = func.walk([&](CallOp caller){
         auto calleeFuncOp = mod.lookupSymbol<FuncOp>(caller.getCallee());
 
+        // 在调用者函数中找到callee函数的调用
+        // 并判断callee函数是否有memref参数
         for (auto arg : calleeFuncOp.getArguments()) {
           // Traverse the memref arguments in the callee function
           auto argType = dyn_cast<MemRefType>(arg.getType());

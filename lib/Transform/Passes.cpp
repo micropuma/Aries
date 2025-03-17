@@ -23,6 +23,7 @@ void mlir::aries::registerAriesPassPipeline() {
 
     // 所有的test case都开启了new tiling选项
     // 开启new tiling，是指支持ADF graph的ir表示
+    // 因此这一部分没有用
     if(!opts.OptEnableNewTiling){
       // Extract the single kernel design
       pm.addPass(createAriesFuncExtractPass());
@@ -44,6 +45,7 @@ void mlir::aries::registerAriesPassPipeline() {
     // 针对adf.func做函数的loop unroll
     pm.addPass(createAriesFuncUnrollPass());
     // 优化冗余的dma操作
+    // ARIES的一个重要优化
     pm.addPass(createAriesLocalDataForwardPass());
     
     // Aries工作的一大亮点：支持fpga的pl端

@@ -68,6 +68,8 @@ A = np.random.rand(I, L, M).astype(np.float32)
 B = np.random.rand(L, J).astype(np.float32)
 C = np.random.rand(M, K).astype(np.float32)
 D = np.random.rand(I, J, K).astype(np.float32)
+
+# 这一部分内容主要是和Aries的API交互
 ttmc_task = top(A, B, C, D)
 sch = Schedule(ttmc_task)
 sch.parallel(ttmc_task, [1, 8, 12, 1, 2])

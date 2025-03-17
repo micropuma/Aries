@@ -72,6 +72,7 @@ private:
 namespace mlir {
 namespace aries {
 
+// 生成adf_graph.cpp和adf_graph.h
 std::unique_ptr<Pass> createAriesFileSplitPass() {
   return std::make_unique<AriesFileSplit>();
 }
