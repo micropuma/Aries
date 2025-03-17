@@ -27,6 +27,8 @@ public:
       signalPassFailure();
   }
 
+// 这两个函数 GMIOPushOpProcess 和 GMIOPopOpProcess 是用于 ​对 GMIO（Global Memory I/O）的 IOPushOp 和 IOPopOp 操作进行序列化，
+// 目的是将原本可能并发的 I/O 操作转换为串行的 DMA 传输，并插入中间缓冲区以优化数据流。以下是详细解读：
 private:
   // Serialize the IOPushOp for GMIO
   void GMIOPushOpProcess(OpBuilder builder, FuncOp topFunc, 
@@ -123,6 +125,7 @@ private:
     });
   }
 
+  // 物化GMIO
   bool IOMaterialize (ModuleOp mod) {
     auto builder = OpBuilder(mod);
     

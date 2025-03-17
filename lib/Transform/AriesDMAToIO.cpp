@@ -18,6 +18,15 @@ using namespace mlir::memref;
 
 namespace {
 
+/*
+  遍历FuncOp中的DMA操作。
+  根据内存空间确定转换方向（L2到L1或反之）。
+  创建硬件I/O端口并配置参数。
+  数据打包优化，调整内存布局。
+  替换DMA操作为IOPush/IOPop。
+  消除无效DMA，合并重复传输。
+  更新函数签名和内存分配。
+*/
 struct AriesDMAToIO : public AriesDMAToIOBase<AriesDMAToIO> {
 public:
   AriesDMAToIO() = default;
@@ -37,6 +46,7 @@ public:
 private:
   // Eliminate the dma ops that haven't been called by func.call
   // or haven't use the return value of func.call
+  // 如果一个DMA操作的结果（val）没有被任何CallOp使用，或者它本身不是由CallOp产生的，那么该DMA操作就是冗余的
   bool elimDMA(DmaOp op, Value val){
     // Check if it is the result of CallOp
     auto defineOp = val.getDefiningOp();
@@ -50,6 +60,8 @@ private:
   }
   // Here need to deal with the data packing, and we assume the AIE local
   // mem is always row major
+  // 传输数据的layout 调整，以充分利用port的资源宽度
+  // todo
   bool dataPacking(OpBuilder builder, FuncOp func, MemRefType type, 
                    int64_t portWidth, Value val, SmallVector<Value>& sizes, 
                    SmallVector<Value>& offsets,
@@ -185,6 +197,9 @@ private:
     auto flag = func.walk([&](DmaOp op){
       auto DmaSrc = op.getSrc();
       auto DmaDst = op.getDst();
+
+      // 获取source，destination的memory space的类型
+      // 并提取type的内存类型：L1，L2，L3
       auto SrcSpace 
            = dyn_cast<MemRefType>(DmaSrc.getType()).getMemorySpaceAsInt();
       auto DstSpace 
@@ -198,6 +213,9 @@ private:
       Type portIn, portOut;
       enum PortBurst portburst;
       unsigned flag_config=0;
+
+      // 根据port type来确定port的类型
+      // plio port可以选定portwidth
       if (portType=="PLIO" || portType=="plio"){
         portName = GraphIOName::PLIO;
         portIn = PLIOType::get(context, PortDir::In, portWidth);
@@ -234,8 +252,10 @@ private:
       }
 
       //if the DmaOp is copied to L1 mem
+      // 如果是从L2到L1的拷贝，那么就需要创建一个新的port
       if(SrcSpace !=(int)MemorySpace::L1 && DstSpace == (int)MemorySpace::L1){
         // Elim dead DMAs
+        // 判断DMA操作的dst是否由一个call op产生或传输给另一个call op
         if(elimDMA(op, DmaDst)){
           op.erase();
           return WalkResult::advance();
@@ -243,6 +263,8 @@ private:
         builder.setInsertionPoint(op);
         auto port = builder.create<CreateGraphIOOp>(loc, portIn, portName);
         builder.setInsertionPointAfter(port);
+
+        // PLIO需要配置plio的频率，GMIO需要配置gmio的burst和bw
         if(flag_config==1)
           builder.create<ConfigPLIOOp>(loc, port, pliofreq);
         else if(flag_config==2)
@@ -304,6 +326,7 @@ private:
       }else if(SrcSpace == (int)MemorySpace::L1 && 
                DstSpace == (int)MemorySpace::L1){
         builder.setInsertionPoint(op);
+        // 如果是L1到L1的数据传输，则直接connect即可
         builder.create<ConnectOp>(loc, DmaSrc, DmaDst);
         op.erase();
         return WalkResult::advance();
@@ -495,8 +518,10 @@ private:
     auto builder = OpBuilder(mod);
     // Tranverse all the adf.func
     for (auto func : mod.getOps<FuncOp>()) {
+      // 只针对adf.func来进行操作
       if(!func->hasAttr("adf.func"))
         continue;
+      
       auto attrGMIO = builder.getBoolAttr(false);
       auto attrPLIO = builder.getBoolAttr(false);
       // 判断是和fpga交互还是和pl交互
@@ -549,6 +574,7 @@ std::unique_ptr<Pass> createAriesDMAToIOPass() {
   return std::make_unique<AriesDMAToIO>();
 }
 
+// 将DMA操作转换为PLIO或是GMIO的push或是pop
 std::unique_ptr<Pass> createAriesDMAToIOPass(const AriesOptions &opts) {
   return std::make_unique<AriesDMAToIO>(opts);
 }

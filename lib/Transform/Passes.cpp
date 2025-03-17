@@ -61,10 +61,16 @@ void mlir::aries::registerAriesPassPipeline() {
     pm.addPass(createAriesDMAToIOPass(opts));
     pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(createAriesADFCellCreatePass(opts));
+
+    // 两个最重要的pass：Tile Core的place问题和Tile IO的place问题
     pm.addPass(createAriesCorePlacementPass(opts));
     pm.addPass(createAriesIOPlacementPass(opts));
+
+    // 两个物化pass
     pm.addPass(createAriesGMIOMaterializePass());
     pm.addPass(createAriesPLIOMaterializePass(opts));
+
+    // 各种优化pass，包括数据打包，fpga端dataflow模型构建等
     pm.addPass(createAriesAXIPackingPass(opts));
     pm.addPass(createAriesPLDataflowPass());
     pm.addPass(mlir::createCanonicalizerPass());

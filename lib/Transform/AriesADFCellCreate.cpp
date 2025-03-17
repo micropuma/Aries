@@ -24,6 +24,7 @@ public:
   void runOnOperation() override {
     auto mod = dyn_cast<ModuleOp>(getOperation());
 
+    // NPU属于AIE2的一部分，但是NPU的cell创建方式与AIE2不同
     if(!EnablePL && EnableAIE2){
       if (!NPUCellCreate(mod))
         signalPassFailure();
@@ -349,6 +350,7 @@ std::unique_ptr<Pass> createAriesADFCellCreatePass() {
   return std::make_unique<AriesADFCellCreate>();
 }
 
+// 构造ADF Cell创建的Pass
 std::unique_ptr<Pass> createAriesADFCellCreatePass(const AriesOptions &opts) {
   return std::make_unique<AriesADFCellCreate>(opts);
 }
