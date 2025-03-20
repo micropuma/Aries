@@ -11,3 +11,11 @@ example_new/
 .cache/
 externals/
 aries/
+tutorial/gemm64-tiling/my_project/project/_x*/
+tutorial/gemm64-tiling/my_project/project/.Xil/
+tutorial/gemm64-tiling/my_project/project/.metadata/
+tutorial/gemm64-tiling/my_project/project/.ipcache/
+tutorial/gemm64-tiling/my_project/project/build*/
+tutorial/gemm64-tiling/my_project/project/*.o/
+tutorial/gemm64-tiling/my_project/project/Work/
+tutorial/gemm64-tiling/my_project/project/package.*/
