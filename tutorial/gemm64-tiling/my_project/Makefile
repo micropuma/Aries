@@ -5,7 +5,7 @@ PROJECT_PATH=./project
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host
-TEMPLATE_PATH = /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64/../..//templates
+TEMPLATE_PATH = /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/../..//templates
 
 PLIOWidth = 128
 AXIWidth = 512
