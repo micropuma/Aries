@@ -2,6 +2,8 @@ FUNC:=gemm
 MLIR:=aries
 KERNEL_NAME:=kernel_${FUNC}
 PROJECT_PATH=./project
+
+# aie 设计的path，host 设计的path，pl 设计的path
 PROJECT_AIE_PATH=${PROJECT_PATH}/aie
 PROJECT_PL_PATH=${PROJECT_PATH}/kernel
 PROJECT_Host_PATH=${PROJECT_PATH}/host

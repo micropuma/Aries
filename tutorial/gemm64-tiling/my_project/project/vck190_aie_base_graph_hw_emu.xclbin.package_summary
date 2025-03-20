@@ -1,0 +1,170 @@
+<ENTRY>
+{
+ "thisFile": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/vck190_aie_base_graph_hw_emu.xclbin.package_summary",
+ "connectId": "",
+ "serverToken": "",
+ "timestamp": "0"
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_CmdStep",
+ "dateTimestamp": "Wed Mar 19 13:01:47 2025",
+ "timestampMillis": "1742360507365",
+ "buildStep": {
+  "cmdId": "8bf82e7f-b1e2-4fb0-8ab6-585efc5a2efe",
+  "name": "v++",
+  "logFile": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/package/package.steps.log",
+  "commandLine": "/usr/xilinx/Vitis/2023.2/bin/unwrapped/lnx64.o/v++  --vivado.prop \"run.__KERNEL__.{STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS}={-directive sdx_optimization_effort_high}\" --advanced.misc \"report=type report_timing_summary name impl_report_timing_summary_route_design_summary steps {route_design} runs {impl_1} options {-max_paths 10}\" --advanced.misc \"report=type report_timing_summary name impl_report_timing_summary_post_route_phys_opt_design_summary steps {post_route_phys_opt_design} runs {impl_1} options {-max_paths 10}\" -p -t hw_emu -f /usr/xilinx/Vitis/2023.2/base_platforms/xilinx_vck190_base_202320_1/xilinx_vck190_base_202320_1.xpfm --package.out_dir ./package.hw_emu --package.rootfs /usr/xilinx/xilinx-versal-common-v2023.2//rootfs.ext4 --package.kernel_image /usr/xilinx/xilinx-versal-common-v2023.2//Image --package.boot_mode=sd --package.image_format=ext4 --package.defer_aie_run --package.sd_file hostexe libadf.a vck190_aie_base_graph_hw_emu.xsa -o vck190_aie_base_graph_hw_emu.xclbin ",
+  "args": [
+   "-p",
+   "-t",
+   "hw_emu",
+   "-f",
+   "/usr/xilinx/Vitis/2023.2/base_platforms/xilinx_vck190_base_202320_1/xilinx_vck190_base_202320_1.xpfm",
+   "--package.out_dir",
+   "./package.hw_emu",
+   "--package.rootfs",
+   "/usr/xilinx/xilinx-versal-common-v2023.2//rootfs.ext4",
+   "--package.kernel_image",
+   "/usr/xilinx/xilinx-versal-common-v2023.2//Image",
+   "--package.boot_mode=sd",
+   "--package.image_format=ext4",
+   "--package.defer_aie_run",
+   "--package.sd_file",
+   "hostexe",
+   "libadf.a",
+   "vck190_aie_base_graph_hw_emu.xsa",
+   "-o",
+   "vck190_aie_base_graph_hw_emu.xclbin"
+  ],
+  "iniFiles": [],
+  "cwd": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Wed Mar 19 13:01:47 2025",
+ "timestampMillis": "1742360507365",
+ "status": {
+  "cmdId": "8bf82e7f-b1e2-4fb0-8ab6-585efc5a2efe",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_FlowMetaData",
+ "dateTimestamp": "Wed Mar 19 13:01:51 2025",
+ "timestampMillis": "1742360511311",
+ "buildSummary": {
+  "hardwarePlatform": "xilinx_vck190_base_202320_1.xpfm",
+  "hardwareDsa": "hw.xsa",
+  "platformDirectory": "/usr/xilinx/Vitis/2023.2/base_platforms/xilinx_vck190_base_202320_1",
+  "runtime": "OpenCL",
+  "systemConfig": "Linux",
+  "flow": "BF_PACKAGE",
+  "target": "TT_HW_EMU",
+  "binaryContainer": {
+   "base": {
+    "type": "BT_UKNOWN",
+    "name": "vck190_aie_base_graph_hw_emu",
+    "file": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/vck190_aie_base_graph_hw_emu.xclbin",
+    "reports": [],
+    "uuid": ""
+   },
+   "kernels": []
+  },
+  "kernels": [],
+  "toolVersion": "Vitis V++ Compiler Release 2023.2. SW Build 4026344 on 2023-10-11-15:42:10",
+  "aieInputs": {
+   "base": {
+    "type": "AI_LIBSDF",
+    "name": "libadf",
+    "file": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/libadf.a",
+    "reports": [
+     {
+      "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/package/int/aie.partial.aiecompile_summary",
+      "name": "",
+      "fileType": "TEXT",
+      "reportType": "TASK_LOG_SUMMARY",
+      "cmdId": ""
+     },
+     {
+      "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/package/int/aie_control_config.json",
+      "name": "",
+      "fileType": "JSON",
+      "reportType": "AIE_CONTROL_CONFIG",
+      "cmdId": ""
+     },
+     {
+      "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/package/int/aie.router.soln.json",
+      "name": "",
+      "fileType": "JSON",
+      "reportType": "AIE_ROUTER_SOLUTION",
+      "cmdId": ""
+     },
+     {
+      "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/package/int/aie.mapped.json",
+      "name": "",
+      "fileType": "JSON",
+      "reportType": "AIE_GRAPH_MAPPED",
+      "cmdId": ""
+     },
+     {
+      "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/package/int/aie.compiler.report.json",
+      "name": "",
+      "fileType": "JSON",
+      "reportType": "AIE_COMPILER_REPORT",
+      "cmdId": ""
+     }
+    ],
+    "uuid": ""
+   },
+   "sources": [],
+   "type": "AI_UKNOWN"
+  }
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "Wed Mar 19 13:02:34 2025",
+ "timestampMillis": "1742360554223",
+ "status": {
+  "cmdId": "8bf82e7f-b1e2-4fb0-8ab6-585efc5a2efe",
+  "state": "CS_PASSED"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Report",
+ "dateTimestamp": "Wed Mar 19 13:02:34 2025",
+ "timestampMillis": "1742360554309",
+ "report": {
+  "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/reports/package/v++_package_vck190_aie_base_graph_hw_emu_guidance.html",
+  "name": "",
+  "fileType": "HTML",
+  "reportType": "GLOBAL_RULECHECK_GUIDANCE",
+  "cmdId": ""
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Report",
+ "dateTimestamp": "Wed Mar 19 13:02:34 2025",
+ "timestampMillis": "1742360554310",
+ "report": {
+  "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/v++_package_vck190_aie_base_graph_hw_emu_guidance.pb3",
+  "name": "",
+  "fileType": "BINARY_PROTOBUF",
+  "reportType": "GLOBAL_RULECHECK_GUIDANCE",
+  "cmdId": ""
+ }
+}
+</ENTRY>

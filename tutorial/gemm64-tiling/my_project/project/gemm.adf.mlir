@@ -214,14 +214,14 @@ module {
   }
   func.func @receive2(%arg0: memref<1xi128, "plio">, %arg1: memref<1xi128, "stream">) attributes {adf.pl, inline = false, receive, template} {
     %c127 = arith.constant 127 : index
-    %c0 = arith.constant 0 : index
     %c96 = arith.constant 96 : index
+    %c0_i128 = arith.constant 0 : i128
+    %c32 = arith.constant 32 : index
     %c31 = arith.constant 31 : index
+    %c0 = arith.constant 0 : index
+    %c63 = arith.constant 63 : index
     %c95 = arith.constant 95 : index
     %c64 = arith.constant 64 : index
-    %c63 = arith.constant 63 : index
-    %c32 = arith.constant 32 : index
-    %c0_i128 = arith.constant 0 : i128
     %alloc = memref.alloc() {buffer_type = "uram_t2p"} : memref<32x8xi128, 1>
     affine.for %arg2 = 0 to 32 {
       affine.for %arg3 = 0 to 8 {
@@ -406,7 +406,7 @@ module {
               affine.for %arg10 = 0 to 4 {
                 %0 = arith.cmpi slt, %arg10, %c2 : index
                 %1 = scf.if %0 -> (i512) {
-                  %2 = affine.load %arg4[0] : memref<1xi512, "stream2">
+                  %2 = affine.load %arg3[0] : memref<1xi512, "stream2">
                   scf.yield %2 : i512
                 } else {
                   %2 = affine.load %arg2[0] : memref<1xi512, "stream2">
@@ -426,7 +426,7 @@ module {
                   %2 = affine.load %arg1[0] : memref<1xi512, "stream2">
                   scf.yield %2 : i512
                 } else {
-                  %2 = affine.load %arg3[0] : memref<1xi512, "stream2">
+                  %2 = affine.load %arg4[0] : memref<1xi512, "stream2">
                   scf.yield %2 : i512
                 }
                 affine.store %1, %arg0[%arg8 + %arg7 * 352 + %arg5 * 1408 + 32, %arg10 + %arg9 * 16 + %arg6 * 96] : memref<64x4xi512>
@@ -454,9 +454,9 @@ module {
                   %0 = affine.load %arg0[%arg9 + %arg8 * 352 + %arg5 * 1408, %arg11 + %arg10 * 8 + %arg7 * 8] : memref<64x4xi512>
                   %1 = arith.cmpi slt, %arg11, %c2 : index
                   scf.if %1 {
-                    affine.store %0, %arg2[0] : memref<1xi512, "stream2">
+                    affine.store %0, %arg3[0] : memref<1xi512, "stream2">
                   } else {
-                    affine.store %0, %arg1[0] : memref<1xi512, "stream2">
+                    affine.store %0, %arg4[0] : memref<1xi512, "stream2">
                   }
                 } {pipeline_ii = 1 : index}
               }
@@ -469,9 +469,9 @@ module {
                   %0 = affine.load %arg0[%arg9 + %arg8 * 352 + %arg5 * 1408 + 32, %arg11 + %arg10 * 8 + %arg7 * 8] : memref<64x4xi512>
                   %1 = arith.cmpi slt, %arg11, %c2 : index
                   scf.if %1 {
-                    affine.store %0, %arg4[0] : memref<1xi512, "stream2">
+                    affine.store %0, %arg1[0] : memref<1xi512, "stream2">
                   } else {
-                    affine.store %0, %arg3[0] : memref<1xi512, "stream2">
+                    affine.store %0, %arg2[0] : memref<1xi512, "stream2">
                   }
                 } {pipeline_ii = 1 : index}
               }
@@ -535,7 +535,7 @@ module {
                   scf.if %1 {
                     affine.store %0, %arg3[0] : memref<1xi512, "stream2">
                   } else {
-                    affine.store %0, %arg1[0] : memref<1xi512, "stream2">
+                    affine.store %0, %arg2[0] : memref<1xi512, "stream2">
                   }
                 } {pipeline_ii = 1 : index}
               }
@@ -550,7 +550,7 @@ module {
                   scf.if %1 {
                     affine.store %0, %arg4[0] : memref<1xi512, "stream2">
                   } else {
-                    affine.store %0, %arg2[0] : memref<1xi512, "stream2">
+                    affine.store %0, %arg1[0] : memref<1xi512, "stream2">
                   }
                 } {pipeline_ii = 1 : index}
               }
@@ -590,41 +590,41 @@ module {
     %alloc_20 = memref.alloc() : memref<1xi512, "stream2">
     %alloc_21 = memref.alloc() : memref<1xi512, "stream2">
     %alloc_22 = memref.alloc() : memref<1xi512, "stream2">
-    call @send3_top(%arg9, %alloc_7, %arg14, %alloc_5, %arg4, %alloc_9, %arg12, %alloc_6) : (memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">) -> ()
-    call @receive2_top(%arg13, %alloc_1, %arg8, %alloc, %arg10, %alloc_2, %arg7, %alloc_0) : (memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">) -> ()
-    call @send6_top(%arg6, %alloc_4, %arg5, %alloc_10, %arg3, %alloc_3, %arg11, %alloc_8) : (memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">) -> ()
+    call @send3_top(%arg14, %alloc_7, %arg11, %alloc_5, %arg10, %alloc_9, %arg7, %alloc_6) : (memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">) -> ()
+    call @receive2_top(%arg8, %alloc_1, %arg5, %alloc, %arg3, %alloc_2, %arg13, %alloc_0) : (memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">) -> ()
+    call @send6_top(%arg9, %alloc_4, %arg12, %alloc_10, %arg6, %alloc_3, %arg4, %alloc_8) : (memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">, memref<1xi128, "plio">, memref<1xi128, "stream">) -> ()
     call @store0_0_top(%alloc, %alloc_11, %alloc_0, %alloc_12, %alloc_1, %alloc_13, %alloc_2, %alloc_14) : (memref<1xi128, "stream">, memref<1xi512, "stream2">, memref<1xi128, "stream">, memref<1xi512, "stream2">, memref<1xi128, "stream">, memref<1xi512, "stream2">, memref<1xi128, "stream">, memref<1xi512, "stream2">) -> ()
-    call @store0_top(%arg2, %alloc_13, %alloc_12, %alloc_14, %alloc_11) : (memref<64x4xi512>, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">) -> ()
-    call @load0_top(%arg0, %alloc_17, %alloc_18, %alloc_15, %alloc_16) : (memref<64x4xi512>, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">) -> ()
+    call @store0_top(%arg2, %alloc_13, %alloc_12, %alloc_11, %alloc_14) : (memref<64x4xi512>, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">) -> ()
+    call @load0_top(%arg0, %alloc_16, %alloc_15, %alloc_18, %alloc_17) : (memref<64x4xi512>, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">) -> ()
     call @load0_3_top(%alloc_18, %alloc_10, %alloc_17, %alloc_8, %alloc_16, %alloc_4, %alloc_15, %alloc_3, %alloc_22, %alloc_9, %alloc_21, %alloc_7, %alloc_20, %alloc_6, %alloc_19, %alloc_5) : (memref<1xi512, "stream2">, memref<1xi128, "stream">, memref<1xi512, "stream2">, memref<1xi128, "stream">, memref<1xi512, "stream2">, memref<1xi128, "stream">, memref<1xi512, "stream2">, memref<1xi128, "stream">, memref<1xi512, "stream2">, memref<1xi128, "stream">, memref<1xi512, "stream2">, memref<1xi128, "stream">, memref<1xi512, "stream2">, memref<1xi128, "stream">, memref<1xi512, "stream2">, memref<1xi128, "stream">) -> ()
-    call @load1_top(%arg1, %alloc_20, %alloc_19, %alloc_22, %alloc_21) : (memref<64x4xi512>, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">) -> ()
+    call @load1_top(%arg1, %alloc_19, %alloc_20, %alloc_22, %alloc_21) : (memref<64x4xi512>, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">, memref<1xi512, "stream2">) -> ()
     return
   }
   func.func @gemm(%arg0: memref<64x4xi512>, %arg1: memref<64x4xi512>, %arg2: memref<64x4xi512>, %arg3: memref<1xi128, "plio">, %arg4: memref<1xi128, "plio">, %arg5: memref<1xi128, "plio">, %arg6: memref<1xi128, "plio">, %arg7: memref<1xi128, "plio">, %arg8: memref<1xi128, "plio">, %arg9: memref<1xi128, "plio">, %arg10: memref<1xi128, "plio">, %arg11: memref<1xi128, "plio">, %arg12: memref<1xi128, "plio">, %arg13: memref<1xi128, "plio">, %arg14: memref<1xi128, "plio">) attributes {adf.func, plio = true} {
     %0 = adf.graph.io(PLIO) : !adf.plio<Out, 128>
-    adf.connect(%0, %arg10) {top_config} : (!adf.plio<Out, 128>, memref<1xi128, "plio">)
+    adf.connect(%0, %arg3) {top_config} : (!adf.plio<Out, 128>, memref<1xi128, "plio">)
     %1 = adf.graph.io(PLIO) : !adf.plio<Out, 128>
-    adf.connect(%1, %arg13) {top_config} : (!adf.plio<Out, 128>, memref<1xi128, "plio">)
+    adf.connect(%1, %arg8) {top_config} : (!adf.plio<Out, 128>, memref<1xi128, "plio">)
     %2 = adf.graph.io(PLIO) : !adf.plio<In, 128>
-    adf.connect(%arg3, %2) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
+    adf.connect(%arg6, %2) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
     %3 = adf.graph.io(PLIO) : !adf.plio<In, 128>
-    adf.connect(%arg6, %3) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
+    adf.connect(%arg9, %3) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
     %4 = adf.graph.io(PLIO) : !adf.plio<Out, 128>
-    adf.connect(%4, %arg7) {top_config} : (!adf.plio<Out, 128>, memref<1xi128, "plio">)
+    adf.connect(%4, %arg13) {top_config} : (!adf.plio<Out, 128>, memref<1xi128, "plio">)
     %5 = adf.graph.io(PLIO) : !adf.plio<In, 128>
-    adf.connect(%arg14, %5) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
+    adf.connect(%arg11, %5) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
     %6 = adf.graph.io(PLIO) : !adf.plio<In, 128>
-    adf.connect(%arg12, %6) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
+    adf.connect(%arg7, %6) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
     %7 = adf.graph.io(PLIO) : !adf.plio<Out, 128>
-    adf.connect(%7, %arg8) {top_config} : (!adf.plio<Out, 128>, memref<1xi128, "plio">)
+    adf.connect(%7, %arg5) {top_config} : (!adf.plio<Out, 128>, memref<1xi128, "plio">)
     %8 = adf.graph.io(PLIO) : !adf.plio<In, 128>
-    adf.connect(%arg9, %8) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
+    adf.connect(%arg14, %8) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
     %9 = adf.graph.io(PLIO) : !adf.plio<In, 128>
-    adf.connect(%arg11, %9) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
+    adf.connect(%arg4, %9) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
     %10 = adf.graph.io(PLIO) : !adf.plio<In, 128>
-    adf.connect(%arg4, %10) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
+    adf.connect(%arg10, %10) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
     %11 = adf.graph.io(PLIO) : !adf.plio<In, 128>
-    adf.connect(%arg5, %11) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
+    adf.connect(%arg12, %11) {top_config} : (memref<1xi128, "plio">, !adf.plio<In, 128>)
     adf.cell.launch @adf_cell0 {
       func.call @adf_cell0(%11, %10, %9, %8, %7, %6, %5, %4, %3, %2, %1, %0) {adf.cell} : (!adf.plio<In, 128>, !adf.plio<In, 128>, !adf.plio<In, 128>, !adf.plio<In, 128>, !adf.plio<Out, 128>, !adf.plio<In, 128>, !adf.plio<In, 128>, !adf.plio<Out, 128>, !adf.plio<In, 128>, !adf.plio<In, 128>, !adf.plio<Out, 128>, !adf.plio<Out, 128>) -> ()
       adf.cell.launch.end

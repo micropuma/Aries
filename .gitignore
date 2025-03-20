@@ -19,3 +19,5 @@ tutorial/gemm64-tiling/my_project/project/build*/
 tutorial/gemm64-tiling/my_project/project/*.o/
 tutorial/gemm64-tiling/my_project/project/Work/
 tutorial/gemm64-tiling/my_project/project/package.*/
+tutorial/gemm64-tiling/my_project/project/Work/*.o/
+tutorial/gemm64-tiling/my_project/project/Work/*.a/
