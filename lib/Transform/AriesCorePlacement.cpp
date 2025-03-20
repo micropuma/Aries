@@ -28,6 +28,8 @@ public:
     ColOffset=opts.OptColOffset;
     RowOffset=opts.OptRowOffset;
     ColGap = opts.OptColGap;
+
+    // 选用的核心算法
     CoreAlgo=opts.OptCoreAlgo;
     EnablePL = opts.OptEnablePL;
     EnableAIE2 = opts.OptEnableAIE2;
@@ -741,6 +743,8 @@ private:
 
   // In this algorithm, the reduction dim is consecutive horizontally
   // J dim will first be placed vertically
+  // 这个操作本质是归约并行化，对于C[M,N] = A[M,K] * B[K,N]，K维度的归约并行化
+  // k维度放到列相邻tile做计算。
   bool placementNaive1(OpBuilder builder, FuncOp func, 
                        const unsigned colNum, const unsigned rowNum, 
                        unsigned colOffset, unsigned rowOffset, unsigned colGap,
@@ -853,6 +857,7 @@ private:
 
   // This algorithm is different from 0 and 1, as it is a specific zigzag
   // Placement algorithm
+  // 相比单纯的placementNaive1，这个算法考虑了zigzag的情况
   bool placementNaive2(OpBuilder builder, FuncOp func, 
                        const unsigned colNum, const unsigned rowNum, 
                        unsigned colOffset, unsigned rowOffset,
@@ -991,6 +996,7 @@ private:
     return true;
   }
 
+  // 核心算法部分
   bool CorePlacement (ModuleOp mod) {
     auto builder = OpBuilder(mod);
     unsigned colNum = ColNum;
@@ -1000,9 +1006,12 @@ private:
     unsigned colGap = ColGap;
 
     auto flag = mod.walk([&](FuncOp func){
+      
       if(!func->hasAttr("adf.cell") || !func->hasAttr("tripCount"))
         return WalkResult::advance();
 
+      // 获取function的trip count计数
+      // 提取成k，j，i并用于后续placement
       auto arrayAttr = dyn_cast<ArrayAttr>(func->getAttr("tripCount"));
       SmallVector<unsigned, 3> tripCounts;
       for(auto attr : arrayAttr){
@@ -1028,6 +1037,7 @@ private:
           return WalkResult::interrupt();
         }
       }else{
+        // 官方测试case均选用corealgo为2
         if(!placementNaive2(builder, func, colNum, rowNum, colOffset, rowOffset,
                             KSize, JSize, ISize)){
           llvm::errs() << "Placement2 failed\n";

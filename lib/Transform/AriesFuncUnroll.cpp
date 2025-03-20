@@ -31,6 +31,7 @@ private:
     auto builder = OpBuilder(mod);
     // Tranverse all the adf.func
     for (auto func : mod.getOps<FuncOp>()) {
+      // 必须是针对cell op的循环unroll展开。
       if(!func->hasAttr("adf.func"))
         continue;
       // Find the CellOp
@@ -50,11 +51,14 @@ private:
       for (unsigned index=0; index < band.size(); index++) {
         // Keep the tripCount info after unrolling
         auto loop = band[index];
+
+        // 检查trip count是否是静态的值
         auto tripCount = getConstantTripCount(loop);
         if(!tripCount.has_value())
           return false;
         auto tripCountVal = tripCount.value();
         if(tripCountVal>1){
+          // 收集trip count大于1的循环
           auto tripCountAttr = builder.getIntegerAttr(indexType, tripCountVal);
           tripCountList.push_back(tripCountAttr);
           indexList.push_back(index);
@@ -62,10 +66,12 @@ private:
             hasRedLoop = true;
         }
         // Unroll reduction loop
+        // 需要显示确保dma的传输的正确性
         if (loop->getAttr("flow")){
           auto annotateFn = [](unsigned i, Operation *op, OpBuilder builder) {
             auto indexType = builder.getIndexType();
             auto valueAttr = builder.getIntegerAttr(indexType,i);
+            // 对于dma op，需要打上write或者read的标记
             if (auto dmaop = dyn_cast<DmaOp>(op)){
               if(auto attr = dmaop->getAttr("write"))
                 dmaop->setAttr("write", valueAttr);
@@ -75,6 +81,7 @@ private:
               // Mark kernel in the reduction chain to update kernel interface
               callop->setAttr("kernel", valueAttr);
               // Mark each loop iteration info for placement
+              // 将loop迭代信息打上标记
               if(auto attr = callop->getAttr("ivs")){
                 auto arrayAttr = dyn_cast<ArrayAttr>(attr);
                 SmallVector<Attribute, 3> newAttrList;
@@ -91,6 +98,11 @@ private:
             }
           };
           // loopUnrollFull won't mark the loops with tripcount = 1 
+          // annotateFn如此使用
+          // for (auto it = loopBodyBlock->begin(); it != std::next(srcBlockEnd); it++) {
+          // Operation *clonedOp = builder.clone(*it, operandMap);
+          // annotateFn(i, clonedOp, builder);
+          // }
           if (failed(loopUnrollFull(loop, annotateFn)))
             return false;
           if(flowFull){ // Only support one reduction loop
@@ -105,6 +117,7 @@ private:
           auto annotateFn = [](unsigned i, Operation *op, OpBuilder builder) {
             auto indexType = builder.getIndexType();
             auto valueAttr = builder.getIntegerAttr(indexType,i);
+            // 不用显示处理dma的tag
             if (auto callop = dyn_cast<CallOp>(op)){
               // Mark kernel in the reduction chain to modify the kernel interface 
               // Mark each loop iteration info for placement
@@ -133,6 +146,7 @@ private:
       int listSize = (int)tripCountList.size();
       SmallVector<Attribute, 3> newTripCounts;
       if(listSize>3){
+        // 目前只能支持将3D的逻辑数组映射到2D的物理AIE阵列上
         llvm::errs() << "Only 3D logic array is supported\n";
         return false;
       }else{
@@ -144,6 +158,7 @@ private:
             auto attr = tripCountList[idx];
             newTripCounts.push_back(attr);
           }else{
+            // 显示扩充维度1
             newTripCounts.push_back(oneAttr);
           }
         }
@@ -165,6 +180,7 @@ private:
             call->setAttr("adf.kernel",builder.getUnitAttr());
             found = true;
             // Fill the ivs attributes to three if needed
+            // 将call的循环迭代维度扩充到3
             SmallVector<Attribute, 3> newAttrList;
             if(auto arrayAttr = call->getAttr("ivs")){
               auto ivArrayAttr = dyn_cast<ArrayAttr>(call->getAttr("ivs"));

@@ -18,6 +18,7 @@ using namespace adf;
 using namespace mlir::func;
 
 
+// 代码生成的入口函数
 // TODO: update naming rule.
 SmallString<8> ADFEmitterBase::addName(Value val, bool isPtr,
                                        std::string name) {

@@ -25,6 +25,7 @@ public:
   }
 
 private:
+  // 针对一个function，收集其args
   void classifyArgs(OpBuilder builder, FuncOp calleeFunc,
                     SmallVector<unsigned, 4>& inArgs,
                     SmallVector<unsigned, 4>& outArgs,
@@ -38,10 +39,13 @@ private:
     for (auto arg : calleeFunc.getArguments()) {
       if(!dyn_cast<MemRefType>(arg.getType()))
         continue;
+      // 只收集memref type
       auto type = dyn_cast<MemRefType>(arg.getType());
       bool isWrite = false;
       bool isRead = false;
       for (auto user : arg.getUsers()){
+        // 分析改参数的使用情况
+        // 是write还是read
         if (dyn_cast<AffineStoreOp>(user))
           isWrite=true;
         if (dyn_cast<AffineLoadOp>(user))
@@ -50,6 +54,7 @@ private:
       //If the mem has been read and written
       //then alloc and copy to a new buffer and return it
       builder.setInsertionPointToStart(&entryBlock);
+      // write和read都有的情况
       if(isWrite && isRead){
         inArgs.push_back(index);
         outArgs.push_back(index);
@@ -216,6 +221,7 @@ private:
 
   // This is an experimental pass to create the output buffer
   // TODO: Tensor may be a proper representation for the arguments in adf.kernel
+  // 要求一个function，必须有显示的output buffer，而不是隐式的。
   bool KernelInterfaceCreate (ModuleOp mod) {
     auto builder = OpBuilder(mod);
     PassManager pm(&getContext());
@@ -296,6 +302,7 @@ private:
 namespace mlir {
 namespace aries {
 
+// 只有支持fpga才会使用这个pass。
 std::unique_ptr<Pass> createAriesKernelInterfaceCreatePass() {
   return std::make_unique<AriesKernelInterfaceCreate>();
 }

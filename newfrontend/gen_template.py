@@ -2,6 +2,7 @@ from jinja2 import Environment, FileSystemLoader
 from pathlib import Path
 import re
 
+# 生成template的makefile文件
 def gen_make_aries(prj_dir, template_dir, subName, func, paraSize, l2Size, placement, placeAlgo, linkFile, bufSel):
     environment = Environment(loader=FileSystemLoader(template_dir))
     file_name = 'Makefile_ARIES'

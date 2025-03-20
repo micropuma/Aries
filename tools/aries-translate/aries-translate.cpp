@@ -6,6 +6,8 @@
 
 int main(int argc, char **argv) {
   mlir::registerAllTranslations();
+
+  // 注册translation相关的pass pipeline
   mlir::aries::registerAriesEmitters();
 
   return mlir::failed(

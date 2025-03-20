@@ -20,6 +20,7 @@ using namespace mlir::affine;
 
 namespace {
 
+// 针对L3 pl端的数据传输位宽打包
 struct AriesAXIPacking 
        : public AriesAXIPackingBase<AriesAXIPacking> {
 public:

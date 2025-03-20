@@ -29,7 +29,9 @@ LogicalResult loopUnrollFull(AffineForOp forOp,
     if (tripCount == 0)
       return success();
     if (tripCount == 1)
+      // 单个循环，不需要unroll
       return promoteIfSingleIteration(forOp);
+    // mlir提供的helper function
     return loopUnrollByFactor(forOp, tripCount, annotateFn);
   }
   return failure();

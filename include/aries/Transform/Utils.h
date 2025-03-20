@@ -15,6 +15,7 @@ namespace mlir {
 namespace aries {
 
 // Modified UnrollFull: Use function_ref to anotote operations during unroll.
+// 用function_ref的方法来对于AffineForOp做loop unroll
 LogicalResult loopUnrollFull(AffineForOp forOp, 
               function_ref<void(unsigned, Operation *, OpBuilder)> annotateFn);
 

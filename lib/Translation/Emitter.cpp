@@ -14,8 +14,9 @@
 using namespace mlir;
 using namespace aries;
 
-
+// 生成AIE的单个核心的kernel函数，aie的adf graph链接以及vitis hls代码。
 void aries::registerEmitAriesCppTranslation() {
+  // mlir的plugin机制
   static TranslateFromMLIRRegistration registration(
   "emit-aries-kernels", "Emit AIE Single Kernel + AIE ADF Graph + Vitis HLS", 
   emitAriesCpp,
@@ -42,6 +43,7 @@ void aries::registerEmitAriesCppTranslation() {
   });
 }
 
+// 生成ADF的核函数
 void aries::registeremitKernelFuncTranslation() {
   static TranslateFromMLIRRegistration registration(
       "emit-kenrel-func", "Emit ADF Kernel Func", emitKernelFunc,

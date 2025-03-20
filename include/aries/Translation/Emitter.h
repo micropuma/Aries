@@ -9,17 +9,20 @@
 namespace mlir {
 namespace aries {
 
+// 主体代码生成code
 LogicalResult emitAriesCpp(ModuleOp module, llvm::raw_ostream &os);
 void registerEmitAriesCppTranslation();
 
 /// Translates the AIE vector dialect MLIR to C++ code for Vitis Flow.
+/// 将AIE的向量方言mlir ir翻译成vitis的flow code
 LogicalResult emitAIEVecToCpp(mlir::Operation *op, bool aieml,
                               bool vitis, bool enres, mlir::raw_ostream &os);
+// 生成c++ kernel端代码
 LogicalResult emitKernelFunc(ModuleOp module, llvm::raw_ostream &os);
 void registeremitKernelFuncTranslation();
 
 /// Register all exporters.
-void registerAriesEmitters();
+void 代码();
 
 //===----------------------------------------------------------------------===//
 // Base Classes of emitters
@@ -27,6 +30,7 @@ void registerAriesEmitters();
 
 /// This class maintains the mutable state that cross-cuts and is shared by the
 /// various emitters.
+/// 代码生成器的状态结构体
 class ADFEmitterState {
 public:
   explicit ADFEmitterState(raw_ostream &os) : os(os) {}
@@ -53,6 +57,7 @@ class ADFEmitterBase {
 public:
   explicit ADFEmitterBase(ADFEmitterState &state): state(state), os(state.os) {}
 
+  // 显示控制缩进
   raw_ostream &indent() { return os.indent(state.currentIndent); }
 
   void addIndent() { state.currentIndent += 2; }
@@ -73,6 +78,7 @@ public:
 
   SmallString<8> getCall(func::CallOp call);
 
+  // 针对DMA的操作，生成对应的字符串
   SmallString<16> getDMAAccess(adf::DmaOp op, unsigned rank, 
                                bool isSrc, bool dir);
   
@@ -86,6 +92,7 @@ public:
 
 
 
+  // 查询state中的name table，查看是否已经声明过
   bool isDeclared(Value val) {
     if (getName(val).empty()) {
       return false;
@@ -93,6 +100,7 @@ public:
       return true;
   }
 
+  // 查询state中的call table，查看是否已经声明过
   bool isDeclared(func::CallOp call) {
     if (getCall(call).empty()) {
       return false;
