@@ -769,6 +769,8 @@ private:
         height = std::min(ISize, realRowNum);
     }
     unsigned coreNum = JSize * ISize;
+    
+    // 因为要k维度在列相邻tile做计算，所以列宽要乘以KSize
     unsigned colWidth = std::ceil(coreNum/(float)height) * (KSize+colGap);
     if(colWidth > colNum)
       return false;
@@ -950,6 +952,7 @@ private:
         return WalkResult::advance();
       }
       
+      // i，j的2d坐标转换成1d坐标
       unsigned rowIndex = 0;
       if(flag==1)
         rowIndex = jSize + iSize * JSize;
@@ -983,6 +986,7 @@ private:
         order = 2;
       else if(kSize == halfKSize-1)
         order = 3;
+      // 检查dma是否足够
       if(!bufPlacement(builder, callOp, colNum, rowNum, bankNum, col, row, 1,
                        order, DMAINCnt, DMAOUTCnt, bufOffsets)){
         llvm::errs() << "Buffer placement failed\n";

@@ -1,21 +1,21 @@
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 mkfile_dir := $(dir $(mkfile_path))
-TARGET   = hw
+TARGET   = hw_emu
 MODE	 = linux
 HOST_ARCH = aarch64
 EN_PL = 1
-PLATFORM_REPO_PATHS = /tools/Xilinx/Vitis/2023.2/base_platforms/
+PLATFORM_REPO_PATHS = /usr/xilinx/Vitis/2023.2/base_platforms
 PLATFORM = ${PLATFORM_REPO_PATHS}/xilinx_vck190_base_202320_1/xilinx_vck190_base_202320_1.xpfm
 XCLBIN   = vck190_aie_base_graph_${TARGET}.xclbin
 XSA	 = vck190_aie_base_graph_${TARGET}.xsa
 XPFM	 = vck190_xpfm
 HOST_EXE = hostexe
 HOST_SRCS := ./host/host.cpp
-SYSROOT_PATH = /opt/petalinux/2023.2
+SYSROOT_PATH = /usr/xilinx/petalinux/2023.2
 SYSROOT = ${SYSROOT_PATH}/sysroots/cortexa72-cortexa53-xilinx-linux
 SDKTARGETSYSROOT = ${SYSROOT}
 EDGE_COMMON_SW_PATH = ./
-EDGE_COMMON_SW= ${EDGE_COMMON_SW_PATH}/xilinx-versal-common-v2023.2
+EDGE_COMMON_SW= ${EDGE_COMMON_SW_PATH}/
 ROOTFS=${EDGE_COMMON_SW}/rootfs.ext4
 IMAGE=${EDGE_COMMON_SW}/Image
 TEMP_DIR := ./_x.$(TARGET).xilinx_vck190_base_202320_1
@@ -27,7 +27,7 @@ AIE_CMPL_CMD = aiecompiler -platform=${PLATFORM} --target=hw --stacksize=1024 --
 AIE_SIM_CMD = aiesimulator --pkg-dir=./Work --dump-vcd foo --profile --output-time-stamp=no --end-wait-time=30
 AIE_O = aie_control_xrt.o
 GRAPH_O = adf_graph.o
-EMU_CMD = ./launch_hw_emu.sh
+EMU_CMD = ./package.hw_emu/./launch_hw_emu.sh
 PACKAGE_OUT = ./package.$(TARGET)
 RM = rm -f
 RMDIR = rm -rf

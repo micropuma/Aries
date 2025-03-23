@@ -9,10 +9,10 @@
 <ENTRY>
 {
  "type": "ET_CmdStep",
- "dateTimestamp": "Wed Mar 19 12:49:39 2025",
- "timestampMillis": "1742359779791",
+ "dateTimestamp": "Sun Mar 23 11:01:17 2025",
+ "timestampMillis": "1742698877290",
  "buildStep": {
-  "cmdId": "9d608cab-ffa3-4df9-9fb5-776c1b195f12",
+  "cmdId": "0826e6c3-8cf1-446c-a304-1dd0416fd66e",
   "name": "v++",
   "logFile": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/link.steps.log",
   "commandLine": "/usr/xilinx/Vitis/2023.2/bin/unwrapped/lnx64.o/v++  --vivado.prop \"run.__KERNEL__.{STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS}={-directive sdx_optimization_effort_high}\" --vivado.prop run.impl_1.STEPS.PHYS_OPT_DESIGN.IS_ENABLED=true --advanced.misc \"report=type report_timing_summary name impl_report_timing_summary_route_design_summary steps {route_design} runs {impl_1} options {-max_paths 10}\" --advanced.misc \"report=type report_timing_summary name impl_report_timing_summary_post_route_phys_opt_design_summary steps {post_route_phys_opt_design} runs {impl_1} options {-max_paths 10}\" -l -t hw_emu --platform /usr/xilinx/Vitis/2023.2/base_platforms/xilinx_vck190_base_202320_1/xilinx_vck190_base_202320_1.xpfm --save-temps --optimize 2 -g --hls.jobs 8 --config system.cfg --clock.defaultFreqHz 220000000 --temp_dir ./build_dir.hw_emu.xilinx_vck190_base_202320_1 --vivado.synth.jobs 8 --vivado.impl.jobs 8 -ovck190_aie_base_graph_hw_emu.xsa _x.hw_emu.xilinx_vck190_base_202320_1/top.xo libadf.a ",
@@ -55,10 +55,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 12:49:39 2025",
- "timestampMillis": "1742359779791",
+ "dateTimestamp": "Sun Mar 23 11:01:17 2025",
+ "timestampMillis": "1742698877290",
  "status": {
-  "cmdId": "9d608cab-ffa3-4df9-9fb5-776c1b195f12",
+  "cmdId": "0826e6c3-8cf1-446c-a304-1dd0416fd66e",
   "state": "CS_RUNNING"
  }
 }
@@ -66,8 +66,8 @@
 <ENTRY>
 {
  "type": "ET_FlowMetaData",
- "dateTimestamp": "Wed Mar 19 12:49:43 2025",
- "timestampMillis": "1742359783500",
+ "dateTimestamp": "Sun Mar 23 11:01:21 2025",
+ "timestampMillis": "1742698881159",
  "buildSummary": {
   "hardwarePlatform": "xilinx_vck190_base_202320_1.xpfm",
   "hardwareDsa": "hw.xsa",
@@ -161,8 +161,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 12:49:43 2025",
- "timestampMillis": "1742359783576",
+ "dateTimestamp": "Sun Mar 23 11:01:21 2025",
+ "timestampMillis": "1742698881229",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/aie_control_config.json",
   "name": "",
@@ -175,18 +175,18 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 12:49:43 2025",
- "timestampMillis": "1742359783814",
+ "dateTimestamp": "Sun Mar 23 11:01:21 2025",
+ "timestampMillis": "1742698881408",
  "buildStep": {
-  "cmdId": "4715b1cb-3b01-4cbb-b36e-242b33a20696",
+  "cmdId": "47136e80-ef8e-4abd-b79b-53f4261e26b5",
   "name": "system_link",
   "logFile": "",
-  "commandLine": "system_link --xo /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x.hw_emu.xilinx_vck190_base_202320_1/top.xo -keep /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/.Xil/v++-1567476-beiyou-SYS-420GP-TNR/a0/hw.o --config /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/syslinkConfig.ini --xpfm /usr/xilinx/Vitis/2023.2/base_platforms/xilinx_vck190_base_202320_1/xilinx_vck190_base_202320_1.xpfm --target emu --output_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int --temp_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/sys_link",
+  "commandLine": "system_link --xo /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x.hw_emu.xilinx_vck190_base_202320_1/top.xo -keep /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/.Xil/v++-3767803-beiyou-SYS-420GP-TNR/a0/hw.o --config /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/syslinkConfig.ini --xpfm /usr/xilinx/Vitis/2023.2/base_platforms/xilinx_vck190_base_202320_1/xilinx_vck190_base_202320_1.xpfm --target emu --output_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int --temp_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/sys_link",
   "args": [
    "--xo",
    "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x.hw_emu.xilinx_vck190_base_202320_1/top.xo",
    "-keep",
-   "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/.Xil/v++-1567476-beiyou-SYS-420GP-TNR/a0/hw.o",
+   "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/.Xil/v++-3767803-beiyou-SYS-420GP-TNR/a0/hw.o",
    "--config",
    "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/syslinkConfig.ini",
    "--xpfm",
@@ -211,10 +211,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 12:49:43 2025",
- "timestampMillis": "1742359783815",
+ "dateTimestamp": "Sun Mar 23 11:01:21 2025",
+ "timestampMillis": "1742698881409",
  "status": {
-  "cmdId": "4715b1cb-3b01-4cbb-b36e-242b33a20696",
+  "cmdId": "47136e80-ef8e-4abd-b79b-53f4261e26b5",
   "state": "CS_RUNNING"
  }
 }
@@ -222,10 +222,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 12:50:11 2025",
- "timestampMillis": "1742359811244",
+ "dateTimestamp": "Sun Mar 23 11:01:49 2025",
+ "timestampMillis": "1742698909484",
  "status": {
-  "cmdId": "4715b1cb-3b01-4cbb-b36e-242b33a20696",
+  "cmdId": "47136e80-ef8e-4abd-b79b-53f4261e26b5",
   "state": "CS_PASSED"
  }
 }
@@ -233,10 +233,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 12:50:11 2025",
- "timestampMillis": "1742359811248",
+ "dateTimestamp": "Sun Mar 23 11:01:49 2025",
+ "timestampMillis": "1742698909490",
  "buildStep": {
-  "cmdId": "7bd718ed-4373-4d0d-8591-6628687bdc98",
+  "cmdId": "95138601-7eec-496e-8c62-441254cb60f7",
   "name": "cf2sw",
   "logFile": "",
   "commandLine": "cf2sw -sdsl /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/sdsl.dat -rtd /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/cf2sw.rtd -nofilter /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/cf2sw_full.rtd -xclbin /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/xclbin_orig.xml -o /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/xclbin_orig.1.xml",
@@ -260,10 +260,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 12:50:11 2025",
- "timestampMillis": "1742359811248",
+ "dateTimestamp": "Sun Mar 23 11:01:49 2025",
+ "timestampMillis": "1742698909491",
  "status": {
-  "cmdId": "7bd718ed-4373-4d0d-8591-6628687bdc98",
+  "cmdId": "95138601-7eec-496e-8c62-441254cb60f7",
   "state": "CS_RUNNING"
  }
 }
@@ -271,10 +271,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 12:50:14 2025",
- "timestampMillis": "1742359814947",
+ "dateTimestamp": "Sun Mar 23 11:01:52 2025",
+ "timestampMillis": "1742698912816",
  "status": {
-  "cmdId": "7bd718ed-4373-4d0d-8591-6628687bdc98",
+  "cmdId": "95138601-7eec-496e-8c62-441254cb60f7",
   "state": "CS_PASSED"
  }
 }
@@ -282,10 +282,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 12:50:14 2025",
- "timestampMillis": "1742359814949",
+ "dateTimestamp": "Sun Mar 23 11:01:52 2025",
+ "timestampMillis": "1742698912820",
  "buildStep": {
-  "cmdId": "89b7cf6a-c210-4a91-84a4-643c03705ef8",
+  "cmdId": "a7bcd015-6f18-4d5f-9050-8eebb12f4efd",
   "name": "rtd2_system_diagram",
   "logFile": "",
   "commandLine": "rtd2SystemDiagram",
@@ -298,10 +298,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 12:50:14 2025",
- "timestampMillis": "1742359814950",
+ "dateTimestamp": "Sun Mar 23 11:01:52 2025",
+ "timestampMillis": "1742698912821",
  "status": {
-  "cmdId": "89b7cf6a-c210-4a91-84a4-643c03705ef8",
+  "cmdId": "a7bcd015-6f18-4d5f-9050-8eebb12f4efd",
   "state": "CS_RUNNING"
  }
 }
@@ -309,8 +309,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 12:50:15 2025",
- "timestampMillis": "1742359815265",
+ "dateTimestamp": "Sun Mar 23 11:01:53 2025",
+ "timestampMillis": "1742698913140",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/systemDiagramModel.json",
   "name": "",
@@ -323,10 +323,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 12:50:15 2025",
- "timestampMillis": "1742359815265",
+ "dateTimestamp": "Sun Mar 23 11:01:53 2025",
+ "timestampMillis": "1742698913141",
  "status": {
-  "cmdId": "89b7cf6a-c210-4a91-84a4-643c03705ef8",
+  "cmdId": "a7bcd015-6f18-4d5f-9050-8eebb12f4efd",
   "state": "CS_PASSED"
  }
 }
@@ -334,10 +334,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 12:50:15 2025",
- "timestampMillis": "1742359815268",
+ "dateTimestamp": "Sun Mar 23 11:01:53 2025",
+ "timestampMillis": "1742698913145",
  "buildStep": {
-  "cmdId": "d76a2f65-e8e4-4ffe-a25b-27b8375b0fd1",
+  "cmdId": "ab7788ae-fd88-4157-8089-228f6f3e3ae8",
   "name": "vpl",
   "logFile": "",
   "commandLine": "vpl -t hw_emu -f /usr/xilinx/Vitis/2023.2/base_platforms/xilinx_vck190_base_202320_1/xilinx_vck190_base_202320_1.xpfm -s -g --remote_ip_cache /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/.ipcache --output_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int --log_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/logs/link --report_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/reports/link --config /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vplConfig.ini -k /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/kernel_info.dat --webtalk_flag Vitis --temp_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link --emulation_mode debug_waveform --no-info --iprepo /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/xo/ip_repo/xilinx_com_hls_top_1_0 --messageDb /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/run_link/vpl.pb /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/dr.bd.tcl",
@@ -386,10 +386,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 12:50:15 2025",
- "timestampMillis": "1742359815269",
+ "dateTimestamp": "Sun Mar 23 11:01:53 2025",
+ "timestampMillis": "1742698913146",
  "status": {
-  "cmdId": "d76a2f65-e8e4-4ffe-a25b-27b8375b0fd1",
+  "cmdId": "ab7788ae-fd88-4157-8089-228f6f3e3ae8",
   "state": "CS_RUNNING"
  }
 }
@@ -397,10 +397,10 @@
 <ENTRY>
 {
  "type": "ET_CmdStep",
- "dateTimestamp": "Wed Mar 19 12:50:17 2025",
- "timestampMillis": "1742359817123",
+ "dateTimestamp": "Sun Mar 23 11:01:55 2025",
+ "timestampMillis": "1742698915082",
  "buildStep": {
-  "cmdId": "8761c172-d0ef-4b7c-8c66-b40e22e65f73",
+  "cmdId": "387008dd-3817-484a-a313-4fd137e72878",
   "name": "vpl",
   "logFile": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/link.steps.log",
   "commandLine": "/usr/xilinx/Vitis/2023.2/bin/unwrapped/lnx64.o/vpl -t hw_emu -f /usr/xilinx/Vitis/2023.2/base_platforms/xilinx_vck190_base_202320_1/xilinx_vck190_base_202320_1.xpfm -s -g --remote_ip_cache /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/.ipcache --output_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int --log_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/logs/link --report_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/reports/link --config /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vplConfig.ini -k /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/kernel_info.dat --webtalk_flag Vitis --temp_dir /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link --emulation_mode debug_waveform --no-info --iprepo /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/xo/ip_repo/xilinx_com_hls_top_1_0 --messageDb /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/run_link/vpl.pb /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/dr.bd.tcl ",
@@ -413,10 +413,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 12:50:17 2025",
- "timestampMillis": "1742359817123",
+ "dateTimestamp": "Sun Mar 23 11:01:55 2025",
+ "timestampMillis": "1742698915082",
  "status": {
-  "cmdId": "8761c172-d0ef-4b7c-8c66-b40e22e65f73",
+  "cmdId": "387008dd-3817-484a-a313-4fd137e72878",
   "state": "CS_RUNNING"
  }
 }
@@ -424,8 +424,8 @@
 <ENTRY>
 {
  "type": "ET_VivadoProject",
- "dateTimestamp": "Wed Mar 19 12:50:21 2025",
- "timestampMillis": "1742359821615",
+ "dateTimestamp": "Sun Mar 23 11:01:59 2025",
+ "timestampMillis": "1742698919099",
  "vivadoProject": {
   "openDir": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/vivado/vpl",
   "openScript": "openprj.tcl",
@@ -436,10 +436,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 12:50:21 2025",
- "timestampMillis": "1742359821616",
+ "dateTimestamp": "Sun Mar 23 11:01:59 2025",
+ "timestampMillis": "1742698919100",
  "buildStep": {
-  "cmdId": "fdd50d66-ea6e-4d05-a8c0-7afc71c95427",
+  "cmdId": "919c0362-a188-4337-9c1e-2b148745f76d",
   "name": "vivado",
   "logFile": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/vivado/vpl/vivado.log",
   "commandLine": "vivado -log vivado.log -applog -m64 -messageDb vivado.pb -mode batch -source vpl.tcl -notrace",
@@ -464,10 +464,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 12:50:21 2025",
- "timestampMillis": "1742359821616",
+ "dateTimestamp": "Sun Mar 23 11:01:59 2025",
+ "timestampMillis": "1742698919100",
  "status": {
-  "cmdId": "fdd50d66-ea6e-4d05-a8c0-7afc71c95427",
+  "cmdId": "919c0362-a188-4337-9c1e-2b148745f76d",
   "state": "CS_RUNNING"
  }
 }
@@ -475,8 +475,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 12:54:26 2025",
- "timestampMillis": "1742360066370",
+ "dateTimestamp": "Sun Mar 23 11:06:00 2025",
+ "timestampMillis": "1742699160909",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/debug_ip_layout.rtd",
   "name": "",
@@ -489,8 +489,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 12:58:14 2025",
- "timestampMillis": "1742360294172",
+ "dateTimestamp": "Sun Mar 23 11:09:35 2025",
+ "timestampMillis": "1742699375876",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/automation_summary_pre_synthesis.txt",
   "name": "",
@@ -503,10 +503,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:26 2025",
- "timestampMillis": "1742360486612",
+ "dateTimestamp": "Sun Mar 23 11:12:31 2025",
+ "timestampMillis": "1742699551355",
  "status": {
-  "cmdId": "fdd50d66-ea6e-4d05-a8c0-7afc71c95427",
+  "cmdId": "919c0362-a188-4337-9c1e-2b148745f76d",
   "state": "CS_PASSED"
  }
 }
@@ -514,10 +514,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:26 2025",
- "timestampMillis": "1742360486819",
+ "dateTimestamp": "Sun Mar 23 11:12:31 2025",
+ "timestampMillis": "1742699551540",
  "status": {
-  "cmdId": "8761c172-d0ef-4b7c-8c66-b40e22e65f73",
+  "cmdId": "387008dd-3817-484a-a313-4fd137e72878",
   "state": "CS_PASSED"
  }
 }
@@ -525,10 +525,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:26 2025",
- "timestampMillis": "1742360486837",
+ "dateTimestamp": "Sun Mar 23 11:12:31 2025",
+ "timestampMillis": "1742699551556",
  "status": {
-  "cmdId": "d76a2f65-e8e4-4ffe-a25b-27b8375b0fd1",
+  "cmdId": "ab7788ae-fd88-4157-8089-228f6f3e3ae8",
   "state": "CS_PASSED"
  }
 }
@@ -536,10 +536,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 13:01:26 2025",
- "timestampMillis": "1742360486841",
+ "dateTimestamp": "Sun Mar 23 11:12:31 2025",
+ "timestampMillis": "1742699551559",
  "buildStep": {
-  "cmdId": "f5f6ba16-9087-4fcd-b3ee-d487c251e70b",
+  "cmdId": "fff56882-3f3b-4048-8646-077c0d8bac97",
   "name": "rtdgen",
   "logFile": "",
   "commandLine": "rtdgen",
@@ -552,10 +552,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:26 2025",
- "timestampMillis": "1742360486842",
+ "dateTimestamp": "Sun Mar 23 11:12:31 2025",
+ "timestampMillis": "1742699551560",
  "status": {
-  "cmdId": "f5f6ba16-9087-4fcd-b3ee-d487c251e70b",
+  "cmdId": "fff56882-3f3b-4048-8646-077c0d8bac97",
   "state": "CS_RUNNING"
  }
 }
@@ -563,8 +563,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 13:01:26 2025",
- "timestampMillis": "1742360486848",
+ "dateTimestamp": "Sun Mar 23 11:12:31 2025",
+ "timestampMillis": "1742699551564",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vck190_aie_base_graph_hw_emu_xml.rtd",
   "name": "",
@@ -577,10 +577,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 13:01:26 2025",
- "timestampMillis": "1742360486851",
+ "dateTimestamp": "Sun Mar 23 11:12:31 2025",
+ "timestampMillis": "1742699551566",
  "buildStep": {
-  "cmdId": "00a285d3-0b3a-46ef-980b-376d82d43d2b",
+  "cmdId": "dc13958f-488c-4f91-bd27-eb2c1bcf8803",
   "name": "cf2sw",
   "logFile": "",
   "commandLine": "cf2sw -a /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/address_map.xml -sdsl /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/sdsl.dat -xclbin /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/xclbin_orig.xml -rtd /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vck190_aie_base_graph_hw_emu.rtd -o /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vck190_aie_base_graph_hw_emu.xml",
@@ -604,10 +604,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:26 2025",
- "timestampMillis": "1742360486852",
+ "dateTimestamp": "Sun Mar 23 11:12:31 2025",
+ "timestampMillis": "1742699551567",
  "status": {
-  "cmdId": "00a285d3-0b3a-46ef-980b-376d82d43d2b",
+  "cmdId": "dc13958f-488c-4f91-bd27-eb2c1bcf8803",
   "state": "CS_RUNNING"
  }
 }
@@ -615,10 +615,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:30 2025",
- "timestampMillis": "1742360490185",
+ "dateTimestamp": "Sun Mar 23 11:12:34 2025",
+ "timestampMillis": "1742699554469",
  "status": {
-  "cmdId": "00a285d3-0b3a-46ef-980b-376d82d43d2b",
+  "cmdId": "dc13958f-488c-4f91-bd27-eb2c1bcf8803",
   "state": "CS_PASSED"
  }
 }
@@ -626,10 +626,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494066",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558303",
  "buildStep": {
-  "cmdId": "b25f6931-bd5f-424d-97d9-987a15429cfc",
+  "cmdId": "cf87553c-9492-43b6-a83c-1a9c96280ced",
   "name": "rtdgen",
   "logFile": "",
   "commandLine": "writeSystemDiagram",
@@ -645,10 +645,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494067",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558304",
  "status": {
-  "cmdId": "b25f6931-bd5f-424d-97d9-987a15429cfc",
+  "cmdId": "cf87553c-9492-43b6-a83c-1a9c96280ced",
   "state": "CS_RUNNING"
  }
 }
@@ -656,8 +656,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494075",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558312",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/systemDiagramModelSlrBaseAddress.json",
   "name": "",
@@ -670,10 +670,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494076",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558313",
  "status": {
-  "cmdId": "b25f6931-bd5f-424d-97d9-987a15429cfc",
+  "cmdId": "cf87553c-9492-43b6-a83c-1a9c96280ced",
   "state": "CS_PASSED"
  }
 }
@@ -681,10 +681,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494077",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558314",
  "buildStep": {
-  "cmdId": "1accd8d1-6ae3-418b-aeb6-3357283f2b14",
+  "cmdId": "8334f4e7-0349-46a8-86bc-3052a807261a",
   "name": "rtdgen",
   "logFile": "",
   "commandLine": "writeAutomationSummary",
@@ -699,10 +699,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494077",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558314",
  "status": {
-  "cmdId": "1accd8d1-6ae3-418b-aeb6-3357283f2b14",
+  "cmdId": "8334f4e7-0349-46a8-86bc-3052a807261a",
   "state": "CS_RUNNING"
  }
 }
@@ -710,8 +710,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494079",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558316",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/automation_summary.txt",
   "name": "",
@@ -724,10 +724,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494080",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558317",
  "status": {
-  "cmdId": "1accd8d1-6ae3-418b-aeb6-3357283f2b14",
+  "cmdId": "8334f4e7-0349-46a8-86bc-3052a807261a",
   "state": "CS_PASSED"
  }
 }
@@ -735,10 +735,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494080",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558318",
  "status": {
-  "cmdId": "f5f6ba16-9087-4fcd-b3ee-d487c251e70b",
+  "cmdId": "fff56882-3f3b-4048-8646-077c0d8bac97",
   "state": "CS_PASSED"
  }
 }
@@ -746,10 +746,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494089",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558326",
  "buildStep": {
-  "cmdId": "62ecdbc0-86d4-4c1b-9910-cd2f665a38c6",
+  "cmdId": "310f6efb-bde7-40c7-ade2-b0a101586388",
   "name": "xclbinutil",
   "logFile": "",
   "commandLine": "xclbinutil --add-section PDI:RAW:/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/run_link/../int/vpl_gen_fixed_presynth.pdi --add-section DEBUG_IP_LAYOUT:JSON:/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/debug_ip_layout.rtd --add-section BITSTREAM:RAW:/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/behav.xse --force --target hw_emu --key-value SYS:dfx_enable:false --add-section :JSON:/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vck190_aie_base_graph_hw_emu.rtd --add-section CLOCK_FREQ_TOPOLOGY:JSON:/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vck190_aie_base_graph_hw_emu_xml.rtd --add-section BUILD_METADATA:JSON:/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vck190_aie_base_graph_hw_emu_build.rtd --add-section EMBEDDED_METADATA:RAW:/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vck190_aie_base_graph_hw_emu.xml --add-section SYSTEM_METADATA:RAW:/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/systemDiagramModelSlrBaseAddress.json --add-section AIE_METADATA:JSON:/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/aie_control_config.json --key-value SYS:PlatformVBNV:xilinx.com_xd_xilinx_vck190_base_202320_1_202320_1 --output /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vck190_aie_base_graph_hw_emu.xclbin",
@@ -790,10 +790,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494090",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558326",
  "status": {
-  "cmdId": "62ecdbc0-86d4-4c1b-9910-cd2f665a38c6",
+  "cmdId": "310f6efb-bde7-40c7-ade2-b0a101586388",
   "state": "CS_RUNNING"
  }
 }
@@ -801,10 +801,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494276",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558524",
  "status": {
-  "cmdId": "62ecdbc0-86d4-4c1b-9910-cd2f665a38c6",
+  "cmdId": "310f6efb-bde7-40c7-ade2-b0a101586388",
   "state": "CS_PASSED"
  }
 }
@@ -812,10 +812,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494277",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558525",
  "buildStep": {
-  "cmdId": "b87b1976-e00a-41d0-97b8-b49f02d9541c",
+  "cmdId": "d3144ce6-537a-4ef3-b676-0427a28a49f8",
   "name": "xclbinutilinfo",
   "logFile": "",
   "commandLine": "xclbinutil --quiet --force --info /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vck190_aie_base_graph_hw_emu.xclbin.info --input /media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/link/int/vck190_aie_base_graph_hw_emu.xclbin",
@@ -835,10 +835,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494278",
+ "dateTimestamp": "Sun Mar 23 11:12:38 2025",
+ "timestampMillis": "1742699558526",
  "status": {
-  "cmdId": "b87b1976-e00a-41d0-97b8-b49f02d9541c",
+  "cmdId": "d3144ce6-537a-4ef3-b676-0427a28a49f8",
   "state": "CS_RUNNING"
  }
 }
@@ -846,10 +846,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494784",
+ "dateTimestamp": "Sun Mar 23 11:12:39 2025",
+ "timestampMillis": "1742699559015",
  "status": {
-  "cmdId": "b87b1976-e00a-41d0-97b8-b49f02d9541c",
+  "cmdId": "d3144ce6-537a-4ef3-b676-0427a28a49f8",
   "state": "CS_PASSED"
  }
 }
@@ -857,10 +857,10 @@
 <ENTRY>
 {
  "type": "ET_SubCmdStep",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494786",
+ "dateTimestamp": "Sun Mar 23 11:12:39 2025",
+ "timestampMillis": "1742699559018",
  "buildStep": {
-  "cmdId": "ace555a2-08dc-4cce-b6a5-6d25063e5b84",
+  "cmdId": "713dfd3b-cb19-4d5b-9e90-8b1eed61d0d6",
   "name": "generate_sc_driver",
   "logFile": "",
   "commandLine": "",
@@ -873,10 +873,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494787",
+ "dateTimestamp": "Sun Mar 23 11:12:39 2025",
+ "timestampMillis": "1742699559019",
  "status": {
-  "cmdId": "ace555a2-08dc-4cce-b6a5-6d25063e5b84",
+  "cmdId": "713dfd3b-cb19-4d5b-9e90-8b1eed61d0d6",
   "state": "CS_RUNNING"
  }
 }
@@ -884,10 +884,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494788",
+ "dateTimestamp": "Sun Mar 23 11:12:39 2025",
+ "timestampMillis": "1742699559019",
  "status": {
-  "cmdId": "ace555a2-08dc-4cce-b6a5-6d25063e5b84",
+  "cmdId": "713dfd3b-cb19-4d5b-9e90-8b1eed61d0d6",
   "state": "CS_PASSED"
  }
 }
@@ -895,8 +895,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 13:01:34 2025",
- "timestampMillis": "1742360494851",
+ "dateTimestamp": "Sun Mar 23 11:12:39 2025",
+ "timestampMillis": "1742699559093",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/reports/link/system_estimate_vck190_aie_base_graph_hw_emu.xtxt",
   "name": "",
@@ -909,8 +909,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 13:01:40 2025",
- "timestampMillis": "1742360500543",
+ "dateTimestamp": "Sun Mar 23 11:12:43 2025",
+ "timestampMillis": "1742699563944",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/logs/optraceViewer.html",
   "name": "",
@@ -923,10 +923,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:40 2025",
- "timestampMillis": "1742360500544",
+ "dateTimestamp": "Sun Mar 23 11:12:43 2025",
+ "timestampMillis": "1742699563945",
  "status": {
-  "cmdId": "9d608cab-ffa3-4df9-9fb5-776c1b195f12",
+  "cmdId": "0826e6c3-8cf1-446c-a304-1dd0416fd66e",
   "state": "CS_PASSED"
  }
 }
@@ -934,8 +934,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 13:01:40 2025",
- "timestampMillis": "1742360500633",
+ "dateTimestamp": "Sun Mar 23 11:12:44 2025",
+ "timestampMillis": "1742699564027",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/reports/link/v++_link_vck190_aie_base_graph_hw_emu_guidance.html",
   "name": "",
@@ -948,8 +948,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 13:01:40 2025",
- "timestampMillis": "1742360500634",
+ "dateTimestamp": "Sun Mar 23 11:12:44 2025",
+ "timestampMillis": "1742699564028",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/build_dir.hw_emu.xilinx_vck190_base_202320_1/v++_link_vck190_aie_base_graph_hw_emu_guidance.pb3",
   "name": "",

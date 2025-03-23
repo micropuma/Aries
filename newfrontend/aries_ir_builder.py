@@ -256,7 +256,7 @@ class MLIRGenerator(ast.NodeVisitor):
         map_code = "\n".join(self.mlir_map_code)
         return func_code, map_code, self.map_cnt
 
-
+# 生成task tile的workloads
 # =========== Emitter for task tile ===========
 class TileMLIRGenerator(MLIRGenerator):
     # dmaInfo: dic["ti"] = (32*i, 32, 1) (offset, size, step)
@@ -362,7 +362,8 @@ class TileMLIRGenerator(MLIRGenerator):
                     dstType = self.get_type_name(dstMemName)
                     self.emit(f"adf.dma({srcMem}[] [] [], {dstMem}[{' ,'.join(offsets)}] [{' ,'.join(sizes)}] [{' ,'.join(strides)}]) : ({srcType} , {dstType})")  
                     return
-                
+
+# 生成task kernel的workloads  
 # =========== Emitter for task kernel ===========
 class KernelMLIRGenerator(MLIRGenerator):
     def __init__(self, dmaInfo, map_cnt=0):
@@ -518,6 +519,7 @@ class KernelMLIRGenerator(MLIRGenerator):
         self.is_assign = False
         return
 
+# 总的入口函数
 class TopMLIRGenerator(MLIRGenerator):
     def __init__(self, dmaInfo, map_cnt=0):
         super().__init__(dmaInfo, map_cnt, "top_func")
@@ -803,7 +805,7 @@ class Schedule:
         self.mlir_func_code = []
         self.mlir_map_code = [] # AffineMap should be defined outside of Module
         self.map_cnt = 0
-        self.paraSize = {} # paraSize[task] = factor[]
+        self.paraSize = {} # paraSize[task] = factor[] 定义针对当前task的parallel factor
         self.l2Size = {} # l2Size[task] = factor[]
         self.bufSel = {} # bufsel[task] = factor[] # 1:BRAM, 0: URAM
         self.taskIdxMap = {} #Saves the reduction loops ids of a given task taskIdxMap[task] = ids
@@ -825,6 +827,7 @@ class Schedule:
             elif isinstance(obj, TaskTileWrapper):
                 funcs.append(obj.func)
             elif isinstance(obj, TaskTopWrapper):
+                # 通过是否有wrapper来判断类型
                 if top_func_flag == False:
                     top_func_flag = True
                     funcs.append(obj.func)
@@ -839,6 +842,7 @@ class Schedule:
             self.placeAlgo = [1, "false"]
         else:
             self.placeAlgo = [2, "true"]
+        # 是否有外部文件
         if instance.externPath != None:
             self.linkFile = 1
             self.linkPath = instance.externPath
@@ -846,6 +850,7 @@ class Schedule:
             self.paraList = instance.paraList
         self.funName = instance.funcName
         
+    # 对task tile生成workloads
     def task_tile_emit(self, func_name, parsed_ast):
         task = None
         # TODOs: Now assumes tasks has unique funcs 
@@ -875,6 +880,7 @@ class Schedule:
         self.mlir_map_code.append(map_code)
         # print(func_code)
     
+    # 生成c++ kernel code
     def task_kernel_emit(self, parsed_ast):
         # print("Parsed AIE Kernel AST", ast.dump(parsed_ast, indent=4))
         self.link_kernel_info(parsed_ast)
@@ -890,6 +896,7 @@ class Schedule:
         self.mlir_map_code.append(map_code)
         # print(func_code)
     
+    # 代码生成器
     def code_emit(self, module, prj_dir):
         funcs = self.collect_func(module)
         for func in funcs:
@@ -898,6 +905,7 @@ class Schedule:
             decorator_id = None
             func_name = None
             # Identify the decorators
+            # 遍历function name，获取decorator
             for node in ast.walk(parsed_ast):
                 if isinstance(node, ast.FunctionDef):
                     # Assume there's only one decorator for each func
@@ -906,6 +914,7 @@ class Schedule:
                     break
             if decorator_id is None:
                 continue
+            # 分类讨论，针对三种不同的code type，做针对性地code emit
             if decorator_id == 'task_kernel':
                 self.task_kernel_emit(parsed_ast)
                 continue
@@ -920,6 +929,7 @@ class Schedule:
         final_map_code = "\n".join(filter(None, self.mlir_map_code))
         final_func_code = "\n".join(filter(None, self.mlir_func_code))
         mlir_file = prj_dir / "aries.mlir" 
+        # affine map应该在module外定义，所以分为两段式写入
         with open(mlir_file, "w") as file:
             print(final_map_code, file=file)
         with open(mlir_file, "a") as file:
@@ -939,9 +949,11 @@ class Schedule:
         if self.linkFile!=0:
           gen_kernel(prj_dir, temp_dir, self.linkPath, self.paraList, self.funName)
     
+    # 给schedule定义parallel的factor
     def parallel(self, task, factor=[]):
         self.paraSize[task] = factor
     
+    # 给L2buffer定义size
     def l2buffer(self, task, factor=[]):
         self.l2Size[task] = factor
     
@@ -956,6 +968,7 @@ class Schedule:
           self.device = "vck190"
           self.placement= [50, 8, 0, 0, 0, 6, 39, 24, 3, 3]
     
+    # 构造my_project以及aie，kernel和host subdirectory
     def folder_create(self, sub_dir):
         if Path(sub_dir).exists():
             print(f"Directory '{sub_dir}' already exists, skipping creation.")
@@ -971,10 +984,14 @@ class Schedule:
                   subdir_path.mkdir(parents=True)
                   print(f"Created directory: {subdir_path}")
     
+    # 配置好schedule的参数后，生成aries.mlir文件，以及template kernel文件
     def build(self, module, prj_dir="./my_project", temp_dir="./templates"):
         prj_dir = Path(prj_dir)
         sub_dir = Path(prj_dir) / self.subName
         self.folder_create(sub_dir)
         self.code_emit(module, prj_dir)
+
+        # 为生成的aries.mlir文件生成make_aries文件
         self.genAriesMake(prj_dir, temp_dir)
+        # 为生成的aries.mlir文件生成kernel文件，形式为cpp template
         self.genKernel(sub_dir, temp_dir)

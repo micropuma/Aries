@@ -9,10 +9,10 @@
 <ENTRY>
 {
  "type": "ET_CmdStep",
- "dateTimestamp": "Wed Mar 19 13:01:47 2025",
- "timestampMillis": "1742360507365",
+ "dateTimestamp": "Sun Mar 23 11:12:50 2025",
+ "timestampMillis": "1742699570595",
  "buildStep": {
-  "cmdId": "8bf82e7f-b1e2-4fb0-8ab6-585efc5a2efe",
+  "cmdId": "778255f2-5707-41e8-85a2-b79f0cb88833",
   "name": "v++",
   "logFile": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/package/package.steps.log",
   "commandLine": "/usr/xilinx/Vitis/2023.2/bin/unwrapped/lnx64.o/v++  --vivado.prop \"run.__KERNEL__.{STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS}={-directive sdx_optimization_effort_high}\" --advanced.misc \"report=type report_timing_summary name impl_report_timing_summary_route_design_summary steps {route_design} runs {impl_1} options {-max_paths 10}\" --advanced.misc \"report=type report_timing_summary name impl_report_timing_summary_post_route_phys_opt_design_summary steps {post_route_phys_opt_design} runs {impl_1} options {-max_paths 10}\" -p -t hw_emu -f /usr/xilinx/Vitis/2023.2/base_platforms/xilinx_vck190_base_202320_1/xilinx_vck190_base_202320_1.xpfm --package.out_dir ./package.hw_emu --package.rootfs /usr/xilinx/xilinx-versal-common-v2023.2//rootfs.ext4 --package.kernel_image /usr/xilinx/xilinx-versal-common-v2023.2//Image --package.boot_mode=sd --package.image_format=ext4 --package.defer_aie_run --package.sd_file hostexe libadf.a vck190_aie_base_graph_hw_emu.xsa -o vck190_aie_base_graph_hw_emu.xclbin ",
@@ -46,10 +46,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:01:47 2025",
- "timestampMillis": "1742360507365",
+ "dateTimestamp": "Sun Mar 23 11:12:50 2025",
+ "timestampMillis": "1742699570595",
  "status": {
-  "cmdId": "8bf82e7f-b1e2-4fb0-8ab6-585efc5a2efe",
+  "cmdId": "778255f2-5707-41e8-85a2-b79f0cb88833",
   "state": "CS_RUNNING"
  }
 }
@@ -57,8 +57,8 @@
 <ENTRY>
 {
  "type": "ET_FlowMetaData",
- "dateTimestamp": "Wed Mar 19 13:01:51 2025",
- "timestampMillis": "1742360511311",
+ "dateTimestamp": "Sun Mar 23 11:12:53 2025",
+ "timestampMillis": "1742699573958",
  "buildSummary": {
   "hardwarePlatform": "xilinx_vck190_base_202320_1.xpfm",
   "hardwareDsa": "hw.xsa",
@@ -132,10 +132,10 @@
 <ENTRY>
 {
  "type": "ET_Status",
- "dateTimestamp": "Wed Mar 19 13:02:34 2025",
- "timestampMillis": "1742360554223",
+ "dateTimestamp": "Sun Mar 23 11:13:35 2025",
+ "timestampMillis": "1742699615138",
  "status": {
-  "cmdId": "8bf82e7f-b1e2-4fb0-8ab6-585efc5a2efe",
+  "cmdId": "778255f2-5707-41e8-85a2-b79f0cb88833",
   "state": "CS_PASSED"
  }
 }
@@ -143,8 +143,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 13:02:34 2025",
- "timestampMillis": "1742360554309",
+ "dateTimestamp": "Sun Mar 23 11:13:35 2025",
+ "timestampMillis": "1742699615222",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/reports/package/v++_package_vck190_aie_base_graph_hw_emu_guidance.html",
   "name": "",
@@ -157,8 +157,8 @@
 <ENTRY>
 {
  "type": "ET_Report",
- "dateTimestamp": "Wed Mar 19 13:02:34 2025",
- "timestampMillis": "1742360554310",
+ "dateTimestamp": "Sun Mar 23 11:13:35 2025",
+ "timestampMillis": "1742699615222",
  "report": {
   "path": "/media/4T/home/douliyang/mlir-workspace/Aries/tutorial/gemm64-tiling/my_project/project/_x/v++_package_vck190_aie_base_graph_hw_emu_guidance.pb3",
   "name": "",
