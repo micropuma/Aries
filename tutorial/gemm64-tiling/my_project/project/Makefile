@@ -1,5 +1,7 @@
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 mkfile_dir := $(dir $(mkfile_path))
+
+# 显示修改这个Target，跑simulation流程
 TARGET   = hw_emu
 MODE	 = linux
 HOST_ARCH = aarch64
@@ -27,7 +29,7 @@ AIE_CMPL_CMD = aiecompiler -platform=${PLATFORM} --target=hw --stacksize=1024 --
 AIE_SIM_CMD = aiesimulator --pkg-dir=./Work --dump-vcd foo --profile --output-time-stamp=no --end-wait-time=30
 AIE_O = aie_control_xrt.o
 GRAPH_O = adf_graph.o
-EMU_CMD = ./package.hw_emu/./launch_hw_emu.sh
+EMU_CMD = ./$(PACKAGE_OUT)/launch_hw_emu.sh
 PACKAGE_OUT = ./package.$(TARGET)
 RM = rm -f
 RMDIR = rm -rf
